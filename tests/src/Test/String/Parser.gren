@@ -58,6 +58,37 @@ testOkEnd description parser expected =
             Ok actual -> Expect.equal expected actual
             Err problems -> Expect.equal "Should succeed and reach end" "Parser failed or didn't reach end"
 
+-- U+1D41A MATHEMATICAL BOLD SMALL A, two UTF-16 units: 0xD835 0xDC1A.
+mathBoldA : String
+mathBoldA =
+    String.fromChar (Char.fromCode 0x1D41A)
+
+
+-- U+FF5A FULLWIDTH LATIN SMALL LETTER Z, one UTF-16 unit. The control: a
+-- letter that is not ASCII and is still inside the BMP.
+fullwidthZ : String
+fullwidthZ =
+    String.fromChar (Char.fromCode 0xFF5A)
+
+-- What a parser that wants letters beyond ASCII has to write for itself.
+-- `Compiler.Parse.Variable` in `gren-lang/compiler-common` asks a `\p{Ll}`
+-- regex; this is the same idea without the dependency.
+--
+-- The surrogate range has to be excluded or the predicate cannot see the bug:
+-- an unnamed half of a pair is above 0x7F too, so a predicate that accepts
+-- everything non-ASCII accepts the lead surrogate and passes either way. No
+-- real Unicode predicate calls an unpaired surrogate a letter.
+isLetterish : Char -> Bool
+isLetterish char =
+    let
+        code =
+            Char.toCode char
+    in
+    Char.isAlphaNum char
+        || (code > 0x7F && (code < 0xD800 || code > 0xDFFF))
+
+
+
 
 tests : Test
 tests =
@@ -407,6 +438,53 @@ tests =
                 Expect.equal (Ok {}) (run js "  // comment\n  ")
             ]
         
+        , describe "Characters outside the BMP"
+            -- `Char.isAlphaNum` and friends are ASCII by contract, so a parser
+            -- that wants astral letters brings its own predicate. What it is
+            -- owed is that the predicate is asked about the character that is
+            -- there. (gren-lang/core#138)
+            [ test "the predicate is asked about the decoded codepoint" <| \{} ->
+                Expect.equal (Ok mathBoldA)
+                    (run (getChompedString (chompIf (\c -> Char.toCode c == 0x1D41A))) mathBoldA)
+
+            , test "the predicate is never asked about the lead surrogate" <| \{} ->
+                when run (chompIf (\c -> Char.toCode c == 0xD835)) mathBoldA is
+                    Ok _ -> Expect.fail "the lead surrogate was passed to the predicate"
+                    Err _ -> Expect.pass
+
+            , test "an accepted astral character chomps both units" <| \{} ->
+                Expect.equal (Ok mathBoldA)
+                    (run (getChompedString (chompIf isLetterish)) mathBoldA)
+
+            , test "chompIf still rejects what the predicate rejects" <| \{} ->
+                when run (chompIf Char.isDigit) mathBoldA is
+                    Ok _ -> Expect.fail "Unexpected success"
+                    Err _ -> Expect.pass
+
+            , test "chompWhile crosses the plane boundary" <| \{} ->
+                let
+                    src = "a" ++ mathBoldA ++ fullwidthZ
+                in
+                Expect.equal (Ok src)
+                    (run (getChompedString (chompWhile isLetterish)) src)
+
+            , test "an astral character advances one column, not two" <| \{} ->
+                let
+                    column =
+                        succeed (\pos -> pos.col)
+                            |> skip (chompWhile isLetterish)
+                            |> keep getPosition
+                in
+                Expect.equal (Ok 3) (run column ("a" ++ mathBoldA))
+
+            , test "variable accepts an astral identifier" <| \{} ->
+                let
+                    name = mathBoldA ++ "x" ++ fullwidthZ
+                in
+                Expect.equal (Ok name)
+                    (run (variable { start = isLetterish, inner = isLetterish }) name)
+            ]
+
         , describe "Error Handling"
             [ test "deadEndsToString with Expecting problem" <| \{} ->
                 let
