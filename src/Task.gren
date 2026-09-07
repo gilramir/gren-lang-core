@@ -1,6 +1,6 @@
 effect module Task where { command = MyCmd } exposing
     ( Task, perform, attempt, execute, executeCmd
-    , andThen, await, succeed, fail, sequence, concurrent
+    , andThen, await, succeed, fail, sequence, concurrent, race
     , map, map2, map3, andMap
     , onError, mapError
     , bracket, finally
@@ -15,7 +15,7 @@ HTTP requests or writing to a database.
 
 ## Chains
 
-@docs andThen, await, succeed, fail, sequence, concurrent
+@docs andThen, await, succeed, fail, sequence, concurrent, race
 
 
 ## Maps
@@ -232,6 +232,47 @@ IO bound tasks however (e.g. make a HTTP request and wait until the response com
 concurrent : Array (Task x a) -> Task x (Array a)
 concurrent =
     Gren.Kernel.Scheduler.concurrent
+
+
+{-| Run tasks at the same time and take whichever one finishes first. The
+others are cancelled.
+
+The usual reason to want this is a deadline:
+
+    Task.race
+        (HttpClient.get url)
+        [ Process.sleep 5000
+            |> Task.andThen (\_ -> Task.fail Timeout)
+        ]
+
+**Finishing first means succeeding *or* failing.** The branch that wins the
+race above is the one that fails, which is the point: a `race` that waited for
+a success could never time out.
+
+The tasks that lose are cancelled, and this task does not finish until they
+have — including the release handler of every [`bracket`](#bracket) they were
+inside. So by the time you see `Timeout`, the request has been aborted and
+anything it held has been given back.
+
+Which task wins when two of them finish at the same moment is **not
+specified**, and a program may not depend on it.
+
+The first task is a separate argument because a race between no tasks has no
+answer to give: there is no result to return and no error to fail with. If you
+are building the tasks rather than writing them out, split the array yourself
+and say what an empty one means:
+
+    when Array.popFirst mirrors is
+        Just { first, rest } ->
+            Task.race first rest
+
+        Nothing ->
+            Task.fail NoMirrors
+
+-}
+race : Task x a -> Array (Task x a) -> Task x a
+race first rest =
+    Gren.Kernel.Scheduler.race (Array.pushFirst first rest)
 
 
 

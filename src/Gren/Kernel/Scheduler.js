@@ -120,12 +120,17 @@ function _Scheduler_always(task) {
   };
 }
 
-function _Scheduler_concurrent(tasks) {
-  if (tasks.length === 0) return _Scheduler_succeed([]);
-
+// A scope with a fixed child set. `concurrent` and `race` are both one, and
+// they differ in a single question: what a child *succeeding* means. Failure is
+// the same for both — §N9.3's first failure cancels the siblings and fails the
+// scope — and so is everything below it, which is why this is one function.
+//
+// `makeAnswer` is called once per run, not once per task value: a `Task` is a
+// value and may be run twice, so the counting a `concurrent` does cannot live
+// out here.
+function _Scheduler_scope(tasks, makeAnswer) {
   return _Scheduler_binding(function (callback) {
-    let count = 0;
-    let results = new Array(tasks.length);
+    const answer = makeAnswer();
     let procs;
     // An outcome has been chosen; and, separately, nobody is listening for one
     // any more because this task was itself cancelled.
@@ -179,12 +184,10 @@ function _Scheduler_concurrent(tasks) {
 
     procs = tasks.map((task, i) => {
       function onSuccess(res) {
-        results[i] = res;
-        count++;
-        if (count === tasks.length && !settled && !abandoned) {
-          // Nothing to cancel: every child is finished already.
-          settled = true;
-          callback(_Scheduler_succeed(results));
+        // Null means "not yet": a `concurrent` still waiting on a sibling.
+        const outcome = answer(i, res);
+        if (outcome) {
+          settle(outcome);
         }
       }
       function onError(e) {
@@ -200,6 +203,34 @@ function _Scheduler_concurrent(tasks) {
     return function () {
       abandoned = true;
       return cancelAll();
+    };
+  });
+}
+
+function _Scheduler_concurrent(tasks) {
+  if (tasks.length === 0) return _Scheduler_succeed([]);
+
+  return _Scheduler_scope(tasks, function () {
+    const results = new Array(tasks.length);
+    let count = 0;
+
+    return function (i, res) {
+      results[i] = res;
+      count++;
+      return count === tasks.length ? _Scheduler_succeed(results) : null;
+    };
+  });
+}
+
+// The first child to *settle* is the answer, and settling means succeeding or
+// failing: the branch that wins a `race [ work, timeout ]` is the one that
+// fails, so a `race` that waited for a success could never time out. `Task`'s
+// `race` takes a task and an array rather than an array, so `tasks` is never
+// empty here and this always has an answer to give.
+function _Scheduler_race(tasks) {
+  return _Scheduler_scope(tasks, function () {
+    return function (i, res) {
+      return _Scheduler_succeed(res);
     };
   });
 }
