@@ -84,6 +84,42 @@ function _Scheduler_releasing(frame, outcome) {
   );
 }
 
+// CANCELLATION IS SOMETHING TO WAIT FOR
+//
+// Cancelling a task is not instantaneous: what it leaves to do is the release
+// handlers of every `bracket` it interrupted. So `rawKill` hands back a task —
+// null if there is nothing left — and each of its callers waits for it rather
+// than merely starting it. That is what lets `concurrent` keep the promise
+// `portable-core.md` P2 makes for it, and what orders an outer release handler
+// after the inner ones when both are cancelled at once.
+//
+// The steps are thunks, because a release handler builds its task when it runs.
+
+function _Scheduler_inOrder(steps) {
+  if (steps.length === 0) {
+    return null;
+  }
+
+  var chain = steps[0]();
+  for (var i = 1; i < steps.length; i++) {
+    chain = A2(_Scheduler_andThen, _Scheduler_thenRun(steps[i]), chain);
+  }
+
+  return chain;
+}
+
+function _Scheduler_thenRun(step) {
+  return function (_) {
+    return step();
+  };
+}
+
+function _Scheduler_always(task) {
+  return function () {
+    return task;
+  };
+}
+
 function _Scheduler_concurrent(tasks) {
   if (tasks.length === 0) return _Scheduler_succeed([]);
 
@@ -91,30 +127,80 @@ function _Scheduler_concurrent(tasks) {
     let count = 0;
     let results = new Array(tasks.length);
     let procs;
+    // An outcome has been chosen; and, separately, nobody is listening for one
+    // any more because this task was itself cancelled.
+    let settled = false;
+    let abandoned = false;
 
-    function killAll() {
-      procs.forEach(_Scheduler_rawKill);
+    // Cancel every task and hand back what those cancellations have left to
+    // do. Killing a process that already finished takes nothing and returns
+    // nothing, so this is also how the successful siblings are disposed of.
+    function cancelAll() {
+      const steps = [];
+      for (let i = 0; i < procs.length; i++) {
+        const pending = _Scheduler_rawKill(procs[i]);
+        if (pending) {
+          steps.push(_Scheduler_always(pending));
+        }
+      }
+      return _Scheduler_inOrder(steps);
     }
 
-    function onError(e) {
-      killAll();
-      callback(_Scheduler_fail(e));
+    // The first failure cancels the siblings — and this task does not answer
+    // until they are finished, release handlers included. `concurrent` is
+    // specified as a scope with a fixed child set (`portable-core.md` P2), and
+    // a scope does not complete before its children do
+    // (`concurrency-native.md` §N9.3).
+    function settle(outcome) {
+      if (settled || abandoned) {
+        return;
+      }
+      settled = true;
+
+      const pending = cancelAll();
+      if (!pending) {
+        callback(outcome);
+        return;
+      }
+
+      _Scheduler_rawSpawn(
+        A2(
+          _Scheduler_andThen,
+          function (_) {
+            if (!abandoned) {
+              callback(outcome);
+            }
+            return _Scheduler_succeed({});
+          },
+          pending
+        )
+      );
     }
 
     procs = tasks.map((task, i) => {
       function onSuccess(res) {
         results[i] = res;
         count++;
-        if (count === tasks.length) {
+        if (count === tasks.length && !settled && !abandoned) {
+          // Nothing to cancel: every child is finished already.
+          settled = true;
           callback(_Scheduler_succeed(results));
         }
+      }
+      function onError(e) {
+        settle(_Scheduler_fail(e));
       }
       const success = A2(_Scheduler_andThen, onSuccess, task);
       const handled = A2(_Scheduler_onError, onError, success);
       return _Scheduler_rawSpawn(handled);
     });
 
-    return killAll;
+    // Cancelled from outside: no answer is owed any more, but the children
+    // still have to be finished with, and whoever did the killing waits.
+    return function () {
+      abandoned = true;
+      return cancelAll();
+    };
   });
 }
 
@@ -163,16 +249,48 @@ var _Scheduler_send = F2(function (proc, msg) {
 
 function _Scheduler_kill(proc) {
   return _Scheduler_binding(function (callback) {
-    _Scheduler_rawKill(proc);
+    var pending = _Scheduler_rawKill(proc);
 
-    callback(_Scheduler_succeed({}));
+    if (!pending) {
+      callback(_Scheduler_succeed({}));
+      return;
+    }
+
+    // `kill` answers when the cancellation is finished rather than when it is
+    // started, which is the difference between a release handler being a
+    // guarantee and being a hope.
+    _Scheduler_rawSpawn(
+      A2(
+        _Scheduler_andThen,
+        function (_) {
+          callback(_Scheduler_succeed({}));
+          return _Scheduler_succeed({});
+        },
+        pending
+      )
+    );
   });
 }
 
+// Returns what this cancellation has left to do, or null if it is finished.
+// The caller waits for it: `_Scheduler_kill` and `concurrent`'s `cancelAll`
+// are the two, and neither may merely start it.
 function _Scheduler_rawKill(proc) {
+  var steps = [];
+
   var task = proc.__root;
   if (task && task.$ === __1_BINDING && task.__kill) {
-    task.__kill();
+    // A kill function returns nothing, or the task its *own* cancellation has
+    // left to do. `concurrent`'s below is the only one that returns anything:
+    // the other ten in `core` and `node` are a `clearTimeout`, a
+    // `clearInterval`, an `abort`, a `close`, two `kill`s and four `off`s, and
+    // every one of them answers `undefined`. It is sequenced first, so an
+    // inner scope is finished with before this process's own handlers run:
+    // innermost-first holds across a `concurrent` as well as within one.
+    var pending = task.__kill();
+    if (pending) {
+      steps.push(_Scheduler_always(pending));
+    }
   }
 
   // Everything the process was going to do next is abandoned — except its
@@ -181,10 +299,9 @@ function _Scheduler_rawKill(proc) {
   // stack, which is what makes reaching them here possible at all, and the
   // frames are already in innermost-first order. Each is taken as it is found,
   // so that killing an already-killed process releases nothing twice.
-  var releases = [];
   for (var frame = proc.__stack; frame; frame = frame.__rest) {
     if (frame.$ === __1_RELEASE && frame.__release) {
-      releases.push(frame.__release);
+      steps.push(frame.__release);
       frame.__release = null;
     }
   }
@@ -195,23 +312,7 @@ function _Scheduler_rawKill(proc) {
   // and itself — and that callback's caller still reads `__stack` afterwards.
   proc.__root = null;
 
-  if (releases.length === 0) {
-    return;
-  }
-
-  // A process of their own, because the one that owned them is dead: it is the
-  // handle a scheduler that waits for a cancelled child would wait on.
-  var chain = releases[0]();
-  for (var i = 1; i < releases.length; i++) {
-    chain = A2(_Scheduler_andThen, _Scheduler_releaseThunk(releases[i]), chain);
-  }
-  _Scheduler_rawSpawn(chain);
-}
-
-function _Scheduler_releaseThunk(release) {
-  return function (_) {
-    return release();
-  };
+  return _Scheduler_inOrder(steps);
 }
 
 /* STEP PROCESSES

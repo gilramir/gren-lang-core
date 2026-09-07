@@ -211,6 +211,10 @@ array. The tasks will be run concurrently and if any task fails the whole array 
 
 Additionally if any task fails, any tasks already in-flight will be cleaned up (e.g. an in-flight HTTP request will be cancelled).
 
+The failure is not the answer until that cleanup is done: a cancelled task runs the release handler of every
+[`bracket`](#bracket) it was inside, and `concurrent` does not fail until they have. So by the time you handle the error,
+every resource the other tasks held has been given back.
+
 **Note**: Why use `sequence` over `concurrent`? Maybe you have an expensive operation, like making 100 HTTP requests.
 You might want to do these sequentially rather than all at once to avoid overwhelming the server.
 

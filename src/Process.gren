@@ -99,6 +99,11 @@ sleep =
 have it keep running and doing stuff. The `kill` function will force a process
 to bail on whatever task it is running. So if there is an HTTP request in
 flight, it will also abort the request.
+
+A process being killed still runs the release handler of every
+[`Task.bracket`](Task#bracket) it was inside, innermost first, and this task
+does not succeed until they are done. So a killed process has given up its
+resources by the time `kill` answers, rather than at some point afterwards.
 -}
 kill : Id -> Task x {}
 kill =
