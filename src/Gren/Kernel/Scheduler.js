@@ -49,6 +49,41 @@ function _Scheduler_receive(callback) {
   };
 }
 
+// `bracket` cannot be written on `andThen` and `onError`, because those two
+// only see a task that finished. A cancelled task does not finish: `rawKill`
+// below drops the process's stack, and with it every release handler a library
+// implementation would have parked there. So the release handler is a third
+// kind of stack frame, which the interpreter answers to on success, on failure
+// and on cancellation alike.
+var _Scheduler_bracket = F3(function (acquire, release, use) {
+  return A2(
+    _Scheduler_andThen,
+    function (resource) {
+      return {
+        $: __1_BRACKET,
+        __release: function () {
+          return release(resource);
+        },
+        __task: use(resource),
+      };
+    },
+    acquire
+  );
+});
+
+// Run one release handler, then carry the outcome that reached it on unchanged.
+// The handler is a `Task Never {}`, so the outcome cannot be lost to a second
+// failure on the way out.
+function _Scheduler_releasing(frame, outcome) {
+  return A2(
+    _Scheduler_andThen,
+    function (_) {
+      return outcome;
+    },
+    frame.__release()
+  );
+}
+
 function _Scheduler_concurrent(tasks) {
   if (tasks.length === 0) return _Scheduler_succeed([]);
 
@@ -140,7 +175,43 @@ function _Scheduler_rawKill(proc) {
     task.__kill();
   }
 
+  // Everything the process was going to do next is abandoned — except its
+  // release handlers, which are exactly what cancellation must still run. They
+  // live in the process's own state rather than in the interpreter's call
+  // stack, which is what makes reaching them here possible at all, and the
+  // frames are already in innermost-first order. Each is taken as it is found,
+  // so that killing an already-killed process releases nothing twice.
+  var releases = [];
+  for (var frame = proc.__stack; frame; frame = frame.__rest) {
+    if (frame.$ === __1_RELEASE && frame.__release) {
+      releases.push(frame.__release);
+      frame.__release = null;
+    }
+  }
+
+  // `__root` is the only field a kill may clear. `rawKill` is reachable from
+  // inside a callback that `_Scheduler_step` is part-way through running — a
+  // task of a `concurrent` fails, and the failure handler kills its siblings
+  // and itself — and that callback's caller still reads `__stack` afterwards.
   proc.__root = null;
+
+  if (releases.length === 0) {
+    return;
+  }
+
+  // A process of their own, because the one that owned them is dead: it is the
+  // handle a scheduler that waits for a cancelled child would wait on.
+  var chain = releases[0]();
+  for (var i = 1; i < releases.length; i++) {
+    chain = A2(_Scheduler_andThen, _Scheduler_releaseThunk(releases[i]), chain);
+  }
+  _Scheduler_rawSpawn(chain);
+}
+
+function _Scheduler_releaseThunk(release) {
+  return function (_) {
+    return release();
+  };
 }
 
 /* STEP PROCESSES
@@ -150,6 +221,7 @@ type alias Process =
   , id : unique_id
   , root : Task
   , stack : null | { $: SUCCEED | FAIL, a: callback, b: stack }
+                 | { $: RELEASE, a: () -> Task Never {}, b: stack }
   , mailbox : [msg]
   }
 
@@ -177,10 +249,17 @@ function _Scheduler_enqueue(proc) {
 }
 
 function _Scheduler_step(proc) {
-  while (proc.__root) {
+  stepping: while (proc.__root) {
     var rootTag = proc.__root.$;
     if (rootTag === __1_SUCCEED || rootTag === __1_FAIL) {
       while (proc.__stack && proc.__stack.$ !== rootTag) {
+        // A release frame matches neither tag, so it is reached on both, which
+        // is the whole of what `bracket` promises about success and failure.
+        if (proc.__stack.$ === __1_RELEASE) {
+          proc.__root = _Scheduler_releasing(proc.__stack, proc.__root);
+          proc.__stack = proc.__stack.__rest;
+          continue stepping;
+        }
         proc.__stack = proc.__stack.__rest;
       }
       if (!proc.__stack) {
@@ -194,6 +273,13 @@ function _Scheduler_step(proc) {
         _Scheduler_enqueue(proc);
       });
       return;
+    } else if (rootTag === __1_BRACKET) {
+      proc.__stack = {
+        $: __1_RELEASE,
+        __release: proc.__root.__release,
+        __rest: proc.__stack,
+      };
+      proc.__root = proc.__root.__task;
     } else if (rootTag === __1_RECEIVE) {
       if (proc.__mailbox.length === 0) {
         return;

@@ -3,6 +3,7 @@ effect module Task where { command = MyCmd } exposing
     , andThen, await, succeed, fail, sequence, concurrent
     , map, map2, map3, andMap
     , onError, mapError
+    , bracket, finally
     )
 
 {-| Tasks make it easy to describe asynchronous operations that may fail, like
@@ -25,6 +26,11 @@ HTTP requests or writing to a database.
 ## Errors
 
 @docs onError, mapError
+
+
+## Resources
+
+@docs bracket, finally
 
 -}
 
@@ -309,6 +315,48 @@ mapError : (x -> y) -> Task x a -> Task y a
 mapError convert task =
     task
         |> onError (fail << convert)
+
+
+
+-- RESOURCES
+
+
+{-| Acquire a resource, use it, and release it afterwards — whatever happens.
+
+    readConfig : Task Error Config
+    readConfig =
+        Task.bracket
+            (File.open "config.json")
+            File.close
+            File.readAll
+
+The release task runs when the body succeeds, when it fails, **and when the
+task is cancelled** — cancellation being what happens to the other tasks of a
+[`concurrent`](#concurrent) when one of them fails. It cannot fail itself:
+its error type is `Never`, so an error on the way out can never replace the
+error on the way in.
+
+Nested brackets release innermost-first, in the order the resources were
+acquired reversed.
+
+-}
+bracket : Task x r -> (r -> Task Never {}) -> (r -> Task x a) -> Task x a
+bracket =
+    Gren.Kernel.Scheduler.bracket
+
+
+{-| Run a task, and run a second one afterwards whatever the first one did.
+
+    Task.finally releaseTheLock work
+
+This is [`bracket`](#bracket) with nothing to acquire, which is what it is for:
+a cleanup that does not depend on a resource.
+
+-}
+finally : Task Never {} -> Task x a -> Task x a
+finally release task =
+    bracket (succeed {}) (\_ -> release) (\_ -> task)
+
 
 
 -- COMMANDS
