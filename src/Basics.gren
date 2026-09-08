@@ -1,7 +1,7 @@
 module Basics exposing
     ( Int, (+), (-), (*), (/), (//), (^), negate
     , Float, toFloat, isNaN, isInfinite
-    , (==), (/=)
+    , Eq, (==), (/=)
     , (<), (>), (<=), (>=), max, min, clamp, compare, Order(..)
     , Bool(..), not, (&&), (||), xor
     , (++)
@@ -23,7 +23,7 @@ module Basics exposing
 
 ## Equality
 
-@docs (==), (/=)
+@docs Eq, (==), (/=)
 
 
 ## Comparison
@@ -62,8 +62,8 @@ infix right 0 (<|) = apL
 infix left  0 (|>) = apR
 infix right 2 (||) = or
 infix right 3 (&&) = and
-infix non   4 (==) = eq
-infix non   4 (/=) = neq
+infix non   4 (==) = equal
+infix non   4 (/=) = notEqual
 infix non   4 (<) = lt
 infix non   4 (>) = gt
 infix non   4 (<=) = le
@@ -319,8 +319,8 @@ possible.
 [undecidable]: https://en.wikipedia.org/wiki/Undecidable_problem
 
 -}
-eq : a -> a -> Bool
-eq =
+equal : a -> a -> Bool
+equal =
     Gren.Kernel.Utils.equal
 
 
@@ -329,9 +329,36 @@ eq =
 So `(a /= b)` is the same as `(not (a == b))`.
 
 -}
-neq : a -> a -> Bool
-neq =
+notEqual : a -> a -> Bool
+notEqual =
     Gren.Kernel.Utils.notEqual
+
+
+{-| Types whose values can be compared for equality.
+
+Every transparent type derives this structurally, so there is rarely anything
+to write. An abstract type asks for the structural answer with
+`@derive(Eq)`, or supplies its own `instance Eq` when the structural answer
+would be wrong -- which is what `Dict` and `Set` need.
+
+-}
+class Eq a where
+    eq : a -> a -> Bool
+
+
+instance Eq Int where
+    eq a b =
+        equal a b
+
+
+instance Eq Float where
+    eq a b =
+        equal a b
+
+
+instance Eq Bool where
+    eq a b =
+        equal a b
 
 
 

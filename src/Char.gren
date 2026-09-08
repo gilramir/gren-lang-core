@@ -28,8 +28,9 @@ module Char exposing
 
 -}
 
-import Basics exposing ((&&), (<=), (>=), (||), Bool, Int)
+import Basics exposing ((&&), (<=), (>=), (||), Bool, Eq, Int)
 import Gren.Kernel.Char
+import Gren.Kernel.Utils
 
 
 
@@ -291,3 +292,8 @@ range, you get [the replacement character][fffd].
 fromCode : Int -> Char
 fromCode =
     Gren.Kernel.Char.fromCode
+
+
+instance Eq Char where
+    eq a b =
+        Gren.Kernel.Utils.equal a b

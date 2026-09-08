@@ -88,6 +88,7 @@ import Math exposing (floor, ceiling)
 import Bitwise
 import Char exposing (Char)
 import Gren.Kernel.String
+import Gren.Kernel.Utils
 import Maybe exposing (Maybe)
 import Result exposing (Result)
 
@@ -872,3 +873,8 @@ _not_ code points!
 sliceUnits : Int -> Int -> String -> String
 sliceUnits =
     Gren.Kernel.String.sliceUnits
+
+
+instance Eq String where
+    eq a b =
+        Gren.Kernel.Utils.equal a b
