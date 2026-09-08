@@ -54,9 +54,9 @@ type Encoder
   | Bytes Bytes
 
 
-type alias WithEndian number =
+type alias WithEndian a =
   { endian : Endianness
-  , number : number
+  , number : a
   }
 
 

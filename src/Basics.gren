@@ -1,10 +1,10 @@
 module Basics exposing
-    ( Int, (+), (-), (*), (/), (//), (^), negate
+    ( Int, Num, (+), (-), (*), (/), (//), (^), negate
     , Float, toFloat, isNaN, isInfinite
     , Eq, (==), (/=)
     , Ord, (<), (>), (<=), (>=), max, min, clamp, Order(..)
     , Bool(..), not, (&&), (||), xor
-    , (++)
+    , Appendable, (++)
     , identity, (<|), (|>), (<<), (>>), Never, never
     )
 
@@ -13,7 +13,7 @@ module Basics exposing
 
 ## Numbers
 
-@docs Int, (+), (-), (*), (/), (//), (^), negate
+@docs Int, Num, (+), (-), (*), (/), (//), (^), negate
 
 
 ## Float
@@ -42,7 +42,7 @@ derives or writes an instance for.
 
 ## Append Strings and Arrays
 
-@docs (++)
+@docs Appendable, (++)
 
 
 ## Function Helpers
@@ -143,7 +143,20 @@ type Float
     = Float -- NOTE: The compiler provides the real implementation.
 
 
-{-| Add two numbers. The `number` type variable means this operation can be
+{-| The types arithmetic works on: `Int` and `Float`.
+
+`Num` is a **closed** class. Which types belong to it is fixed by the compiler
+and cannot be added to, so there are no instances to write and nothing to
+implement -- `Num` has no methods because one kernel implementation serves
+every member. What a `Num a =>` constraint buys is that `a` is one of them,
+and it is checked while your types are being worked out rather than by passing
+anything around, so it costs nothing at all at run time.
+
+-}
+class Num a
+
+
+{-| Add two numbers. The `Num a =>` constraint means this operation can be
 specialized to `Int -> Int -> Int` or to `Float -> Float -> Float`. So you
 can do things like this:
 
@@ -167,27 +180,27 @@ conversions (as Scala does) it can be even more confusing. Gren has opted for a
 design that makes all conversions explicit.
 
 -}
-add : number -> number -> number
+add : Num a => a -> a -> a
 add =
     Gren.Kernel.Basics.add
 
 
 {-| Subtract numbers like `4 - 3 == 1`.
 
-See [`(+)`](#+) for docs on the `number` type variable.
+See [`(+)`](#+) for docs on the `Num` class.
 
 -}
-sub : number -> number -> number
+sub : Num a => a -> a -> a
 sub =
     Gren.Kernel.Basics.sub
 
 
 {-| Multiply numbers like `2 * 3 == 6`.
 
-See [`(+)`](#+) for docs on the `number` type variable.
+See [`(+)`](#+) for docs on the `Num` class.
 
 -}
-mul : number -> number -> number
+mul : Num a => a -> a -> a
 mul =
     Gren.Kernel.Basics.mul
 
@@ -257,7 +270,7 @@ idiv =
     3 ^ 3 == 27
 
 -}
-pow : number -> number -> number
+pow : Num a => a -> a -> a
 pow =
     Gren.Kernel.Basics.pow
 
@@ -271,7 +284,7 @@ pow =
     negate 0 == 0
 
 -}
-negate : number -> number
+negate : Num a => a -> a
 negate n =
     -n
 
@@ -601,6 +614,17 @@ xor =
 -- APPEND
 
 
+{-| The types `++` puts together: `String` and `Array a`.
+
+Closed, like [`Num`](#Num), and for the same reason: one kernel implementation
+serves both members, so there is nothing for an instance to supply. It is due to
+leave the language along with `++` itself, in favour of `String.append` and
+`Array.append`.
+
+-}
+class Appendable a
+
+
 {-| Put two appendable things together. This includes strings and arrays.
 
     "hello" ++ "world" == "helloworld"
@@ -608,7 +632,7 @@ xor =
     [ 1, 1, 2 ] ++ [ 3, 5, 8 ] == [ 1, 1, 2, 3, 5, 8 ]
 
 -}
-append : appendable -> appendable -> appendable
+append : Appendable a => a -> a -> a
 append =
     Gren.Kernel.Utils.append
 
