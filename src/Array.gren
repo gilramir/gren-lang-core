@@ -342,7 +342,7 @@ all fn array =
     minimum []      == Nothing
 
 -}
-minimum : Array comparable -> Maybe comparable
+minimum : Ord a => Array a -> Maybe a
 minimum array =
     when first array is
         Nothing ->
@@ -368,7 +368,7 @@ minimum array =
     maximum []      == Nothing
 
 -}
-maximum : Array comparable -> Maybe comparable
+maximum : Ord a => Array a -> Maybe a
 maximum array =
     when first array is
         Nothing ->
@@ -769,9 +769,9 @@ partition fn array =
     sort [ 3, 1, 5 ] == [ 1, 3, 5 ]
 
 -}
-sort : Array comparable -> Array comparable
-sort =
-    Gren.Kernel.Array.sort
+sort : Ord a => Array a -> Array a
+sort array =
+    sortWith compare array
 
 
 {-| Sort values by a derived property.
@@ -779,9 +779,9 @@ sort =
     sortBy String.length [ "mouse", "cat" ] == [ "cat", "mouse" ]
 
 -}
-sortBy : (a -> comparable) -> Array a -> Array a
-sortBy =
-    Gren.Kernel.Array.sortBy
+sortBy : Ord b => (a -> b) -> Array a -> Array a
+sortBy toKey array =
+    sortWith (\x y -> compare (toKey x) (toKey y)) array
 
 
 {-| Sort values with a custom comparison function.
@@ -801,3 +801,39 @@ sortWith : (a -> a -> Order) -> Array a -> Array a
 sortWith =
     Gren.Kernel.Array.sortWith
 
+
+
+-- An array is ordered lexicographically by its elements, which is what the
+-- kernel's structural comparison did for a `comparable` array. Written in Gren
+-- rather than in the kernel because the element's ordering is the witness the
+-- instance is handed, and the kernel cannot call one.
+
+
+instance Ord a => Ord (Array a) where
+    compare a b =
+        compareFrom 0 a b
+
+
+compareFrom : Ord a => Int -> Array a -> Array a -> Order
+compareFrom index a b =
+    when get index a is
+        Nothing ->
+            when get index b is
+                Nothing ->
+                    EQ
+
+                Just _ ->
+                    LT
+
+        Just x ->
+            when get index b is
+                Nothing ->
+                    GT
+
+                Just y ->
+                    when compare x y is
+                        EQ ->
+                            compareFrom (index + 1) a b
+
+                        order ->
+                            order

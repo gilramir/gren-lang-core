@@ -2,7 +2,7 @@ module Basics exposing
     ( Int, (+), (-), (*), (/), (//), (^), negate
     , Float, toFloat, isNaN, isInfinite
     , Eq, (==), (/=)
-    , (<), (>), (<=), (>=), max, min, clamp, compare, Order(..)
+    , Ord, (<), (>), (<=), (>=), max, min, clamp, Order(..)
     , Bool(..), not, (&&), (||), xor
     , (++)
     , identity, (<|), (|>), (<<), (>>), Never, never
@@ -28,10 +28,11 @@ module Basics exposing
 
 ## Comparison
 
-These functions only work on `comparable` types. This includes numbers,
-characters, strings and arrays of comparable things.
+These functions work on any type with an `Ord` instance. That is numbers,
+characters, strings and arrays of ordered things, and whatever a program
+derives or writes an instance for.
 
-@docs Order, (<), (>), (<=), (>=), max, min, clamp, compare
+@docs Ord, Order, (<), (>), (<=), (>=), max, min, clamp
 
 
 ## Booleans
@@ -365,38 +366,95 @@ instance Eq Bool where
 -- COMPARISONS
 
 
-{-| -}
-lt : comparable -> comparable -> Bool
-lt =
-    Gren.Kernel.Utils.lt
+{-| Types whose values have a total ordering.
+
+`Dict` keys and `Set` members are exactly the types that have an instance, and
+`<`, `>`, `<=`, `>=`, `max`, `min` and `clamp` are all `compare` in disguise.
+
+-}
+class Ord a where
+    compare : a -> a -> Order
+
+
+instance Ord Int where
+    compare a b =
+        Gren.Kernel.Utils.compare a b
+
+
+-- All NaNs are one equivalence class and they sort after every other value
+-- (`docs/arithmetic.md` A2). IEEE leaves NaN unordered, which makes `compare`
+-- neither antisymmetric nor transitive -- and `Dict` uses only `compare`, so an
+-- intransitive one does not fail, it silently loses keys.
+
+
+instance Ord Float where
+    compare a b =
+        if isNaN a then
+            if isNaN b then
+                EQ
+
+            else
+                GT
+
+        else if isNaN b then
+            LT
+
+        else
+            Gren.Kernel.Utils.compare a b
 
 
 {-| -}
-gt : comparable -> comparable -> Bool
-gt =
-    Gren.Kernel.Utils.gt
+lt : Ord a => a -> a -> Bool
+lt a b =
+    when compare a b is
+        LT ->
+            True
+
+        _ ->
+            False
 
 
 {-| -}
-le : comparable -> comparable -> Bool
-le =
-    Gren.Kernel.Utils.le
+gt : Ord a => a -> a -> Bool
+gt a b =
+    when compare a b is
+        GT ->
+            True
+
+        _ ->
+            False
 
 
 {-| -}
-ge : comparable -> comparable -> Bool
-ge =
-    Gren.Kernel.Utils.ge
+le : Ord a => a -> a -> Bool
+le a b =
+    when compare a b is
+        GT ->
+            False
+
+        _ ->
+            True
 
 
-{-| Find the smaller of two comparables.
+{-| -}
+ge : Ord a => a -> a -> Bool
+ge a b =
+    when compare a b is
+        LT ->
+            False
+
+        _ ->
+            True
+
+
+{-| Find the smaller of two values.
 
     min 42 12345678 == 42
 
     min "abc" "xyz" == "abc"
 
 -}
-min : comparable -> comparable -> comparable
+min : Ord a => a -> a -> a
 min x y =
     if lt x y then
         x
@@ -405,14 +463,14 @@ min x y =
         y
 
 
-{-| Find the larger of two comparables.
+{-| Find the larger of two values.
 
     max 42 12345678 == 12345678
 
     max "abc" "xyz" == "xyz"
 
 -}
-max : comparable -> comparable -> comparable
+max : Ord a => a -> a -> a
 max x y =
     if gt x y then
         x
@@ -421,7 +479,7 @@ max x y =
         y
 
 
-{-| Clamps a number within a given range. With the expression
+{-| Clamps a value within a given range. With the expression
 `clamp 100 200 x` the results are as follows:
 
     100     if x < 100
@@ -429,32 +487,16 @@ max x y =
     200     if 200 <= x
 
 -}
-clamp : number -> number -> number -> number
-clamp low high number =
-    if lt number low then
+clamp : Ord a => a -> a -> a -> a
+clamp low high value =
+    if lt value low then
         low
 
-    else if gt number high then
+    else if gt value high then
         high
 
     else
-        number
-
-
-{-| Compare any two comparable values. Comparable values include `String`,
-`Char`, `Int`, `Float`, or an array or tuple containing comparable values. These
-are also the only values that work as `Dict` keys or `Set` members.
-
-    compare 3 4 == LT
-
-    compare 4 4 == EQ
-
-    compare 5 4 == GT
-
--}
-compare : comparable -> comparable -> Order
-compare =
-    Gren.Kernel.Utils.compare
+        value
 
 
 {-| Represents the relative ordering of two things.

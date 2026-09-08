@@ -5,10 +5,11 @@ module Dict exposing
     , keys, values
     , map, foldl, foldr, keepIf, mapAndKeepJust, partition
     , union, intersect, diff, merge
+    , fromStringPairs
     )
 
-{-| A dictionary mapping unique keys to values. The keys can be any comparable
-type. This includes `Int`, `Float`, `Time`, `Char` and `String`.
+{-| A dictionary mapping unique keys to values. The keys can be any type with
+an `Ord` instance. This includes `Int`, `Float`, `Char` and `String`.
 
 Set, remove, and query operations all take _O(log n)_ time.
 
@@ -38,12 +39,18 @@ Set, remove, and query operations all take _O(log n)_ time.
 
 @docs union, intersect, diff, merge
 
+
+## Kernel
+
+@docs fromStringPairs
+
 -}
 
 
 import Array exposing (Array)
 import Basics exposing (..)
 import Maybe exposing (..)
+import String exposing (String)
 
 
 
@@ -116,7 +123,7 @@ dictionary.
     get "Spike" animals == Nothing
 
 -}
-get : comparable -> Dict comparable v -> Maybe v
+get : Ord k => k -> Dict k v -> Maybe v
 get targetKey dict =
     when dict is
         RBEmpty_gren_builtin ->
@@ -136,7 +143,7 @@ get targetKey dict =
 
 {-| Determine if a key is in a dictionary.
 -}
-member : comparable -> Dict comparable v -> Bool
+member : Ord k => k -> Dict k v -> Bool
 member key dict =
     when get key dict is
         Just _ ->
@@ -259,6 +266,25 @@ all fn dict =
             True
 
 
+-- Kernel code cannot pass a witness (`docs/m1b-classes.md` §G29). A constrained
+-- binding takes its witnesses before its first real argument, so JavaScript
+-- that writes `A3(__Dict_set, key, value, dict)` now has the arity wrong and
+-- builds a partial application instead of a dictionary. The JavaScript that
+-- has to build a `Dict String v` -- environment variables, HTTP headers --
+-- hands its pairs to this instead, where `Ord String` is resolved at a known
+-- type and nothing is abstracted over.
+
+
+{-| Build a `Dict String v` from an array of pairs.
+
+This exists for kernel code and there is no reason to reach for it: `Array.foldl`
+and `set` say the same thing and read better.
+-}
+fromStringPairs : Array { key : String, value : v } -> Dict String v
+fromStringPairs pairs =
+    Array.foldl (\pair dict -> set pair.key pair.value dict) empty pairs
+
+
 {-| Determine if a dictionary is empty.
 
     isEmpty empty == True
@@ -277,7 +303,7 @@ isEmpty dict =
 {-| Sets a value for a given key. Existing values will be replaced.
 If the key isn't already registered, the key-value pair will be inserted.
 -}
-set : comparable -> v -> Dict comparable v -> Dict comparable v
+set : Ord k => k -> v -> Dict k v -> Dict k v
 set setKey setValue dict =
     -- Root node is always Black
     when setHelp setKey setValue dict is
@@ -288,7 +314,7 @@ set setKey setValue dict =
             x
 
 
-setHelp : comparable -> v -> Dict comparable v -> Dict comparable v
+setHelp : Ord k => k -> v -> Dict k v -> Dict k v
 setHelp key value dict =
     when dict is
         RBEmpty_gren_builtin ->
@@ -331,7 +357,7 @@ balance color key value left right =
 {-| Remove a key-value pair from a dictionary. If the key is not found,
 no changes are made.
 -}
-remove : comparable -> Dict comparable v -> Dict comparable v
+remove : Ord k => k -> Dict k v -> Dict k v
 remove key dict =
     -- Root node is always Black
     when removeHelp key dict is
@@ -348,7 +374,7 @@ makes sure that the bottom node is red by moving red colors down the tree throug
 and color flips. Any violations this will cause, can easily be fixed by balancing on the way
 up again.
 -}
-removeHelp : comparable -> Dict comparable v -> Dict comparable v
+removeHelp : Ord k => k -> Dict k v -> Dict k v
 removeHelp targetKey dict =
     when dict is
         RBEmpty_gren_builtin ->
@@ -377,7 +403,7 @@ removeHelp targetKey dict =
                 removeHelpEQGT targetKey (removeHelpPrepEQGT targetKey dict color key value left right)
 
 
-removeHelpPrepEQGT : comparable -> Dict comparable v -> NColor -> comparable -> v -> Dict comparable v -> Dict comparable v -> Dict comparable v
+removeHelpPrepEQGT : Ord k => k -> Dict k v -> NColor -> k -> v -> Dict k v -> Dict k v -> Dict k v
 removeHelpPrepEQGT targetKey dict color key value left right =
     when left is
         RBNode_gren_builtin { color = Red, key = lK, value = lV, left = lLeft, right = lRight } ->
@@ -398,7 +424,7 @@ removeHelpPrepEQGT targetKey dict color key value left right =
 {-| When we find the node we are looking for, we can remove by replacing the key-value
 pair with the key-value pair of the left-most node on the right side (the closest pair).
 -}
-removeHelpEQGT : comparable -> Dict comparable v -> Dict comparable v
+removeHelpEQGT : Ord k => k -> Dict k v -> Dict k v
 removeHelpEQGT targetKey dict =
     when dict is
         RBNode_gren_builtin { color, key, value, left, right } ->
@@ -500,7 +526,7 @@ moveRedRight dict =
 
 {-| Update the value of a dictionary for a specific key with a given function.
 -}
-update : comparable -> (Maybe v -> Maybe v) -> Dict comparable v -> Dict comparable v
+update : Ord k => k -> (Maybe v -> Maybe v) -> Dict k v -> Dict k v
 update targetKey alter dictionary =
     when alter (get targetKey dictionary) is
         Just value ->
@@ -513,7 +539,7 @@ update targetKey alter dictionary =
 {-| Same as [update](#update) but if the key doesn't exist in the dictionary, a default value
 is passed to the provided update function instead of a `Maybe`.
 -}
-updateWithDefault : comparable -> v -> (v -> v) -> Dict comparable v -> Dict comparable v
+updateWithDefault : Ord k => k -> v -> (v -> v) -> Dict k v -> Dict k v
 updateWithDefault targetKey defaultValue alter dictionary =
     when get targetKey dictionary is
         Just value ->
@@ -525,7 +551,7 @@ updateWithDefault targetKey defaultValue alter dictionary =
 
 {-| Create a dictionary with one key-value pair.
 -}
-singleton : comparable -> v -> Dict comparable v
+singleton : Ord k => k -> v -> Dict k v
 singleton key value =
     -- Root node is always Black
     node Black key value RBEmpty_gren_builtin RBEmpty_gren_builtin
@@ -538,7 +564,7 @@ singleton key value =
 {-| Combine two dictionaries. If there is a collision, preference is given
 to the first dictionary.
 -}
-union : Dict comparable v -> Dict comparable v -> Dict comparable v
+union : Ord k => Dict k v -> Dict k v -> Dict k v
 union t1 t2 =
     foldl set t2 t1
 
@@ -546,14 +572,14 @@ union t1 t2 =
 {-| Keep a key-value pair when its key appears in the second dictionary.
 Preference is given to values in the first dictionary.
 -}
-intersect : Dict comparable v -> Dict comparable v -> Dict comparable v
+intersect : Ord k => Dict k v -> Dict k v -> Dict k v
 intersect t1 t2 =
     keepIf (\k _ -> member k t2) t1
 
 
 {-| Keep a key-value pair when its key does not appear in the second dictionary.
 -}
-diff : Dict comparable a -> Dict comparable b -> Dict comparable a
+diff : Ord k => Dict k a -> Dict k b -> Dict k a
 diff t1 t2 =
     foldl (\k v t -> remove k t) t1 t2
 
@@ -626,7 +652,7 @@ foldr func acc t =
 
 {-| Keep only the key-value pairs that pass the given test.
 -}
-keepIf : (comparable -> v -> Bool) -> Dict comparable v -> Dict comparable v
+keepIf : Ord k => (k -> v -> Bool) -> Dict k v -> Dict k v
 keepIf isGood dict =
     foldl
         (\k v d ->
@@ -642,7 +668,7 @@ keepIf isGood dict =
 
 {-| Remove unwanted results of a map operation.
 -}
-mapAndKeepJust : (comparable -> v -> Maybe x) -> Dict comparable v -> Dict comparable x
+mapAndKeepJust : Ord k => (k -> v -> Maybe x) -> Dict k v -> Dict k x
 mapAndKeepJust toMaybe dict =
     foldl
         (\k v d ->
@@ -661,7 +687,7 @@ mapAndKeepJust toMaybe dict =
 contains all key-value pairs which passed the test, and the second contains
 the pairs that did not.
 -}
-partition : (comparable -> v -> Bool) -> Dict comparable v -> { trues : Dict comparable v, falses : Dict comparable v }
+partition : Ord k => (k -> v -> Bool) -> Dict k v -> { trues : Dict k v, falses : Dict k v }
 partition isGood dict =
     let
         add key value { trues, falses } =
@@ -713,11 +739,12 @@ accumulators for when a given key appears:
 
 -}
 merge :
-    (comparable -> a -> result -> result)
-    -> (comparable -> a -> b -> result -> result)
-    -> (comparable -> b -> result -> result)
-    -> Dict comparable a
-    -> Dict comparable b
+    Ord k
+    => (k -> a -> result -> result)
+    -> (k -> a -> b -> result -> result)
+    -> (k -> b -> result -> result)
+    -> Dict k a
+    -> Dict k b
     -> result
     -> result
 merge leftStep bothStep rightStep leftDict rightDict initialResult =

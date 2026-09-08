@@ -25,6 +25,14 @@ function _Utils_eqHelp(x, y, depth, stack) {
     return true;
   }
 
+  // All NaNs are one equivalence class (`docs/arithmetic.md` A2), so that
+  // `Eq Float` is a relation and `a == b` agrees with `compare a b == EQ`.
+  // `x !== x` is true of NaN and of nothing else, so this costs one comparison
+  // on the unequal path and says nothing about any other type.
+  if (x !== x && y !== y) {
+    return true;
+  }
+
   if (typeof x !== "object" || x === null || y === null) {
     typeof x === "function" && __Debug_crash(5);
     return false;

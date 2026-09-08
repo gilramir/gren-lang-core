@@ -28,7 +28,7 @@ module Math exposing
 
 -}
 
-import Basics exposing (Int, Float, (==), (/), (*), (<))
+import Basics exposing (Int, Float, Ord, (==), (/), (*), (<))
 import Gren.Kernel.Math
 
 
@@ -179,7 +179,7 @@ remainderBy =
 [abs]: https://en.wikipedia.org/wiki/Absolute_value
 
 -}
-abs : number -> number
+abs : Ord number => number -> number
 abs n =
     if n < 0 then
         -n

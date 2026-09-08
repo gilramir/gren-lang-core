@@ -28,7 +28,7 @@ module Char exposing
 
 -}
 
-import Basics exposing ((&&), (<=), (>=), (||), Bool, Eq, Int)
+import Basics exposing ((&&), (<=), (>=), (||), Bool, Eq, Int, Ord)
 import Gren.Kernel.Char
 import Gren.Kernel.Utils
 
@@ -297,3 +297,8 @@ fromCode =
 instance Eq Char where
     eq a b =
         Gren.Kernel.Utils.equal a b
+
+
+instance Ord Char where
+    compare a b =
+        Gren.Kernel.Utils.compare a b

@@ -878,3 +878,8 @@ sliceUnits =
 instance Eq String where
     eq a b =
         Gren.Kernel.Utils.equal a b
+
+
+instance Ord String where
+    compare a b =
+        Gren.Kernel.Utils.compare a b

@@ -7,9 +7,9 @@ module Set exposing
     , map, foldl, foldr, keepIf, mapAndKeepJust, partition
     )
 
-{-| A set of unique values. The values can be any comparable type. This
-includes `Int`, `Float`, `Time`, `Char`, `String`, and tuples or arrays
-of comparable types.
+{-| A set of unique values. The values can be any type with an `Ord`
+instance. This includes `Int`, `Float`, `Char`, `String`, and arrays of
+ordered values.
 
 Set, remove, and query operations all take _O(log n)_ time.
 
@@ -63,21 +63,21 @@ empty =
 
 {-| Create a set with one value.
 -}
-singleton : comparable -> Set comparable
+singleton : Ord a => a -> Set a
 singleton key =
     Set_gren_builtin (Dict.singleton key {})
 
 
 {-| Set a value into a set.
 -}
-set : comparable -> Set comparable -> Set comparable
+set : Ord a => a -> Set a -> Set a
 set key (Set_gren_builtin dict) =
     Set_gren_builtin (Dict.set key {} dict)
 
 
 {-| Remove a value from a set. If the value is not found, no changes are made.
 -}
-remove : comparable -> Set comparable -> Set comparable
+remove : Ord a => a -> Set a -> Set a
 remove key (Set_gren_builtin dict) =
     Set_gren_builtin (Dict.remove key dict)
 
@@ -85,7 +85,7 @@ remove key (Set_gren_builtin dict) =
 {-| Toggle a value in a set. If the value isn't in the set, it is added. If the
 value is in the set, it is removed.
 -}
-toggle : comparable -> Set comparable -> Set comparable
+toggle : Ord a => a -> Set a -> Set a
 toggle key (Set_gren_builtin dict) =
     when Dict.get key dict is
         Just _ ->
@@ -104,7 +104,7 @@ isEmpty (Set_gren_builtin dict) =
 
 {-| Determine if a value is in a set.
 -}
-member : comparable -> Set comparable -> Bool
+member : Ord a => a -> Set a -> Bool
 member key (Set_gren_builtin dict) =
     Dict.member key dict
 
@@ -160,14 +160,14 @@ all fn (Set_gren_builtin dict) =
 
 {-| Get the union of two sets. Keep all values.
 -}
-union : Set comparable -> Set comparable -> Set comparable
+union : Ord a => Set a -> Set a -> Set a
 union (Set_gren_builtin dict1) (Set_gren_builtin dict2) =
     Set_gren_builtin (Dict.union dict1 dict2)
 
 
 {-| Get the intersection of two sets. Keeps values that appear in both sets.
 -}
-intersect : Set comparable -> Set comparable -> Set comparable
+intersect : Ord a => Set a -> Set a -> Set a
 intersect (Set_gren_builtin dict1) (Set_gren_builtin dict2) =
     Set_gren_builtin (Dict.intersect dict1 dict2)
 
@@ -175,7 +175,7 @@ intersect (Set_gren_builtin dict1) (Set_gren_builtin dict2) =
 {-| Get the difference between the first set and the second. Keeps values
 that do not appear in the second set.
 -}
-diff : Set comparable -> Set comparable -> Set comparable
+diff : Ord a => Set a -> Set a -> Set a
 diff (Set_gren_builtin dict1) (Set_gren_builtin dict2) =
     Set_gren_builtin (Dict.diff dict1 dict2)
 
@@ -189,7 +189,7 @@ toArray (Set_gren_builtin dict) =
 
 {-| Convert an array into a set, removing any duplicates.
 -}
-fromArray : Array comparable -> Set comparable
+fromArray : Ord a => Array a -> Set a
 fromArray array =
     Array.foldl set empty array
 
@@ -210,7 +210,7 @@ foldr func initialState (Set_gren_builtin dict) =
 
 {-| Map a function onto a set, creating a new set with no duplicates.
 -}
-map : (comparable -> comparable2) -> Set comparable -> Set comparable2
+map : Ord b => (a -> b) -> Set a -> Set b
 map func coll =
     foldl (\x xs -> set (func x) xs) empty coll
 
@@ -230,7 +230,7 @@ map func coll =
     -- positives == Set.fromArray [1,2]
 
 -}
-keepIf : (comparable -> Bool) -> Set comparable -> Set comparable
+keepIf : Ord a => (a -> Bool) -> Set a -> Set a
 keepIf isGood (Set_gren_builtin dict) =
     Set_gren_builtin (Dict.keepIf (\key _ -> isGood key) dict)
 
@@ -249,7 +249,7 @@ keepIf isGood (Set_gren_builtin dict) =
 
     -- numbers == Set.fromArray [ 3, -5 ]
 -}
-mapAndKeepJust : (comparable -> Maybe comparable2) -> Set comparable -> Set comparable2
+mapAndKeepJust : Ord b => (a -> Maybe b) -> Set a -> Set b
 mapAndKeepJust toMaybe coll =
     foldl
         (\old news ->
@@ -267,7 +267,7 @@ mapAndKeepJust toMaybe coll =
 {-| Create two new sets. The first contains all the elements that passed the
 given test, and the second contains all the elements that did not.
 -}
-partition : (comparable -> Bool) -> Set comparable -> { trues : Set comparable, falses : Set comparable }
+partition : Ord a => (a -> Bool) -> Set a -> { trues : Set a, falses : Set a }
 partition isGood (Set_gren_builtin dict) =
     let
         { trues, falses } =
