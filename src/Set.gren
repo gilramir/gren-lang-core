@@ -276,3 +276,21 @@ partition isGood (Set_gren_builtin dict) =
     { trues = Set_gren_builtin trues
     , falses = Set_gren_builtin falses
     }
+
+
+
+-- `Set` is a `Dict` whose values are `{}`, so it inherits `Dict`'s problem and
+-- its answer both: same members, different insertion orders, different tree
+-- shapes, and they must compare equal (`classes.md` §2.5).
+--
+-- Written over `toArray` rather than over the wrapped dictionary, which would
+-- read `eq (Set_gren_builtin a) (Set_gren_builtin b) = a == b`. That version is
+-- shorter and asks for `Eq (Dict a {})`, whose second argument is an empty
+-- record — a witness the resolver would have to build out of no fields at all
+-- (D140). It is the right answer for a question this instance does not need to
+-- ask.
+
+
+instance Eq a => Eq (Set a) where
+    eq a b =
+        toArray a == toArray b

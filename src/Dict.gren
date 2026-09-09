@@ -783,3 +783,29 @@ merge leftStep bothStep rightStep leftDict rightDict initialResult =
             foldl stepState { array = foldl (\key value array -> Array.pushLast { key = key, value = value } array) [] leftDict, result = initialResult } rightDict
     in
     Array.foldl (\{ key, value } result -> leftStep key value result) intermediateResult leftovers
+
+
+
+-- Two dictionaries with the same contents have the same *contents* and
+-- different *shapes*: a red-black tree records the order its keys arrived in,
+-- so `set 1 .. |> set 2 ..` and `set 2 .. |> set 1 ..` are structurally
+-- different values that must compare equal. That is `classes.md` §2.5's
+-- headline and the reason `Dict` is one of the two types the spec names as
+-- writing its own instance rather than deriving one — the derived answer is
+-- not merely private here, it is wrong. Stock Gren corrects it by matching
+-- constructor tags inside `_Utils_eqHelp`; that walker is deleted (D142) and
+-- this is what replaces the correction.
+--
+-- The in-order traversal is what both sides are reduced to, and it is
+-- canonical because the tree is ordered by `Ord k` and there is only one
+-- `Ord k` to order it by (§8.6, an instance is global). `keys` before `values`
+-- because a difference in the keys is the common one, and `&&` does not
+-- evaluate the second traversal when the first has already answered.
+--
+-- The context is `Eq`, not `Ord`: ordering built the tree, but comparing two
+-- built trees only ever asks whether two elements are the same.
+
+
+instance (Eq k, Eq v) => Eq (Dict k v) where
+    eq a b =
+        keys a == keys b && values a == values b
