@@ -335,8 +335,11 @@ them to be positive.
 weighted : { weight : Float, value : a } -> Array { weight : Float, value : a } -> Generator a
 weighted first others =
   let
+    normalize { weight = weight } =
+      abs weight
+
     total =
-      abs first.weight + (Array.foldl (\each sum -> sum + abs each.weight) 0 others)
+      normalize first + (Array.foldl (\weight sum -> sum + normalize weight) 0 others)
   in
   map (getByWeight first others) (float 0 total)
 
