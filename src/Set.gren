@@ -44,6 +44,7 @@ Set, remove, and query operations all take _O(log n)_ time.
 import Array exposing (Array)
 import Basics exposing (..)
 import Dict
+import Inspect exposing (Inspect)
 import Maybe exposing (Maybe(..))
 
 
@@ -294,3 +295,12 @@ partition isGood (Set_gren_builtin dict) =
 instance Eq a => Eq (Set a) where
     eq a b =
         toArray a == toArray b
+
+
+-- `representation.md` R5: `Set [1, 2]`, the other half of what the kernel's
+-- `Debug.js` special case did by hand.
+
+
+instance Inspect a => Inspect (Set a) where
+    inspect members =
+        Inspect.ctor "Set" [ inspect (toArray members) ]

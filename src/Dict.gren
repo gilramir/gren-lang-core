@@ -49,6 +49,7 @@ Set, remove, and query operations all take _O(log n)_ time.
 
 import Array exposing (Array)
 import Basics exposing (..)
+import Inspect exposing (Inspect)
 import Maybe exposing (..)
 import String exposing (String)
 
@@ -809,3 +810,25 @@ merge leftStep bothStep rightStep leftDict rightDict initialResult =
 instance (Eq k, Eq v) => Eq (Dict k v) where
     eq a b =
         keys a == keys b && values a == values b
+
+
+-- `representation.md` R5: `Dict { "a" = 1 }`, which is the record shape with the
+-- keys rendered by their own instance rather than written as identifiers. This
+-- is what replaces the `Gren/Kernel/Debug.js` special case that printed a
+-- red-black tree as a dictionary -- an ordinary instance, in the module that
+-- owns the type, exactly as `classes.md` §2.5 asks (`m1b-classes.md` §G43).
+
+
+instance (Inspect k, Inspect v) => Inspect (Dict k v) where
+    inspect dict =
+        Inspect.ctor
+            "Dict"
+            [ Inspect.record
+                (foldl
+                    (\key value entries ->
+                        Array.pushLast { name = inspect key, value = inspect value } entries
+                    )
+                    []
+                    dict
+                )
+            ]

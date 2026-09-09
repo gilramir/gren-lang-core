@@ -1,0 +1,325 @@
+module Inspect exposing
+    ( Inspect
+    , ctor, record, arg
+    )
+
+{-| Turning a value into a string a person can read.
+
+`inspect` is `Debug.toString`'s replacement (D16) and differs from it in the
+two ways that matter: it is available in packages and in optimized builds, and
+its format is **written down** — `docs/representation.md` R5 pins it, so that
+`DESIGN.md` §8's differential harness can compare it byte-for-byte across
+backends. The format is unstable across Gren versions and pinned within one.
+
+@docs Inspect
+
+
+## Writing an instance
+
+An abstract type whose structure is private supplies its own instance rather
+than deriving one (`classes.md` §2.5), and these three are how it produces
+R5's shapes without restating them.
+
+@docs ctor, record, arg
+
+-}
+
+import Array exposing (Array)
+import Basics exposing (..)
+import Bitwise
+import Char exposing (Char)
+import Maybe exposing (Maybe(..))
+import Result exposing (Result(..))
+import String exposing (String)
+
+
+{-| Types that can be rendered as a string.
+
+Every transparent type derives this without asking, the way it derives `Eq` and
+`Ord` (`classes.md` §2.1). A **function** derives nothing, so `inspect` on one
+is a compile error rather than the `<function>` stock Gren prints.
+
+-}
+class Inspect a where
+    inspect : a -> String
+
+
+
+-- THE THREE SHAPES A DERIVED INSTANCE PRODUCES
+--
+-- The generator decides *which* components to render and this module decides
+-- what the rendering looks like, so R5 is one file rather than a rule spread
+-- between `Canonicalize.Derive` and here. A hand-written instance uses the
+-- same three and comes out looking like a derived one.
+
+
+{-| A constructor and its rendered arguments: `ctor "Just" [ arg (inspect x) ]`.
+
+    ctor "Nothing" [] == "Nothing"
+
+    ctor "Just" [ "1" ] == "Just 1"
+
+-}
+ctor : String -> Array String -> String
+ctor name args =
+    if Array.length args == 0 then
+        name
+
+    else
+        name ++ " " ++ String.join " " args
+
+
+{-| A record's fields, which R5 orders **alphabetically by name** for §2.2's
+reason: a Gren record is structural, so declaration order is not a property of
+its type.
+
+    record [ { name = "x", value = "1" } ] == "{ x = 1 }"
+
+-}
+record : Array { name : String, value : String } -> String
+record fields =
+    if Array.length fields == 0 then
+        "{}"
+
+    else
+        "{ "
+            ++ String.join ", " (Array.map (\entry -> entry.name ++ " = " ++ entry.value) fields)
+            ++ " }"
+
+
+{-| One rendered value, ready to be a constructor's argument: parenthesized if
+it is itself a constructor applied to something.
+
+    arg "1" == "1"
+
+    arg "Just 1" == "(Just 1)"
+
+    arg "[1, 2]" == "[1, 2]"
+
+R5 says a nested constructor is parenthesized — `Just (Just 1)` — and
+`inspect : a -> String` gives an instance no way to be told it is in an
+argument position. So the decision is made from the rendered string, which is
+exact rather than approximate: R5's grammar is closed, and a **top-level
+space** appears in exactly one of its shapes. A record's spaces are inside its
+braces, an array's inside its brackets, and a string's or character's inside
+its quotes, so tracking those three is the whole test.
+
+-}
+arg : String -> String
+arg rendered =
+    if hasTopLevelSpace 0 Nothing (String.toArray rendered) then
+        "(" ++ rendered ++ ")"
+
+    else
+        rendered
+
+
+hasTopLevelSpace : Int -> Maybe Char -> Array Char -> Bool
+hasTopLevelSpace depth quote chars =
+    when Array.popFirst chars is
+        Nothing ->
+            False
+
+        Just { first = c, rest } ->
+            when quote is
+                Just quoteChar ->
+                    if c == '\\' then
+                        hasTopLevelSpace depth quote (Array.dropFirst 1 rest)
+
+                    else if c == quoteChar then
+                        hasTopLevelSpace depth Nothing rest
+
+                    else
+                        hasTopLevelSpace depth quote rest
+
+                Nothing ->
+                    if c == '"' || c == '\'' then
+                        hasTopLevelSpace depth (Just c) rest
+
+                    else if c == '[' || c == '{' || c == '(' then
+                        hasTopLevelSpace (depth + 1) Nothing rest
+
+                    else if c == ']' || c == '}' || c == ')' then
+                        hasTopLevelSpace (depth - 1) Nothing rest
+
+                    else if c == ' ' && depth == 0 then
+                        True
+
+                    else
+                        hasTopLevelSpace depth Nothing rest
+
+
+
+-- THE PRIMITIVES
+--
+-- R5's scalar table, one instance per row. `Int` and `Float` print bare and
+-- the sized numeric types are suffixed; D2 has not built those yet, so this
+-- list is the two.
+
+
+instance Inspect Int where
+    inspect n =
+        String.fromInt n
+
+
+{-| R5: bare, always a decimal point, and `nan` / `infinity` / `-infinity` for
+the three A1 says exist on every backend. `-0.0` renders with its sign even
+though A2 makes it compare equal to `0.0`.
+
+`String.fromFloat` is JavaScript's `Number.prototype.toString` today, so what
+is written here is the part of R5 that can be reached from it: the three
+non-finite names, the sign of negative zero, and a decimal point where JS omits
+one. R5's shortest-round-trip Ryu and its `1.0e21` exponent form are not built
+and are registered.
+
+-}
+instance Inspect Float where
+    inspect f =
+        if isNaN f then
+            "nan"
+
+        else if isInfinite f then
+            if f < 0.0 then
+                "-infinity"
+
+            else
+                "infinity"
+
+        else if isNegativeZero f then
+            "-0.0"
+
+        else
+            withDecimalPoint (String.fromFloat f)
+
+
+isNegativeZero : Float -> Bool
+isNegativeZero f =
+    f == 0.0 && isInfinite (1.0 / f)
+
+
+withDecimalPoint : String -> String
+withDecimalPoint rendered =
+    if String.contains "." rendered || String.contains "e" rendered then
+        rendered
+
+    else
+        rendered ++ ".0"
+
+
+instance Inspect Bool where
+    inspect b =
+        if b then
+            "True"
+
+        else
+            "False"
+
+
+instance Inspect Char where
+    inspect c =
+        "'" ++ escape '\'' c ++ "'"
+
+
+instance Inspect String where
+    inspect s =
+        "\"" ++ String.join "" (Array.map (\c -> escape '"' c) (String.toArray s)) ++ "\""
+
+
+{-| One character, escaped for whichever quote encloses it.
+
+R5: `\\`, `\"`, `\n`, `\r`, `\t`, and any other non-printable as `\u{XXXX}`
+with uppercase hex and no leading zeros. A quote is escaped only when it is the
+one doing the enclosing, so `'"'` and `"'"` stay readable.
+
+-}
+escape : Char -> Char -> String
+escape quote c =
+    if c == '\\' then
+        "\\\\"
+
+    else if c == quote then
+        "\\" ++ String.fromChar c
+
+    else if c == '\n' then
+        "\\n"
+
+    else if c == '\r' then
+        "\\r"
+
+    else if c == '\t' then
+        "\\t"
+
+    else if Char.toCode c < 0x20 || Char.toCode c == 0x7F then
+        "\\u{" ++ hex (Char.toCode c) ++ "}"
+
+    else
+        String.fromChar c
+
+
+hex : Int -> String
+hex n =
+    if n < 16 then
+        String.fromChar (hexDigit n)
+
+    else
+        hex (Bitwise.shiftRightZfBy 4 n) ++ String.fromChar (hexDigit (Bitwise.and n 0xF))
+
+
+hexDigit : Int -> Char
+hexDigit n =
+    if n < 10 then
+        Char.fromCode (Char.toCode '0' + n)
+
+    else
+        Char.fromCode (Char.toCode 'A' + n - 10)
+
+
+
+-- THE TYPES BELOW THIS MODULE IN THE IMPORT GRAPH
+--
+-- `Inspect` names `String`, so everything `String` imports is beneath it and
+-- cannot import back to derive: `Basics`, `Array`, `Maybe` and `Result` are
+-- all in that set. Their instances are written here, which D11 allows because
+-- this is the class's own module. Every core module *above* this one derives
+-- in the ordinary way once it imports `Inspect`.
+
+
+instance Inspect Order where
+    inspect order =
+        when order is
+            LT ->
+                "LT"
+
+            EQ ->
+                "EQ"
+
+            GT ->
+                "GT"
+
+
+instance Inspect a => Inspect (Maybe a) where
+    inspect m =
+        when m is
+            Just value ->
+                ctor "Just" [ arg (inspect value) ]
+
+            Nothing ->
+                "Nothing"
+
+
+instance (Inspect error, Inspect value) => Inspect (Result error value) where
+    inspect r =
+        when r is
+            Ok value ->
+                ctor "Ok" [ arg (inspect value) ]
+
+            Err error ->
+                ctor "Err" [ arg (inspect error) ]
+
+
+{-| R5: `[1, 2, 3]` and `[]`. An element is **not** parenthesized, because a
+bracket already delimits it.
+-}
+instance Inspect a => Inspect (Array a) where
+    inspect xs =
+        "[" ++ String.join ", " (Array.map (\x -> inspect x) xs) ++ "]"
