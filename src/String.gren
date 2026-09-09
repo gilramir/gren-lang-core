@@ -883,3 +883,13 @@ instance Eq String where
 instance Ord String where
     compare a b =
         Gren.Kernel.Utils.compare a b
+
+
+-- `a ++ b` is `prepend`, not `append`: `String.append` is the reversed one
+-- (`docs/m1b-classes.md` §G34.2). So the method is the kernel primitive the
+-- operator always ran, with its arguments in the order it always had them.
+
+
+instance Appendable String where
+    append a b =
+        Gren.Kernel.String.append a b

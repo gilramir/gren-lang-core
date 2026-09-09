@@ -814,6 +814,15 @@ instance Ord a => Ord (Array a) where
         compareFrom 0 a b
 
 
+-- No context, unlike `Ord (Array a)`: appending two arrays does not look at an
+-- element, so there is nothing for the instance to be handed.
+
+
+instance Appendable (Array a) where
+    append a b =
+        Gren.Kernel.Array.append a b
+
+
 compareFrom : Ord a => Int -> Array a -> Array a -> Order
 compareFrom index a b =
     when get index a is

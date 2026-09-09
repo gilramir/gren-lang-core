@@ -175,16 +175,3 @@ function _Utils_update(oldRecord, updatedFields) {
 
   return newRecord;
 }
-
-// APPEND
-
-var _Utils_append = F2(_Utils_ap);
-
-function _Utils_ap(xs, ys) {
-  // append Strings
-  if (typeof xs === "string") {
-    return xs + ys;
-  }
-
-  return xs.concat(ys);
-}

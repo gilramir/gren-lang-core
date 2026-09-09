@@ -614,27 +614,22 @@ xor =
 -- APPEND
 
 
-{-| The types `++` puts together: `String` and `Array a`.
-
-Closed, like [`Num`](#Num), and for the same reason: one kernel implementation
-serves both members, so there is nothing for an instance to supply. It is due to
-leave the language along with `++` itself, in favour of `String.append` and
-`Array.append`.
-
--}
-class Appendable a
-
-
-{-| Put two appendable things together. This includes strings and arrays.
+{-| The types `++` puts together, by way of `append`, which is what `++` is:
 
     "hello" ++ "world" == "helloworld"
 
     [ 1, 1, 2 ] ++ [ 3, 5, 8 ] == [ 1, 1, 2, 3, 5, 8 ]
 
+
+An ordinary open class as of D138: `String` and `Array a` are its two instances
+because they are the two `core` declares, not because the compiler knows their
+names. `++` is `append`, so a use of the operator picks its instance from the
+type at that use, and what used to decide it — a `typeof` test inside the kernel
+— is gone.
+
 -}
-append : Appendable a => a -> a -> a
-append =
-    Gren.Kernel.Utils.append
+class Appendable a where
+    append : a -> a -> a
 
 
 
