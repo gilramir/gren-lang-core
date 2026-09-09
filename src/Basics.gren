@@ -405,6 +405,23 @@ instance Ord Float where
             Gren.Kernel.Utils.compare a b
 
 
+-- Written rather than derived, and it is the one instance in `core` that has to
+-- be. `Bool` is transparent, so D139 would derive it, and §2.2 orders a custom
+-- type by **constructor declaration order** -- which for a type declared
+-- `True | False` is `True < False`. `classes.md` §7 asks for `False < True`,
+-- which is what every other language and every version of Gren before this one
+-- answers, and what `false < true` means in the JavaScript a `Bool` compiles
+-- to. The written instance wins over the derived one (`m1b-classes.md` §G37.5)
+-- and that is exactly the escape §2.5 designed for a type whose structural
+-- answer is wrong; this is the first time it has been needed at a *transparent*
+-- type (§G42.3).
+
+
+instance Ord Bool where
+    compare a b =
+        Gren.Kernel.Utils.compare a b
+
+
 {-| -}
 lt : Ord a => a -> a -> Bool
 lt a b =
