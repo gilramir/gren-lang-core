@@ -45,6 +45,7 @@ effect module Time where { subscription = MySub } exposing
 import Array exposing (Array)
 import Basics exposing (..)
 import Dict
+import Inspect
 import Math
 import Maybe exposing (Maybe(..))
 import Platform

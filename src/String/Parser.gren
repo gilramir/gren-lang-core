@@ -44,6 +44,7 @@ module String.Parser exposing
 
 import Basics exposing (..)
 import Char exposing (Char)
+import Inspect
 import String exposing (String)
 import String.Parser.Advanced as A
 import Result exposing (Result(..))

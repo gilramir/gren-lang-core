@@ -41,6 +41,7 @@ module Bytes.Decode exposing
 
 import Basics exposing (..)
 import Bytes exposing (Bytes, Endianness(..))
+import Inspect
 import Maybe exposing (Maybe(..))
 import String exposing (String)
 

@@ -420,6 +420,7 @@ To hash a password:
 import Array exposing ( Array )
 import Basics exposing ( clamp, toFloat, Never, Bool(..), Int, (>), (<), (<=), (>=), (==), (*), (^), (/), (/=), (|>), (&&) )
 import Gren.Kernel.Crypto
+import Inspect
 import String exposing ( String )
 import Task exposing ( Task )
 import Debug

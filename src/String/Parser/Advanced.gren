@@ -60,6 +60,7 @@ import Bitwise
 import String exposing (String)
 import Array exposing (Array)
 import Char exposing (Char)
+import Inspect
 import Result exposing (Result(..))
 import Maybe exposing (Maybe(..))
 import Set

@@ -80,6 +80,7 @@ We have three kinds of streams: readable streams, writable streams, and transfor
 import Array exposing (Array)
 import Basics exposing (Bool, Int, (<|), (|>), (++), max)
 import Bytes exposing (Bytes)
+import Inspect
 import Maybe exposing (Maybe(..))
 import Result exposing (Result(..))
 import String exposing (String)

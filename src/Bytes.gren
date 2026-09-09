@@ -32,6 +32,7 @@ module Bytes exposing
 
 import Array exposing (Array)
 import Basics exposing (..)
+import Inspect
 import Maybe exposing (Maybe)
 import String exposing (String)
 import Task exposing (Task)
