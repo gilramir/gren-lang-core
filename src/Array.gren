@@ -809,6 +809,11 @@ sortWith =
 -- instance is handed, and the kernel cannot call one.
 
 
+instance Eq a => Eq (Array a) where
+    eq a b =
+        length a == length b && eqFrom 0 a b
+
+
 instance Ord a => Ord (Array a) where
     compare a b =
         compareFrom 0 a b
@@ -821,6 +826,27 @@ instance Ord a => Ord (Array a) where
 instance Appendable (Array a) where
     append a b =
         Gren.Kernel.Array.append a b
+
+
+-- The lengths are checked first because they are the cheap half and because
+-- unequal lengths are the common answer; what is left is an element walk that
+-- stops at the first difference. `Ord`'s cannot do that — it has to say which
+-- way round the difference goes — which is why the two are not one function.
+
+
+eqFrom : Eq a => Int -> Array a -> Array a -> Bool
+eqFrom index a b =
+    when get index a is
+        Nothing ->
+            True
+
+        Just x ->
+            when get index b is
+                Nothing ->
+                    False
+
+                Just y ->
+                    eq x y && eqFrom (index + 1) a b
 
 
 compareFrom : Ord a => Int -> Array a -> Array a -> Order
