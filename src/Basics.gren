@@ -309,35 +309,6 @@ toFloat =
 -- EQUALITY
 
 
-{-| Check if values are &ldquo;the same&rdquo;.
-
-**Note:** Gren uses structural equality on tuples, records, and user-defined
-union types. This means the values `(3, 4)` and `(3, 4)` are definitely equal.
-This is not true in languages like JavaScript that use reference equality on
-objects.
-
-**Note:** Do not use `(==)` with functions, JSON values from `gren/json`, or
-regular expressions from `gren/regex`. It does not work. It will crash if
-possible. With JSON values, decode to Gren values before doing any equality
-checks!
-
-Why is it like this? Equality in the Gren sense can be difficult or impossible
-to compute. Proving that functions are the same is [undecidable], and JSON
-values can come in through ports and have functions, cycles, and new JS data
-types that interact weirdly with our equality implementation. In a future
-release, the compiler will detect when `(==)` is used with problematic types
-and provide a helpful error message at compile time. This will require some
-pretty serious infrastructure work, so the stopgap is to crash as quickly as
-possible.
-
-[undecidable]: https://en.wikipedia.org/wiki/Undecidable_problem
-
--}
-equal : a -> a -> Bool
-equal =
-    Gren.Kernel.Utils.equal
-
-
 {-| Check if values are not &ldquo;the same&rdquo;.
 
 So `(a /= b)` is the same as `(not (a == b))`.
@@ -360,19 +331,37 @@ class Eq a where
     eq : a -> a -> Bool
 
 
+-- The three primitive instances `Basics` can write. An `Int`, a `Float` and a
+-- `Bool` are each a JavaScript primitive, so `Gren.Kernel.Utils.identical` --
+-- `===` -- is what "the same" means at one (D142, `docs/m1b-classes.md` §G40).
+-- What all three called until D142 was the kernel's structural walker, which
+-- read the shape of both values at run time and was right about an `Int` by
+-- accident.
+
+
 instance Eq Int where
     eq a b =
-        equal a b
+        Gren.Kernel.Utils.identical a b
+
+
+-- `Eq Float` is the one that is not `===` alone: `arithmetic.md` A2 makes all
+-- NaNs one equivalence class, so that `==` is a relation and agrees with
+-- `compare a b == EQ`. `NaN === NaN` is False and `isNaN` is the whole
+-- difference, paid on the unequal path only. `-0.0 === 0.0` is True, which is
+-- A2's answer too. Written `or`/`and` rather than `||`/`&&` because a module
+-- cannot use the operators it declares -- the table is built from imports.
 
 
 instance Eq Float where
     eq a b =
-        equal a b
+        or
+            (Gren.Kernel.Utils.identical a b)
+            (and (isNaN a) (isNaN b))
 
 
 instance Eq Bool where
     eq a b =
-        equal a b
+        Gren.Kernel.Utils.identical a b
 
 
 

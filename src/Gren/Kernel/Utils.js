@@ -1,106 +1,24 @@
 /*
 
 import Basics exposing (LT, EQ, GT)
-import Dict exposing (foldl)
-import Gren.Kernel.Debug exposing (crash)
-import Set exposing (toArray)
-import Gren.Kernel.Array exposing (fromBuilder)
 
 */
 
 // EQUALITY
 
-function _Utils_eq(x, y) {
-  for (
-    var pair, stack = [], isEqual = _Utils_eqHelp(x, y, 0, stack);
-    isEqual && (pair = stack.pop());
-    isEqual = _Utils_eqHelp(pair.a, pair.b, 0, stack)
-  ) {}
-
-  return isEqual;
-}
-
-function _Utils_eqHelp(x, y, depth, stack) {
-  if (x === y) {
-    return true;
-  }
-
-  // All NaNs are one equivalence class (`docs/arithmetic.md` A2), so that
-  // `Eq Float` is a relation and `a == b` agrees with `compare a b == EQ`.
-  // `x !== x` is true of NaN and of nothing else, so this costs one comparison
-  // on the unequal path and says nothing about any other type.
-  if (x !== x && y !== y) {
-    return true;
-  }
-
-  if (typeof x !== "object" || x === null || y === null) {
-    typeof x === "function" && __Debug_crash(5);
-    return false;
-  }
-
-  if (depth > 100) {
-    stack.push({ a: x, b: y });
-    return true;
-  }
-
-  /**__DEBUG/
-	if (x.$ === 'Set_gren_builtin')
-	{
-		x = __Set_toArray(x);
-		y = __Set_toArray(y);
-	}
-	if (x.$ === 'RBNode_gren_builtin' || x.$ === 'RBEmpty_gren_builtin')
-	{
-		x = A3(__Dict_foldl, F3(function(key, value, acc) { acc.push({ a: key, b: value }); return acc; }), [], x);
-		y = A3(__Dict_foldl, F3(function(key, value, acc) { acc.push({ a: key, b: value }); return acc; }), [], y);
-	}
-	//*/
-
-  /**__PROD/
-	if (x.$ < 0)
-	{
-		x = A3(__Dict_foldl, F3(function(key, value, acc) { acc.push({ a: key, b: value }); return acc; }), [], x);
-		y = A3(__Dict_foldl, F3(function(key, value, acc) { acc.push({ a: key, b: value }); return acc; }), [], y);
-	}
-	//*/
-
-  if (x instanceof DataView) {
-    var length = x.byteLength;
-
-    if (y.byteLength !== length) {
-      return false;
-    }
-
-    for (var i = 0; i < length; ++i) {
-      if (x.getUint8(i) !== y.getUint8(i)) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  if (x instanceof _Array_Builder) {
-    x = __Array_fromBuilder(x);
-    y = __Array_fromBuilder(y);
-  }
-
-  if (Array.isArray(x) && x.length !== y.length) {
-    return false;
-  }
-
-  var nextDepth = depth + 1;
-
-  for (var key in x) {
-    if (!_Utils_eqHelp(x[key], y[key], nextDepth, stack)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-var _Utils_equal = F2(_Utils_eq);
+// `===`, which is what `Eq Int`, `Eq Float`, `Eq Bool` and `Eq String` are
+// (D142, `docs/m1b-classes.md` §G40). `Generate.CoreJS.Expression.kernelCall`
+// writes the operator at a saturated call, so this definition is what a
+// reference to the name compiles to and not what a comparison costs.
+//
+// What was here was `_Utils_eq`: a loop with an explicit stack that read
+// `typeof`, `Array.isArray` and a `for…in` at run time, plus a hand-written
+// special case for `Dict` and for `Set` — which is what made this file import
+// them. `==` is `Eq`'s method now, so a type's own instance says what it means,
+// and there is nothing left for a walker to decide.
+var _Utils_identical = F2(function (a, b) {
+  return a === b;
+});
 
 // COMPARISONS
 

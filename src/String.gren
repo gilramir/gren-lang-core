@@ -875,9 +875,15 @@ sliceUnits =
     Gren.Kernel.String.sliceUnits
 
 
+-- A `String` is a JavaScript primitive, so `===` is what "the same" means at
+-- one, and `Gren.Kernel.Utils.identical` is `===` (D142,
+-- `docs/m1b-classes.md` §G40). What this called until D142 was the kernel's
+-- structural walker, which reached the same answer through a `typeof`.
+
+
 instance Eq String where
     eq a b =
-        Gren.Kernel.Utils.equal a b
+        Gren.Kernel.Utils.identical a b
 
 
 instance Ord String where

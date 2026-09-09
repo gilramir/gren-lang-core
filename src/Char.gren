@@ -294,9 +294,16 @@ fromCode =
     Gren.Kernel.Char.fromCode
 
 
+-- Not `Gren.Kernel.Utils.identical`, which the other four primitive instances
+-- are: a `Char` is a one-character string in a release build and a boxed
+-- `String` object in a dev build, so that `Debug.toString` can tell one from a
+-- `String`, and `===` on two boxes is reference equality. `Char.identical`
+-- unwraps in the mode that wraps (D142, `docs/m1b-classes.md` §G40).
+
+
 instance Eq Char where
     eq a b =
-        Gren.Kernel.Utils.equal a b
+        Gren.Kernel.Char.identical a b
 
 
 instance Ord Char where

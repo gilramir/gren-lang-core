@@ -258,10 +258,10 @@ function _Debug_crash__DEBUG(identifier, fact1, fact2, fact3, fact4) {
           problem,
       );
 
-    case 5:
-      throw new Error(
-        'Trying to use `(==)` on functions.\nThere is no way to know if functions are "the same" in the Gren sense.\nRead more about this at https://package.gren-lang.org/packages/gren-lang/core/latest/Basics#== which describes why it is this way and what the better version will look like.',
-      );
+    // 5 was `(==)` on functions, thrown by the kernel's structural walker when
+    // it reached one. D142 deleted the walker (`docs/m1b-classes.md` §G40) and
+    // the type checker asks the question first: a function type has no `Eq`
+    // instance, so `f == g` does not compile and there is nothing to throw.
 
     case 6:
       var moduleName = fact1;
