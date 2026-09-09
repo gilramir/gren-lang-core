@@ -57,7 +57,7 @@ equals a provided constant.
     hasValue 5 Nothing == False
 
 -}
-hasValue : a -> Maybe a -> Bool
+hasValue : Eq a => a -> Maybe a -> Bool
 hasValue value maybe =
     when maybe is
         Just contained ->

@@ -101,9 +101,6 @@ function _Utils_eqHelp(x, y, depth, stack) {
 }
 
 var _Utils_equal = F2(_Utils_eq);
-var _Utils_notEqual = F2(function (a, b) {
-  return !_Utils_eq(a, b);
-});
 
 // COMPARISONS
 

@@ -428,16 +428,22 @@ removeHelpEQGT : Ord k => k -> Dict k v -> Dict k v
 removeHelpEQGT targetKey dict =
     when dict is
         RBNode_gren_builtin { color, key, value, left, right } ->
-            if targetKey == key then
-                when getMin right is
-                    RBNode_gren_builtin { key = minKey, value = minValue } ->
-                        balance color minKey minValue left (removeMin right)
+            -- `compare ... is EQ` rather than `targetKey == key`, which is what
+            -- this said while `==` was the kernel's structural walker. A `Dict`
+            -- is ordered by `compare` and searched by it a few lines above
+            -- (`getHelp`), so asking a second question here was a latent
+            -- disagreement as well as an `Eq k` this signature does not carry.
+            when compare targetKey key is
+                EQ ->
+                    when getMin right is
+                        RBNode_gren_builtin { key = minKey, value = minValue } ->
+                            balance color minKey minValue left (removeMin right)
 
-                    RBEmpty_gren_builtin ->
-                        RBEmpty_gren_builtin
+                        RBEmpty_gren_builtin ->
+                            RBEmpty_gren_builtin
 
-            else
-                balance color key value left (removeHelp targetKey right)
+                _ ->
+                    balance color key value left (removeHelp targetKey right)
 
         RBEmpty_gren_builtin ->
             RBEmpty_gren_builtin

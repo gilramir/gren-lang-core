@@ -55,7 +55,7 @@ type Result error value
     Result.hasValue 123 (Err "failed") == False
 
 -}
-hasValue : a -> Result x a -> Bool
+hasValue : Eq a => a -> Result x a -> Bool
 hasValue value result =
     when result is
         Ok a ->

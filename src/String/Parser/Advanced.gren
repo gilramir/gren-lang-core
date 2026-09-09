@@ -1343,7 +1343,7 @@ renderDeadEnds output extract src deadEnds =
         |> Array.mapAndFlatten (\(Line l) -> l)
 
 
-gatherEqualsBy : (a -> b) -> Array a -> Array (Array a)
+gatherEqualsBy : Eq b => (a -> b) -> Array a -> Array (Array a)
 gatherEqualsBy fn array =
   let
     helper gathered scattered =

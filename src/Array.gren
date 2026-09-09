@@ -292,7 +292,7 @@ findLast =
     member 4 [1,2,3,4] == True
 
 -}
-member : a -> Array a -> Bool
+member : Eq a => a -> Array a -> Bool
 member value array =
     when findFirst (\v -> v == value) array is
         Just _ ->

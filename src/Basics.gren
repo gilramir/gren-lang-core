@@ -63,7 +63,7 @@ infix right 0 (<|) = apL
 infix left  0 (|>) = apR
 infix right 2 (||) = or
 infix right 3 (&&) = and
-infix non   4 (==) = equal
+infix non   4 (==) = eq
 infix non   4 (/=) = notEqual
 infix non   4 (<) = lt
 infix non   4 (>) = gt
@@ -343,9 +343,9 @@ equal =
 So `(a /= b)` is the same as `(not (a == b))`.
 
 -}
-notEqual : a -> a -> Bool
-notEqual =
-    Gren.Kernel.Utils.notEqual
+notEqual : Eq a => a -> a -> Bool
+notEqual a b =
+    not (eq a b)
 
 
 {-| Types whose values can be compared for equality.
