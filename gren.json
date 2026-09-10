@@ -44,7 +44,11 @@
             "String",
             "Char",
             "Bitwise",
-            "Math"
+            "Math",
+            "Int64",
+            "UInt32",
+            "UInt64",
+            "Float32"
         ],
         "Random": [
             "Random"

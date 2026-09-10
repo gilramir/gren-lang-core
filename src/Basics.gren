@@ -2,6 +2,7 @@ module Basics exposing
     ( Int, Num, (+), (-), (*), (^)
     , Integral, (//)
     , Float, Fractional, (/), toFloat
+    , Int64, UInt32, UInt64, Float32
     , Eq, (==), (/=)
     , Ord, (<), (>), (<=), (>=), max, min, clamp, Order(..)
     , Bool(..), not, (&&), (||), xor
@@ -30,6 +31,17 @@ crashing (A3).
 ## Float
 
 @docs Float, Fractional, (/), toFloat
+
+
+## The sized numeric types
+
+D2 gives Gren four more numeric types beside `Int` and `Float`, for the values
+that have a width on the other side of an interface -- a file offset, a hash, a
+protobuf field -- rather than a width the machine picked. Each is a member of
+the same classes `Int` or `Float` is, so the operators do not change; the
+module named after each type holds its bounds and its conversions.
+
+@docs Int64, UInt32, UInt64, Float32
 
 
 ## Equality
@@ -154,6 +166,70 @@ type Float
     = Float -- NOTE: The compiler provides the real implementation.
 
 
+{-| A 64-bit signed integer: `-2^63` to `2^63 - 1`.
+
+`docs/int64-migration.md` M1 is the rule for when to reach for one:
+
+> An index into something in memory is an `Int`; the size, offset or position
+> of something outside the process is an `Int64`.
+
+So a file's byte size, a database row id and a timestamp in milliseconds are
+`Int64`, and an `Array` index, a `String` length and a loop counter are `Int`.
+The reason is cost rather than taste: an `Int64` is a `BigInt` when Gren
+generates JavaScript, which is 20-30x an `Int` on arithmetic-dominated code, and
+`Int` is what almost everything is.
+
+Everything an `Int` can do an `Int64` can do -- it is a member of `Num`,
+`Integral` and `Bitwise.Bits`, so `+`, `//`, `modBy` and `Bitwise.shiftLeftBy`
+all work on one -- and [Int64](Int64) has the bounds and the conversions.
+
+-}
+type Int64
+    = Int64 -- NOTE: The compiler provides the real implementation.
+
+
+{-| A 32-bit unsigned integer: `0` to `2^32 - 1`.
+
+The type for a value that is a bit pattern rather than a quantity: a hash, a
+PCG generator's state, a protobuf fixed32, a colour channel packed four to a
+word. Arithmetic on one wraps at `2^32` the way an `Int`'s wraps at `2^31`
+(`docs/arithmetic.md` A6), and both right shifts are the logical one, because
+there is no sign bit to propagate (A11).
+
+`shiftRightZfBy 0` is **not** the way to get one from an `Int`. That idiom
+worked in Gren before this type existed and it produced a value typed `Int` that
+no 32-bit signed integer can hold; [UInt32.fromIntWrap](UInt32#fromIntWrap) is
+the conversion it was standing in for.
+
+-}
+type UInt32
+    = UInt32 -- NOTE: The compiler provides the real implementation.
+
+
+{-| A 64-bit unsigned integer: `0` to `2^64 - 1`.
+
+`UInt32`'s reasons at twice the width, and `Int64`'s cost: it is a `BigInt` when
+Gren generates JavaScript.
+
+-}
+type UInt64
+    = UInt64 -- NOTE: The compiler provides the real implementation.
+
+
+{-| A 32-bit IEEE 754 binary floating-point number.
+
+`docs/arithmetic.md` A8: every operation on one rounds to single precision, so
+a `Float32` holds what a C `float` holds and nothing wider. It is the type for
+data that is single precision on the other side of an interface -- a vertex
+buffer, an audio sample, a protobuf `float` -- and not the type to compute in.
+`Float` is the default for a reason: it is what the machine is fast at, and on
+JavaScript a `Float32` is a `Float` with a rounding step after every operation.
+
+-}
+type Float32
+    = Float32 -- NOTE: The compiler provides the real implementation.
+
+
 {-| The types arithmetic works on: `Int` and `Float`.
 
 `Num` is a **closed** class: which types belong to it is fixed by the compiler
@@ -224,7 +300,7 @@ negateInt : Int -> Int
 -- Truncating division and its remainder. Both have a **non-zero divisor** as a
 -- precondition (C13), which is why nothing outside this module may reach them:
 -- A3's total `//`, `divFloor`, `remainderBy` and `modBy` are the wrappers that
--- guard it, and `powInt`'s halving is the one other caller -- it divides by 2.
+-- guard it -- and `powIntegral`'s halving, which divides by `2`.
 
 
 @prim("i32_div")
@@ -235,53 +311,90 @@ divInt : Int -> Int -> Int
 remInt : Int -> Int -> Int
 
 
--- `docs/arithmetic.md` A7 at an `Int`, which is the one `Num` method with no
--- primitive under it at either member: the negative-exponent case is a rule
--- about what the true value truncates to, and truncation of a fraction is not
--- a machine instruction.
---
--- Square-and-multiply rather than repeated multiplication, because an exponent
--- is an `Int` and `2 ^ 2147483647` must not be two billion multiplications. It
--- is 31 of them, and every one wraps, so `2 ^ 32` is `0` and stays `0`.
+{-| `docs/arithmetic.md` A7 at an integer type, written once for all four of
+them.
 
+Square-and-multiply rather than repeated multiplication, because `2 ^ 2147483647`
+must not be two billion multiplications. It is one per bit of the exponent -- 31
+of them at an `Int` -- and every one wraps, so `2 ^ 32` is `0` at an `Int` and
+stays `0`.
 
-powInt : Int -> Int -> Int
-powInt base exponent =
-    if lt exponent 0 then
+**The three constants are arguments, and that is D149 showing through.** A
+numeric literal takes its width from its type, and at a type variable there is
+no width to read -- so a `1` written in this body would be the JavaScript number
+`1` at every member, which is the value `Int` wants and a `BigInt` type error at
+`Int64`. Each instance passes its own instead, where the type is concrete and
+the literal is the value it says.
+
+**The division and the remainder are arguments too, and that is a
+measurement.** They could be `//` and `remainderBy`, which are total and would
+need no argument -- and writing it that way put `Integral Int` in the linked set
+of every program that says `+`, because a witness is one binding and `pow` is a
+field of it. That is eight bindings and five record fields in the smallest
+program in the corpus, to reach a guard against a divisor of `2`. So the raw
+primitives are handed in, with a non-zero divisor as their precondition (C13)
+and `two` as the only divisor they ever see.
+
+-}
+powIntegral :
+    (Num a, Eq a, Ord a)
+    => a
+    -> a
+    -> a
+    -> (a -> a -> a)
+    -> (a -> a -> a)
+    -> a
+    -> a
+    -> a
+powIntegral zero one two rawDiv rawRem base exponent =
+    if lt exponent zero then
         -- The true value is a fraction strictly between -1 and 1 at every base
         -- but 1 and -1, so it truncates to zero -- and `0 ^ -n` is zero by A3
         -- rather than by this branch, since the true value there is not finite.
-        if eq base 1 then
-            1
+        if eq base one then
+            one
 
-        else if eq base (negate 1) then
-            if eq (remInt exponent 2) 0 then
-                1
+        else if eq base (negate one) then
+            if eq (rawRem exponent two) zero then
+                one
 
             else
-                negate 1
+                negate one
 
         else
-            0
+            zero
 
     else
-        powIntLoop base exponent 1
+        powIntegralLoop zero two rawDiv rawRem base exponent one
 
 
-powIntLoop : Int -> Int -> Int -> Int
-powIntLoop base exponent acc =
-    if eq exponent 0 then
+powIntegralLoop :
+    (Num a, Eq a)
+    => a
+    -> a
+    -> (a -> a -> a)
+    -> (a -> a -> a)
+    -> a
+    -> a
+    -> a
+    -> a
+powIntegralLoop zero two rawDiv rawRem base exponent acc =
+    if eq exponent zero then
         acc
 
     else
-        powIntLoop
-            (mulInt base base)
-            (divInt exponent 2)
-            (if eq (remInt exponent 2) 0 then
+        powIntegralLoop
+            zero
+            two
+            rawDiv
+            rawRem
+            (mul base base)
+            (rawDiv exponent two)
+            (if eq (rawRem exponent two) zero then
                 acc
 
              else
-                mulInt acc base
+                mul acc base
             )
 
 
@@ -299,7 +412,7 @@ instance Num Int where
         negateInt a
 
     pow a b =
-        powInt a b
+        powIntegral 0 1 2 divInt remInt a b
 
 
 @prim("f64_add")
@@ -507,6 +620,386 @@ powFloat =
     Gren.Kernel.Basics.pow
 
 
+-- D2'S FOUR SIZED NUMERIC TYPES
+--
+-- Every closed-class instance in the language is here, and that is forced
+-- rather than chosen (D148). `Canonicalize.Module` checks that each member of a
+-- closed class has an instance **in the module that declares the class**, which
+-- is `classes.md` §1.2's third rule and §G43.3's lesson: the membership table in
+-- the compiler and the instances in `core` are two statements of one fact, and
+-- the check is what keeps them from coming apart. So `Num`, `Integral` and
+-- `Fractional` bring their six, four and two instances here, `Bitwise` holds
+-- `Bits`', and the modules named after the types hold what is left -- the
+-- bounds and A10's conversions.
+--
+-- A width's primitives sit with its instances, which is why there are four
+-- blocks below rather than one list of thirty-odd `@prim` declarations.
+
+
+-- INT64
+
+
+@prim("i64_add")
+addInt64 : Int64 -> Int64 -> Int64
+
+
+@prim("i64_sub")
+subInt64 : Int64 -> Int64 -> Int64
+
+
+@prim("i64_mul")
+mulInt64 : Int64 -> Int64 -> Int64
+
+
+@prim("i64_neg")
+negateInt64 : Int64 -> Int64
+
+
+@prim("i64_div")
+divInt64 : Int64 -> Int64 -> Int64
+
+
+@prim("i64_rem")
+remInt64 : Int64 -> Int64 -> Int64
+
+
+@prim("i64_eq")
+eqInt64 : Int64 -> Int64 -> Bool
+
+
+@prim("i64_lt")
+ltInt64 : Int64 -> Int64 -> Bool
+
+
+instance Num Int64 where
+    add a b =
+        addInt64 a b
+
+    sub a b =
+        subInt64 a b
+
+    mul a b =
+        mulInt64 a b
+
+    negate a =
+        negateInt64 a
+
+    pow a b =
+        powIntegral 0 1 2 divInt64 remInt64 a b
+
+
+instance Integral Int64 where
+    idiv n d =
+        if eq d 0 then
+            0
+
+        else
+            divInt64 n d
+
+    divFloor d n =
+        if eq d 0 then
+            0
+
+        else
+            let
+                q =
+                    divInt64 n d
+            in
+            if signsDisagreeInt64 (remInt64 n d) d then
+                subInt64 q 1
+
+            else
+                q
+
+    remainderBy d n =
+        if eq d 0 then
+            n
+
+        else
+            remInt64 n d
+
+    modBy d n =
+        if eq d 0 then
+            n
+
+        else
+            let
+                r =
+                    remInt64 n d
+            in
+            if signsDisagreeInt64 r d then
+                addInt64 r d
+
+            else
+                r
+
+
+signsDisagreeInt64 : Int64 -> Int64 -> Bool
+signsDisagreeInt64 r d =
+    and (not (eqInt64 r 0)) (not (eq (ltInt64 r 0) (ltInt64 d 0)))
+
+
+
+-- UINT32
+--
+-- A11: on an unsigned type the truncating and the Euclidean pairing coincide,
+-- so `divFloor` is `idiv`'s body and `modBy` is `remainderBy`'s. Writing the
+-- redundancy out is four lines; splitting `Integral` into a signed and an
+-- unsigned class, or moving these to per-module functions and losing generic
+-- `Integral a` code, are what it buys off.
+
+
+@prim("u32_add")
+addUInt32 : UInt32 -> UInt32 -> UInt32
+
+
+@prim("u32_sub")
+subUInt32 : UInt32 -> UInt32 -> UInt32
+
+
+@prim("u32_mul")
+mulUInt32 : UInt32 -> UInt32 -> UInt32
+
+
+@prim("u32_neg")
+negateUInt32 : UInt32 -> UInt32
+
+
+@prim("u32_div")
+divUInt32 : UInt32 -> UInt32 -> UInt32
+
+
+@prim("u32_rem")
+remUInt32 : UInt32 -> UInt32 -> UInt32
+
+
+@prim("u32_eq")
+eqUInt32 : UInt32 -> UInt32 -> Bool
+
+
+@prim("u32_lt")
+ltUInt32 : UInt32 -> UInt32 -> Bool
+
+
+instance Num UInt32 where
+    add a b =
+        addUInt32 a b
+
+    sub a b =
+        subUInt32 a b
+
+    mul a b =
+        mulUInt32 a b
+
+    negate a =
+        negateUInt32 a
+
+    pow a b =
+        powIntegral 0 1 2 divUInt32 remUInt32 a b
+
+
+instance Integral UInt32 where
+    idiv n d =
+        if eq d 0 then
+            0
+
+        else
+            divUInt32 n d
+
+    divFloor d n =
+        if eq d 0 then
+            0
+
+        else
+            divUInt32 n d
+
+    remainderBy d n =
+        if eq d 0 then
+            n
+
+        else
+            remUInt32 n d
+
+    modBy d n =
+        if eq d 0 then
+            n
+
+        else
+            remUInt32 n d
+
+
+
+-- UINT64
+
+
+@prim("u64_add")
+addUInt64 : UInt64 -> UInt64 -> UInt64
+
+
+@prim("u64_sub")
+subUInt64 : UInt64 -> UInt64 -> UInt64
+
+
+@prim("u64_mul")
+mulUInt64 : UInt64 -> UInt64 -> UInt64
+
+
+@prim("u64_neg")
+negateUInt64 : UInt64 -> UInt64
+
+
+@prim("u64_div")
+divUInt64 : UInt64 -> UInt64 -> UInt64
+
+
+@prim("u64_rem")
+remUInt64 : UInt64 -> UInt64 -> UInt64
+
+
+@prim("u64_eq")
+eqUInt64 : UInt64 -> UInt64 -> Bool
+
+
+@prim("u64_lt")
+ltUInt64 : UInt64 -> UInt64 -> Bool
+
+
+instance Num UInt64 where
+    add a b =
+        addUInt64 a b
+
+    sub a b =
+        subUInt64 a b
+
+    mul a b =
+        mulUInt64 a b
+
+    negate a =
+        negateUInt64 a
+
+    pow a b =
+        powIntegral 0 1 2 divUInt64 remUInt64 a b
+
+
+instance Integral UInt64 where
+    idiv n d =
+        if eq d 0 then
+            0
+
+        else
+            divUInt64 n d
+
+    divFloor d n =
+        if eq d 0 then
+            0
+
+        else
+            divUInt64 n d
+
+    remainderBy d n =
+        if eq d 0 then
+            n
+
+        else
+            remUInt64 n d
+
+    modBy d n =
+        if eq d 0 then
+            n
+
+        else
+            remUInt64 n d
+
+
+
+-- FLOAT32
+--
+-- A8: every operation rounds to single precision, which on JavaScript is
+-- `Math.fround` and is `Generate.CoreJS.Prim`'s to write, not this module's.
+-- `pow` is the exception and it is A9's: `Math.pow` already disagrees across
+-- V8, glibc, musl and Erlang in the last bits, so both float widths reach the
+-- same kernel call until the fdlibm port replaces it -- and at `Float32` the
+-- rounding on the way out is what makes the disagreement invisible for all but
+-- the last few results.
+
+
+@prim("f32_add")
+addFloat32 : Float32 -> Float32 -> Float32
+
+
+@prim("f32_sub")
+subFloat32 : Float32 -> Float32 -> Float32
+
+
+@prim("f32_mul")
+mulFloat32 : Float32 -> Float32 -> Float32
+
+
+@prim("f32_neg")
+negateFloat32 : Float32 -> Float32
+
+
+@prim("f32_div")
+divFloat32 : Float32 -> Float32 -> Float32
+
+
+@prim("f32_isnan")
+isNaNFloat32 : Float32 -> Bool
+
+
+@prim("f32_isinf")
+isInfiniteFloat32 : Float32 -> Bool
+
+
+@prim("f32_eq")
+eqFloat32 : Float32 -> Float32 -> Bool
+
+
+@prim("f32_lt")
+ltFloat32 : Float32 -> Float32 -> Bool
+
+
+-- The two crossings, declared here because `pow` needs them and `Basics` cannot
+-- import `Float32` -- that module imports this one. `Float32.toFloat` and
+-- `Float32.fromFloat` are the same two primitives, exposed where A10 puts them.
+
+
+@prim("f32_to_f64")
+widenFloat32 : Float32 -> Float
+
+
+@prim("f64_to_f32")
+narrowToFloat32 : Float -> Float32
+
+
+instance Num Float32 where
+    add a b =
+        addFloat32 a b
+
+    sub a b =
+        subFloat32 a b
+
+    mul a b =
+        mulFloat32 a b
+
+    negate a =
+        negateFloat32 a
+
+    pow a b =
+        narrowToFloat32 (powFloat (widenFloat32 a) (widenFloat32 b))
+
+
+instance Fractional Float32 where
+    fdiv a b =
+        divFloat32 a b
+
+    isNaN a =
+        isNaNFloat32 a
+
+    isInfinite a =
+        isInfiniteFloat32 a
+
+
 
 -- INT TO FLOAT / FLOAT TO INT
 
@@ -550,12 +1043,16 @@ class Eq a where
     eq : a -> a -> Bool
 
 
--- The three primitive instances `Basics` can write. An `Int`, a `Float` and a
--- `Bool` are each a JavaScript primitive, so `Gren.Kernel.Utils.identical` --
--- `===` -- is what "the same" means at one (D142, `docs/m1b-classes.md` §G40).
--- What all three called until D142 was the kernel's structural walker, which
--- read the shape of both values at run time and was right about an `Int` by
--- accident.
+-- The primitive instances `Basics` can write. An `Int`, a `Float` and a `Bool`
+-- are each a JavaScript primitive, so `Gren.Kernel.Utils.identical` -- `===` --
+-- is what "the same" means at one (D142, `docs/m1b-classes.md` §G40). What all
+-- three called until D142 was the kernel's structural walker, which read the
+-- shape of both values at run time and was right about an `Int` by accident.
+--
+-- D2's four sized types use their own `eq` primitive instead of the kernel.
+-- `i64_eq` *is* `===` on JavaScript, so this is the same answer written down
+-- rather than found at run time -- and it is the answer at a backend where a
+-- 64-bit integer is not a JavaScript value at all.
 
 
 instance Eq Int where
@@ -581,6 +1078,32 @@ instance Eq Float where
 instance Eq Bool where
     eq a b =
         Gren.Kernel.Utils.identical a b
+
+
+instance Eq Int64 where
+    eq a b =
+        eqInt64 a b
+
+
+instance Eq UInt32 where
+    eq a b =
+        eqUInt32 a b
+
+
+instance Eq UInt64 where
+    eq a b =
+        eqUInt64 a b
+
+
+-- A2 at the other float width: all NaNs are one equivalence class, so that `==`
+-- is a relation and agrees with `compare a b == EQ`.
+
+
+instance Eq Float32 where
+    eq a b =
+        or
+            (eqFloat32 a b)
+            (and (isNaNFloat32 a) (isNaNFloat32 b))
 
 
 
@@ -639,6 +1162,60 @@ instance Ord Float where
 instance Ord Bool where
     compare a b =
         Gren.Kernel.Utils.compare a b
+
+
+-- D2's four, over the `lt` primitive of each width. `Gren.Kernel.Utils.compare`
+-- is a run-time dispatch on the shape of its arguments and there is nothing for
+-- it to learn here: the instance already knows the width, so it names the
+-- comparison. Two calls at worst, and the second only when the first says no.
+
+
+compareOver : (a -> a -> Bool) -> a -> a -> Order
+compareOver lessThan a b =
+    if lessThan a b then
+        LT
+
+    else if lessThan b a then
+        GT
+
+    else
+        EQ
+
+
+instance Ord Int64 where
+    compare a b =
+        compareOver ltInt64 a b
+
+
+instance Ord UInt32 where
+    compare a b =
+        compareOver ltUInt32 a b
+
+
+instance Ord UInt64 where
+    compare a b =
+        compareOver ltUInt64 a b
+
+
+-- A2 again: IEEE leaves NaN unordered, which would make `compare` neither
+-- antisymmetric nor transitive, and `Dict` uses only `compare` -- so an
+-- intransitive one does not fail, it silently loses keys.
+
+
+instance Ord Float32 where
+    compare a b =
+        if isNaNFloat32 a then
+            if isNaNFloat32 b then
+                EQ
+
+            else
+                GT
+
+        else if isNaNFloat32 b then
+            LT
+
+        else
+            compareOver ltFloat32 a b
 
 
 {-| -}

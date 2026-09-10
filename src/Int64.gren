@@ -1,0 +1,174 @@
+module Int64 exposing
+    ( minValue, maxValue
+    , fromInt, toInt, toIntWrap, toIntChecked
+    , toFloat
+    )
+
+{-| The bounds and the conversions of a 64-bit signed integer.
+
+The **type** is [Basics.Int64](Basics#Int64) rather than this module's, because
+`Basics` is imported into every module without being asked and a width that had
+to be imported before it could be written in a type annotation would be a width
+nobody used. So this module is the arithmetic's companion and not its home:
+`+`, `//`, `modBy` and `Bitwise.shiftLeftBy` all work on an `Int64` with no
+import at all, and what is here is what only this width can answer.
+
+**When to use one.** `docs/int64-migration.md` M1: an index into something in
+memory is an `Int`; the size, offset or position of something outside the
+process is an `Int64`. A file's byte size, a database row id and a timestamp
+in milliseconds are `Int64`; an `Array` index is not.
+
+
+## Bounds
+
+@docs minValue, maxValue
+
+
+## Conversions
+
+`docs/arithmetic.md` A10's rule is that **arithmetic wraps and conversions
+saturate**. Widening from `Int` is exact and has one name; narrowing to `Int`
+has three, and they are the three different things a caller can mean:
+
+  - [toInt](#toInt) saturates -- an `Int64` above `2147483647` becomes
+    `2147483647`. This is the one to reach for when the number is a quantity.
+  - [toIntWrap](#toIntWrap) keeps the low 32 bits. This is the one to reach for
+    when the number is a bit pattern -- a hash, a protobuf field, a checksum.
+  - [toIntChecked](#toIntChecked) answers `Nothing` rather than either.
+
+There is deliberately no wrapping *conversion* that silently turns a large
+positive into a negative: that is the `Time` bug class D2 exists to end, and a
+caller who wants the low bits says so.
+
+@docs fromInt, toInt, toIntWrap, toIntChecked
+
+
+## To a float
+
+@docs toFloat
+
+-}
+
+import Basics exposing (Bool, Float, Int, Int64, Num, Ord, (<), (>))
+import Bitwise
+import Maybe exposing (Maybe(..))
+
+
+-- BOUNDS
+
+
+{-| `-9223372036854775808`.
+
+Written as the complement of [maxValue](#maxValue) rather than as digits, and
+the reason is a limit of the frontend rather than of the type: a literal is
+carried through canonicalization as a machine `Int`, so `9223372036854775808`
+-- one past that -- cannot be written down even though its negation is a
+perfectly good `Int64`. D63's range check at `docs/m1b-int.md` §I8 step 6 is
+where that has to be fixed; until then this is the honest way to say it, and it
+is exact by two's complement.
+
+-}
+minValue : Int64
+minValue =
+    Bitwise.complement maxValue
+
+
+{-| `9223372036854775807`.
+-}
+maxValue : Int64
+maxValue =
+    9223372036854775807
+
+
+
+-- CONVERSIONS
+
+
+{-| Widen an `Int`. Exact, total, and the conversion that every `Int64` in a
+migrated API is reached through.
+
+    Int64.fromInt 42 == Int64.fromInt 42
+
+-}
+@prim("i32_to_i64")
+fromInt : Int -> Int64
+
+
+{-| Narrow to an `Int`, **saturating** at `Int`'s bounds.
+
+    Int64.toInt (Int64.fromInt 42) == 42
+
+    Int64.toInt Int64.maxValue == 2147483647
+
+    Int64.toInt Int64.minValue == -2147483648
+
+-}
+toInt : Int64 -> Int
+toInt n =
+    if n > maxIntAsInt64 then
+        2147483647
+
+    else if n < minIntAsInt64 then
+        -2147483648
+
+    else
+        toIntWrap n
+
+
+{-| Narrow to an `Int` by keeping the **low 32 bits**.
+
+    Int64.toIntWrap (Int64.fromInt 42) == 42
+
+    Int64.toIntWrap Int64.maxValue == -1
+
+-}
+@prim("i64_to_i32")
+toIntWrap : Int64 -> Int
+
+
+{-| Narrow to an `Int`, or `Nothing` when it does not fit.
+
+    Int64.toIntChecked (Int64.fromInt 42) == Just 42
+
+    Int64.toIntChecked Int64.maxValue == Nothing
+
+-}
+toIntChecked : Int64 -> Maybe Int
+toIntChecked n =
+    if n > maxIntAsInt64 then
+        Nothing
+
+    else if n < minIntAsInt64 then
+        Nothing
+
+    else
+        Just (toIntWrap n)
+
+
+-- `Int`'s two bounds, as `Int64`s. They are literals rather than conversions of
+-- literals because a literal takes its width from its type (D149), so the
+-- digits here *are* an `Int64` and no conversion runs.
+
+
+maxIntAsInt64 : Int64
+maxIntAsInt64 =
+    2147483647
+
+
+minIntAsInt64 : Int64
+minIntAsInt64 =
+    -2147483648
+
+
+{-| Convert to a `Float`.
+
+Total, and lossy above `2^53` -- an `Int64` has 63 bits of magnitude and a
+`Float` has 53, so a large one rounds to nearest, ties to even. A10 makes this
+the one lossy-but-total conversion with no `*Wrap` sibling: there is no
+finite answer it could saturate at, because it always has one.
+
+    Int64.toFloat (Int64.fromInt 42) == 42.0
+
+-}
+@prim("i64_to_f64")
+toFloat : Int64 -> Float

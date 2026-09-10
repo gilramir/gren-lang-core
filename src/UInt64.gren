@@ -1,0 +1,178 @@
+module UInt64 exposing
+    ( minValue, maxValue
+    , fromInt, fromIntWrap, fromIntChecked
+    , toInt, toIntWrap, toIntChecked
+    , toFloat
+    )
+
+{-| The bounds and the conversions of a 64-bit unsigned integer.
+
+The **type** is [Basics.UInt64](Basics#UInt64), for the reason
+[Int64](Int64) gives.
+
+**When to use one.** [UInt32](UInt32)'s reasons at twice the width, and
+[Int64](Int64)'s cost: a `UInt64` is a JavaScript `BigInt`, so it is the type
+for a 64-bit bit pattern and not for a loop counter.
+
+
+## Bounds
+
+@docs minValue, maxValue
+
+
+## From an `Int`
+
+@docs fromInt, fromIntWrap, fromIntChecked
+
+
+## To an `Int`
+
+@docs toInt, toIntWrap, toIntChecked
+
+
+## To a float
+
+@docs toFloat
+
+-}
+
+import Basics exposing (Bool, Float, Int, Int64, UInt32, UInt64, Num, Ord, (<), (>))
+import Bitwise
+import Maybe exposing (Maybe(..))
+
+
+-- BOUNDS
+
+
+{-| `0`.
+-}
+minValue : UInt64
+minValue =
+    0
+
+
+{-| `18446744073709551615`.
+
+Written as the complement of `0` rather than as digits, for the reason
+[Int64.minValue](Int64#minValue) gives: a literal is carried through
+canonicalization as a machine `Int`, which stops one decimal short of every
+`UInt64` above `2^63 - 1`.
+
+-}
+maxValue : UInt64
+maxValue =
+    Bitwise.complement 0
+
+
+
+-- FROM AN INT
+
+
+{-| Widen an `Int`, **saturating** at `0`.
+
+    UInt64.fromInt -1 == UInt64.minValue
+
+-}
+fromInt : Int -> UInt64
+fromInt n =
+    if n < 0 then
+        0
+
+    else
+        fromIntWrap n
+
+
+{-| Widen an `Int` and reinterpret its 64 sign-extended bits as unsigned.
+
+    UInt64.fromIntWrap -1 == UInt64.maxValue
+
+-}
+fromIntWrap : Int -> UInt64
+fromIntWrap n =
+    reinterpretInt64 (widenInt n)
+
+
+{-| Widen an `Int`, or `Nothing` when it is negative.
+-}
+fromIntChecked : Int -> Maybe UInt64
+fromIntChecked n =
+    if n < 0 then
+        Nothing
+
+    else
+        Just (fromIntWrap n)
+
+
+
+-- TO AN INT
+
+
+{-| Narrow to an `Int`, **saturating** at `2147483647`.
+
+    UInt64.toInt UInt64.maxValue == 2147483647
+
+-}
+toInt : UInt64 -> Int
+toInt n =
+    if n > maxIntAsUInt64 then
+        2147483647
+
+    else
+        toIntWrap n
+
+
+{-| Narrow to an `Int` by keeping the **low 32 bits**.
+
+    UInt64.toIntWrap UInt64.maxValue == -1
+
+-}
+toIntWrap : UInt64 -> Int
+toIntWrap n =
+    reinterpretUInt32 (narrowToUInt32 n)
+
+
+{-| Narrow to an `Int`, or `Nothing` when it does not fit.
+-}
+toIntChecked : UInt64 -> Maybe Int
+toIntChecked n =
+    if n > maxIntAsUInt64 then
+        Nothing
+
+    else
+        Just (toIntWrap n)
+
+
+maxIntAsUInt64 : UInt64
+maxIntAsUInt64 =
+    2147483647
+
+
+{-| Convert to a `Float`.
+
+Total, and lossy above `2^53`: a `UInt64` has 64 bits of magnitude and a
+`Float` has 53, so a large one rounds to nearest, ties to even.
+
+-}
+@prim("u64_to_f64")
+toFloat : UInt64 -> Float
+
+
+-- The four crossings the two `Int` conversions are composed from. Each is a
+-- primitive with no precondition, and each is half of a pair the rest of A10's
+-- table will expose in its own right.
+
+
+@prim("i32_to_i64")
+widenInt : Int -> Int64
+
+
+@prim("i64_as_u64")
+reinterpretInt64 : Int64 -> UInt64
+
+
+@prim("u64_to_u32")
+narrowToUInt32 : UInt64 -> UInt32
+
+
+@prim("u32_as_i32")
+reinterpretUInt32 : UInt32 -> Int

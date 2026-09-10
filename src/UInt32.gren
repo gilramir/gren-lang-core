@@ -1,0 +1,192 @@
+module UInt32 exposing
+    ( minValue, maxValue
+    , fromInt, fromIntWrap, fromIntChecked
+    , toInt, toIntWrap, toIntChecked
+    , toFloat
+    )
+
+{-| The bounds and the conversions of a 32-bit unsigned integer.
+
+The **type** is [Basics.UInt32](Basics#UInt32), for the reason
+[Int64](Int64) gives: `+`, `//`, `modBy` and `Bitwise.shiftLeftBy` all work on
+a `UInt32` with no import at all.
+
+**When to use one.** For a value that is a bit pattern rather than a quantity:
+a hash, a PCG generator's state, a protobuf `fixed32`, four colour channels
+packed into a word. Arithmetic wraps at `2^32` the way an `Int`'s wraps at
+`2^31` (`docs/arithmetic.md` A6), both right shifts are the logical one, and
+`//` and `divFloor` are the same division because there is no sign for them to
+disagree about (A11).
+
+
+## Bounds
+
+@docs minValue, maxValue
+
+
+## From an `Int`
+
+An `Int` is signed and a `UInt32` is not, so the only `Int` a `UInt32` cannot
+hold is a negative one -- and the three names are the three things to do with
+it.
+
+@docs fromInt, fromIntWrap, fromIntChecked
+
+
+## To an `Int`
+
+An `Int` holds 31 bits of magnitude and a `UInt32` holds 32, so the only
+`UInt32` an `Int` cannot hold is one above `2147483647`.
+
+**`shiftRightZfBy 0` is not this conversion**, and in Gren before this type
+existed it was the thing people reached for. It produced a value typed `Int`
+that no 32-bit signed integer can hold; `core`'s own `Random` was built on it
+(`docs/m1b-int.md` §I12.4). [toIntWrap](#toIntWrap) is what it was standing in
+for, read in the other direction.
+
+@docs toInt, toIntWrap, toIntChecked
+
+
+## To a float
+
+@docs toFloat
+
+-}
+
+import Basics exposing (Bool, Float, Int, Int64, UInt32, Num, Ord, (<), (>))
+import Int64
+import Maybe exposing (Maybe(..))
+
+
+-- BOUNDS
+
+
+{-| `0`.
+-}
+minValue : UInt32
+minValue =
+    0
+
+
+{-| `4294967295`.
+-}
+maxValue : UInt32
+maxValue =
+    4294967295
+
+
+
+-- FROM AN INT
+
+
+{-| Widen an `Int`, **saturating** at `0`.
+
+    UInt32.fromInt 42 == UInt32.fromInt 42
+
+    UInt32.fromInt -1 == UInt32.minValue
+
+-}
+fromInt : Int -> UInt32
+fromInt n =
+    if n < 0 then
+        0
+
+    else
+        fromIntWrap n
+
+
+{-| Reinterpret an `Int`'s 32 bits as unsigned.
+
+    UInt32.fromIntWrap -1 == UInt32.maxValue
+
+-}
+@prim("i32_as_u32")
+fromIntWrap : Int -> UInt32
+
+
+{-| Widen an `Int`, or `Nothing` when it is negative.
+
+    UInt32.fromIntChecked 42 == Just (UInt32.fromInt 42)
+
+    UInt32.fromIntChecked -1 == Nothing
+
+-}
+fromIntChecked : Int -> Maybe UInt32
+fromIntChecked n =
+    if n < 0 then
+        Nothing
+
+    else
+        Just (fromIntWrap n)
+
+
+
+-- TO AN INT
+
+
+{-| Narrow to an `Int`, **saturating** at `2147483647`.
+
+    UInt32.toInt (UInt32.fromInt 42) == 42
+
+    UInt32.toInt UInt32.maxValue == 2147483647
+
+-}
+toInt : UInt32 -> Int
+toInt n =
+    if n > maxIntAsUInt32 then
+        2147483647
+
+    else
+        toIntWrap n
+
+
+{-| Reinterpret a `UInt32`'s 32 bits as signed.
+
+    UInt32.toIntWrap UInt32.maxValue == -1
+
+-}
+@prim("u32_as_i32")
+toIntWrap : UInt32 -> Int
+
+
+{-| Narrow to an `Int`, or `Nothing` when it does not fit.
+
+    UInt32.toIntChecked (UInt32.fromInt 42) == Just 42
+
+    UInt32.toIntChecked UInt32.maxValue == Nothing
+
+-}
+toIntChecked : UInt32 -> Maybe Int
+toIntChecked n =
+    if n > maxIntAsUInt32 then
+        Nothing
+
+    else
+        Just (toIntWrap n)
+
+
+maxIntAsUInt32 : UInt32
+maxIntAsUInt32 =
+    2147483647
+
+
+{-| Convert to a `Float`. Exact: 32 bits of magnitude fit in a `Float`'s 53
+with room to spare.
+
+    UInt32.toFloat UInt32.maxValue == 4294967295.0
+
+-}
+toFloat : UInt32 -> Float
+toFloat n =
+    Int64.toFloat (widen n)
+
+
+-- The lossless widening to `Int64`, which is `Int64.fromUInt32` under another
+-- name and will be that when the rest of A10's table lands. It is here now
+-- because `Core.Prim` has no `u32_to_f64`: 32 bits of magnitude reach a `Float`
+-- exactly through any path, and one that goes through the widest integer is
+-- the path every backend already has.
+
+
+@prim("u32_to_i64")
+widen : UInt32 -> Int64

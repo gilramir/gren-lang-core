@@ -1,0 +1,43 @@
+module Float32 exposing (fromFloat, toFloat)
+
+{-| The conversions of a 32-bit IEEE 754 floating-point number.
+
+The **type** is [Basics.Float32](Basics#Float32), for the reason
+[Int64](Int64) gives: `+`, `/`, `isNaN` and the rest work on a `Float32` with
+no import at all.
+
+**When to use one.** For data that is single precision on the other side of an
+interface -- a vertex buffer, an audio sample, a protobuf `float` -- and not to
+compute in. `docs/arithmetic.md` A8 makes every operation round to single
+precision, which on JavaScript is a `Math.fround` after every one of them, so a
+`Float32` is slower than a `Float` and less accurate on purpose.
+
+This module has no `minValue` and no `maxValue`, and the omission is
+deliberate: a float has three different candidates for "smallest" -- the most
+negative finite value, the smallest positive normal and the smallest positive
+subnormal -- and naming one of them `minValue` would be a trap. `docs/m1b-ryu.md`
+is where the family of float constants belongs, beside the digits.
+
+@docs fromFloat, toFloat
+
+-}
+
+import Basics exposing (Float, Float32)
+
+
+{-| Round a `Float` to single precision.
+
+Total: a value too large for a `Float32` becomes an infinity, which is what
+IEEE rounding does and is not the saturation A10 gives an integer conversion.
+
+    Float32.toFloat (Float32.fromFloat 0.5) == 0.5
+
+-}
+@prim("f64_to_f32")
+fromFloat : Float -> Float32
+
+
+{-| Widen to a `Float`. Exact: every `Float32` is a `Float`.
+-}
+@prim("f32_to_f64")
+toFloat : Float32 -> Float

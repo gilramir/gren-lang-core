@@ -9,7 +9,7 @@ module Bitwise exposing
 
 -}
 
-import Basics exposing (Int, Bool, Num, Ord, (<), (>=))
+import Basics exposing (Int, Int64, UInt32, UInt64, Bool, Num, Ord, (<), (>=))
 import Gren.Kernel.Bitwise
 
 
@@ -150,6 +150,236 @@ instance Bits Int where
 
         else
             ushrInt value offset
+
+
+-- D2'S THREE OTHER INTEGER TYPES
+--
+-- A5 gives `Bits` the same four members `Integral` has, and the reason this
+-- module holds their instances rather than the modules named after the types is
+-- `Basics`'s (D148): `Canonicalize.Module` wants every member of a closed class
+-- to have an instance where the class is declared.
+--
+-- **A4's clamp is per width and the class does not carry one.** The `32` in
+-- `instance Bits Int` is `Int`'s; `Int64` and `UInt64` need `64`. That is the
+-- first thing in D2 to want a per-width constant, and `Int64.maxValue` and its
+-- siblings are where §I8.2 put the rest of them.
+--
+-- **A11 on an unsigned type: the two right shifts coincide**, because there is
+-- no sign bit to propagate, so `shiftRightBy` and `shiftRightZfBy` both bind to
+-- `ushr`. The same resolution as `Integral`'s two divisions, for the same
+-- reason: a class member exists at every member type.
+
+
+@prim("i64_and")
+andInt64 : Int64 -> Int64 -> Int64
+
+
+@prim("i64_or")
+orInt64 : Int64 -> Int64 -> Int64
+
+
+@prim("i64_xor")
+xorInt64 : Int64 -> Int64 -> Int64
+
+
+@prim("i64_not")
+complementInt64 : Int64 -> Int64
+
+
+@prim("i64_shl")
+shlInt64 : Int64 -> Int -> Int64
+
+
+@prim("i64_shr")
+shrInt64 : Int64 -> Int -> Int64
+
+
+@prim("i64_ushr")
+ushrInt64 : Int64 -> Int -> Int64
+
+
+instance Bits Int64 where
+    and a b =
+        andInt64 a b
+
+    or a b =
+        orInt64 a b
+
+    xor a b =
+        xorInt64 a b
+
+    complement a =
+        complementInt64 a
+
+    shiftLeftBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 64 then
+            0
+
+        else
+            shlInt64 value offset
+
+    shiftRightBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 64 then
+            if value < 0 then
+                -1
+
+            else
+                0
+
+        else
+            shrInt64 value offset
+
+    shiftRightZfBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 64 then
+            0
+
+        else
+            ushrInt64 value offset
+
+
+@prim("u32_and")
+andUInt32 : UInt32 -> UInt32 -> UInt32
+
+
+@prim("u32_or")
+orUInt32 : UInt32 -> UInt32 -> UInt32
+
+
+@prim("u32_xor")
+xorUInt32 : UInt32 -> UInt32 -> UInt32
+
+
+@prim("u32_not")
+complementUInt32 : UInt32 -> UInt32
+
+
+@prim("u32_shl")
+shlUInt32 : UInt32 -> Int -> UInt32
+
+
+@prim("u32_ushr")
+ushrUInt32 : UInt32 -> Int -> UInt32
+
+
+instance Bits UInt32 where
+    and a b =
+        andUInt32 a b
+
+    or a b =
+        orUInt32 a b
+
+    xor a b =
+        xorUInt32 a b
+
+    complement a =
+        complementUInt32 a
+
+    shiftLeftBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 32 then
+            0
+
+        else
+            shlUInt32 value offset
+
+    shiftRightBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 32 then
+            0
+
+        else
+            ushrUInt32 value offset
+
+    shiftRightZfBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 32 then
+            0
+
+        else
+            ushrUInt32 value offset
+
+
+@prim("u64_and")
+andUInt64 : UInt64 -> UInt64 -> UInt64
+
+
+@prim("u64_or")
+orUInt64 : UInt64 -> UInt64 -> UInt64
+
+
+@prim("u64_xor")
+xorUInt64 : UInt64 -> UInt64 -> UInt64
+
+
+@prim("u64_not")
+complementUInt64 : UInt64 -> UInt64
+
+
+@prim("u64_shl")
+shlUInt64 : UInt64 -> Int -> UInt64
+
+
+@prim("u64_ushr")
+ushrUInt64 : UInt64 -> Int -> UInt64
+
+
+instance Bits UInt64 where
+    and a b =
+        andUInt64 a b
+
+    or a b =
+        orUInt64 a b
+
+    xor a b =
+        xorUInt64 a b
+
+    complement a =
+        complementUInt64 a
+
+    shiftLeftBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 64 then
+            0
+
+        else
+            shlUInt64 value offset
+
+    shiftRightBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 64 then
+            0
+
+        else
+            ushrUInt64 value offset
+
+    shiftRightZfBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 64 then
+            0
+
+        else
+            ushrUInt64 value offset
 
 
 {-| Count the number of leading zero bits in an integer.
