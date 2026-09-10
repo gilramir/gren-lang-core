@@ -13,8 +13,8 @@ function _Char_fromCode(code) {
 }
 
 // `Eq Char` (D142, `docs/m1b-classes.md` §G40). A `Char` is a one-character
-// string, and `_Utils_chr__DEBUG` boxes it in a `String` object so that
-// `Debug.toString` can tell one from a `String` — so `===` is reference
+// string, and `_Utils_chr__DEBUG` boxes it in a `String` object so that the
+// kernel's untyped printer can tell one from a `String` — so `===` is reference
 // equality on two distinct boxes in dev and is the right answer in prod.
 // `Generate.CoreJS.Expression.kernelCall` writes the operator at a saturated
 // call in either mode; these are what a reference to the name compiles to.

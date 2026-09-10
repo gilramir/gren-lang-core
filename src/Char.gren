@@ -296,7 +296,8 @@ fromCode =
 
 -- Not `Gren.Kernel.Utils.identical`, which the other four primitive instances
 -- are: a `Char` is a one-character string in a release build and a boxed
--- `String` object in a dev build, so that `Debug.toString` can tell one from a
+-- `String` object in a dev build, so that the kernel's untyped printer — what
+-- `Debug.log` and an incomplete `case` render with — can tell one from a
 -- `String`, and `===` on two boxes is reference equality. `Char.identical`
 -- unwraps in the mode that wraps (D142, `docs/m1b-classes.md` §G40).
 

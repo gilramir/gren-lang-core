@@ -31,6 +31,22 @@ function _Debug_todoCase(moduleName, region, value) {
 }
 
 // TO STRING
+//
+// `Debug.toString` is gone (D16, `syntax.md` S8): `inspect` replaced it, and
+// unlike this walker `inspect` is typed, total, pinned by
+// `docs/representation.md` R5, and written in Gren rather than in one runtime's
+// JavaScript. What is left here has no Gren binding and three callers that are
+// not `inspect`'s to take:
+//
+//   - `Debug.log`, whose type is `String -> a -> a` with no constraint, so
+//     there is no instance to reach and nothing to render with;
+//   - `_Debug_crash` case 9, the value an incomplete `case` was handed;
+//   - `Generate.CoreJS.printForRepl`, which prints a REPL entry of any type.
+//
+// So the `Dict` and `Set` tag-matching below stays too, and stays a duplicate
+// of the instances `Dict` and `Set` now write. `m1b-classes.md` §G45 registers
+// what it would take to close that: it is `Debug.log`'s signature, which is a
+// decision rather than a cleanup.
 
 function _Debug_toString__PROD(value) {
   return "<internals>";

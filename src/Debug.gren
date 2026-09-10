@@ -1,40 +1,19 @@
-module Debug exposing (toString, log, todo)
+module Debug exposing (log, todo)
 
 {-| This module can be useful while _developing_ an application. It is not
 available for use in packages or production.
 
-@docs toString, log, todo
+`toString` used to live here and is gone: `inspect` replaced it (D16), and
+unlike this module `inspect` is total, pure, pinned (`docs/representation.md`
+R5) and available in packages and in optimized builds. It is a default import,
+so there is nothing to write to reach it.
+
+@docs log, todo
 
 -}
 
 import Gren.Kernel.Debug
 import String exposing (String)
-
-
-{-| Turn any kind of value into a string.
-
-    toString 42 == "42"
-
-    toString [ 1, 2 ] == "[1,2]"
-
-    toString ( 'a', "cat", 13 ) == "('a', \"cat\", 13)"
-
-    toString "he said, \"hi\"" == "\"he said, \\\"hi\\\"\""
-
-Notice that with strings, this is not the `identity` function. It escapes
-characters so if you say `Html.text (toString "he said, \"hi\"")` it will
-show `"he said, \"hi\""` rather than `he said, "hi"`. This makes it nice
-for viewing Gren data structures.
-
-**Note:** This is not available with `gren make --optimize` which gets rid of
-a bunch of runtime metadata. For example, it shortens record field names, and
-we need that info to `toString` the value! As a consequence, packages cannot
-use `toString` because they may be used in `--optimize` mode.
-
--}
-toString : a -> String
-toString =
-    Gren.Kernel.Debug.toString
 
 
 {-| Log a tagged value on the developer console, and then return the value.
@@ -46,10 +25,13 @@ toString =
 It is often possible to sprinkle this around to see if values are what you
 expect. It is kind of old-school to do it this way, but it works!
 
-**Note:** This is not available with `gren make --optimize` because (1) it
-relies on `toString` which has the same restriction and (2) it is not a pure
-function and would therefore have unpredictable behavior when paired with
-compiler optimizations that move code around.
+**Note:** This is not available with `gren make --optimize`, for the reason
+`syntax.md` S8 gives: it is an impure function typed as a pure one, so the
+optimizer would be free to hoist it out of a loop, run it once instead of a
+thousand times, or delete it — which is to say it would stop working in exactly
+the situations you reach for it. It is a barrier no Core pass may move, and
+that is affordable only because it cannot appear in a package or a release
+build.
 
 -}
 log : String -> a -> a

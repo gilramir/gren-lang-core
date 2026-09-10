@@ -573,8 +573,8 @@ toInt =
 
     String.fromInt -42 == "-42"
 
-Check out [`Debug.toString`](Debug#toString) to convert _any_ value to a string
-for debugging purposes.
+Check out [`inspect`](Inspect#Inspect) to convert any value that has an
+`Inspect` instance to a string for debugging purposes.
 
 -}
 fromInt : Int -> String
@@ -617,8 +617,8 @@ toFloat =
 
     String.fromFloat 3.9 == "3.9"
 
-Check out [`Debug.toString`](Debug#toString) to convert _any_ value to a string
-for debugging purposes.
+Check out [`inspect`](Inspect#Inspect) to convert any value that has an
+`Inspect` instance to a string for debugging purposes.
 
 -}
 fromFloat : Float -> String
