@@ -31,30 +31,26 @@ import Gren.Kernel.Bitwise
 
 {-| Bitwise AND
 -}
+@prim("i32_and")
 and : Int -> Int -> Int
-and =
-    Gren.Kernel.Bitwise.and
 
 
 {-| Bitwise OR
 -}
+@prim("i32_or")
 or : Int -> Int -> Int
-or =
-    Gren.Kernel.Bitwise.or
 
 
 {-| Bitwise XOR
 -}
+@prim("i32_xor")
 xor : Int -> Int -> Int
-xor =
-    Gren.Kernel.Bitwise.xor
 
 
 {-| Flip each bit individually, often called bitwise NOT
 -}
+@prim("i32_not")
 complement : Int -> Int
-complement =
-    Gren.Kernel.Bitwise.complement
 
 {-| Count the number of leading zero bits in an integer.
 
