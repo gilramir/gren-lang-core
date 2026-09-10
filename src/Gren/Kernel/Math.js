@@ -1,24 +1,19 @@
 /*
 
-import Gren.Kernel.Debug exposing (crash)
-
 */
 
 // MATH
 
-var _Math_remainderBy = F2(function (b, a) {
-  return a % b;
-});
-
-// https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/divmodnote-letter.pdf
-var _Math_modBy = F2(function (modulus, x) {
-  var answer = x % modulus;
-  return modulus === 0
-    ? __Debug_crash(11)
-    : (answer > 0 && modulus < 0) || (answer < 0 && modulus > 0)
-      ? answer + modulus
-      : answer;
-});
+// `remainderBy` and `modBy` were here. They are `Integral`'s methods now, over
+// `i32_rem`, with A3's zero rule and A11's Euclidean correction written in Geng
+// in `Basics` — which is where the class is, so it is where the methods are
+// (D145, `m1b-int.md` §I12).
+//
+// `modBy` is the one function in `core` that `_Debug_crash`ed on ordinary data:
+// a zero modulus ended the program, in a language that advertises no runtime
+// exceptions. A3 is the answer and `corpus/accept/int-mod-by-zero` is the fence.
+// The crash is also why this file imported `Gren.Kernel.Debug`, and it no longer
+// needs to.
 
 // CONSTANTS
 

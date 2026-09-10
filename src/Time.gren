@@ -248,7 +248,7 @@ toDay zone time =
 -}
 toWeekday : Zone -> Posix -> Weekday
 toWeekday zone time =
-  when Math.modBy 7 (flooredDiv (toAdjustedMinutes zone time) (60 * 24)) is
+  when modBy 7 (flooredDiv (toAdjustedMinutes zone time) (60 * 24)) is
     0 -> Thu
     1 -> Fri
     2 -> Sat
@@ -269,7 +269,7 @@ toWeekday zone time =
 -}
 toHour : Zone -> Posix -> Int
 toHour zone time =
-  Math.modBy 24 (flooredDiv (toAdjustedMinutes zone time) 60)
+  modBy 24 (flooredDiv (toAdjustedMinutes zone time) 60)
 
 
 {-| What minute is it? (From 0 to 59)
@@ -283,7 +283,7 @@ by 30 or 45 minutes!
 -}
 toMinute : Zone -> Posix -> Int
 toMinute zone time =
-  Math.modBy 60 (toAdjustedMinutes zone time)
+  modBy 60 (toAdjustedMinutes zone time)
 
 
 {-| What second is it?
@@ -296,7 +296,7 @@ toMinute zone time =
 -}
 toSecond : Zone -> Posix -> Int
 toSecond _ time =
-  Math.modBy 60 (flooredDiv (posixToMillis time) 1000)
+  modBy 60 (flooredDiv (posixToMillis time) 1000)
 
 
 {-|
@@ -308,7 +308,7 @@ toSecond _ time =
 -}
 toMillis : Zone -> Posix -> Int
 toMillis _ time =
-  Math.modBy 1000 (posixToMillis time)
+  modBy 1000 (posixToMillis time)
 
 
 

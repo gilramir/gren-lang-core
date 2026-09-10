@@ -41,7 +41,7 @@ by M. E. O'Neil. It is not cryptographically secure.
 
 import Array exposing (Array)
 import Basics exposing (..)
-import Math exposing (abs, remainderBy)
+import Math exposing (abs, floor)
 import Maybe exposing (Maybe(..))
 import Bitwise
 import Platform
@@ -89,12 +89,12 @@ int a b =
             in
                 -- fast path for power of 2
                 if (Bitwise.and (range - 1) range) == 0 then
-                    { value = (Bitwise.shiftRightZfBy 0 (Bitwise.and (range - 1) (peel seed0))) + lo, seed = next seed0 }
+                    { value = Bitwise.and (range - 1) (peel seed0) + lo, seed = next seed0 }
                 else
                     let
                         threshhold =
                             -- essentially: period % max
-                            Bitwise.shiftRightZfBy 0 (remainderBy range (Bitwise.shiftRightZfBy 0 -range))
+                            unsignedRemainderBy range (negate range)
 
                         accountForBias : Seed -> { value : Int, seed : Seed }
                         accountForBias seed =
@@ -105,11 +105,15 @@ int a b =
                                 seedN =
                                     next seed
                             in
-                                if x < threshhold then
+                                -- `x` read as unsigned, which below the
+                                -- threshhold means non-negative: a negative
+                                -- `Int` is a 32-bit quantity at or above 2^31,
+                                -- and a threshhold is below `range`.
+                                if x >= 0 && x < threshhold then
                                     -- in practice this recurses almost never
                                     accountForBias seedN
                                 else
-                                    { value = remainderBy range x + lo, seed = seedN }
+                                    { value = unsignedRemainderBy range x + lo, seed = seedN }
                     in
                         accountForBias seed0
         )
@@ -167,7 +171,10 @@ float a b =
                 peel seed1
 
             { nHi, nLo } =
-                if n0 > n1 then
+                -- Unsigned, because `peel` is a 32-bit quantity and not a
+                -- magnitude: read as `Int`s, half of all pairs compare the
+                -- other way round and `nHi`/`nLo` swap (§I12).
+                if unsignedGreaterThan n0 n1 then
                     { nHi = n0, nLo = n1 }
 
                 else
@@ -638,6 +645,58 @@ type Seed
     -- increment corresponds to an independent RNG
 
 
+-- `peel` produces a 32-bit quantity and D2 makes `Int` 32-bit *signed*, so a
+-- state whose top bit is set is a negative `Int` here. Every bitwise step in
+-- this module is sign-agnostic -- `xor`, `or` and a positive mask give the same
+-- 32 bits read either way -- but a comparison and a remainder are not, and
+-- stock Gren got the unsigned reading for free: `shiftRightZfBy 0` handed back
+-- a JavaScript number at or above 2^31 and nothing stopped an `Int` from
+-- holding it. Under D2 nothing may (`docs/m1b-int.md` §I12), so the one place
+-- that needs the unsigned reading says so.
+--
+-- The arithmetic is in `Float` and is exact: both terms are integers below
+-- 2^53, which is what R2 says a float64 holds exactly.
+--
+-- **Interim.** `Random.Seed` becomes a `UInt32` at `int64-migration.md` M5, and
+-- then `remainderBy` is the ordinary `Integral` method at a type whose values
+-- really are unsigned, and both of these go. The `0xFFFFFFFF` in
+-- `independentSeed` is waiting for the same day: it is an `Int` literal outside
+-- `Int`'s range, which D63's range check will refuse at §I8's step 6.
+
+
+unsignedToFloat : Int -> Float
+unsignedToFloat value =
+    if value >= 0 then
+        toFloat value
+
+    else
+        toFloat value + 4294967296
+
+
+-- Flipping both sign bits turns an unsigned comparison into the signed one the
+-- hardware has: it maps `[0, 2^32)` read unsigned onto `[-2^31, 2^31)` read
+-- signed, order intact.
+unsignedGreaterThan : Int -> Int -> Bool
+unsignedGreaterThan a b =
+    Bitwise.xor a -2147483648 > Bitwise.xor b -2147483648
+
+
+unsignedRemainderBy : Int -> Int -> Int
+unsignedRemainderBy divisor value =
+    if value >= 0 then
+        remainderBy divisor value
+
+    else
+        let
+            dividend =
+                unsignedToFloat value
+
+            d =
+                toFloat divisor
+        in
+        floor (dividend - d * toFloat (floor (dividend / d)))
+
+
 -- step the RNG to produce the next seed
 -- this is incredibly simple: multiply the state by a constant factor, modulus it
 -- by 2^32, and add a magic addend. The addend can be varied to produce independent
@@ -645,7 +704,7 @@ type Seed
 next : Seed -> Seed
 next (Seed { state = state0, increment = incr }) =
     -- The magic constant is from Numerical Recipes and is inlined for perf.
-    Seed { state = (Bitwise.shiftRightZfBy 0 ((state0 * 1664525) + incr)), increment = incr }
+    Seed { state = (state0 * 1664525) + incr, increment = incr }
 
 
 -- obtain a psuedorandom 32-bit integer from a seed
@@ -658,7 +717,7 @@ peel (Seed { state }) =
         word =
             (Bitwise.xor state (Bitwise.shiftRightZfBy ((Bitwise.shiftRightZfBy 28 state) + 4) state)) * 277803737
     in
-        Bitwise.shiftRightZfBy 0 (Bitwise.xor (Bitwise.shiftRightZfBy 22 word) word)
+        Bitwise.xor (Bitwise.shiftRightZfBy 22 word) word
 
 
 {-| A `Generator` is a **recipe** for generating random values. For example,
@@ -755,7 +814,7 @@ initialSeed x =
             next (Seed { state = 0, increment = 1013904223 })
 
         state2 =
-            Bitwise.shiftRightZfBy 0 (state1 + x)
+            state1 + x
     in
         next (Seed { state = state2, increment = incr })
 
@@ -783,7 +842,7 @@ independentSeed =
                 Next make sure it is positive. Finally step it once before use.
                 --}
                 makeIndependentSeed state b c =
-                    next <| Seed { state = state, increment = Bitwise.shiftRightZfBy 0 (Bitwise.or 1 (Bitwise.xor b c)) }
+                    next <| Seed { state = state, increment = Bitwise.or 1 (Bitwise.xor b c) }
             in
             step (map3 makeIndependentSeed gen gen gen) seed0
 

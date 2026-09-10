@@ -1,6 +1,7 @@
 module Basics exposing
-    ( Int, Num, (+), (-), (*), (/), (//), (^)
-    , Float, toFloat, isNaN, isInfinite
+    ( Int, Num, (+), (-), (*), (^)
+    , Integral, (//)
+    , Float, Fractional, (/), toFloat
     , Eq, (==), (/=)
     , Ord, (<), (>), (<=), (>=), max, min, clamp, Order(..)
     , Bool(..), not, (&&), (||), xor
@@ -13,12 +14,22 @@ module Basics exposing
 
 ## Numbers
 
-@docs Int, Num, (+), (-), (*), (/), (//), (^)
+@docs Int, Num, (+), (-), (*), (^)
+
+
+## Integers
+
+`Integral` is the integer half of `docs/arithmetic.md`: `//` truncates and
+`divFloor` floors, each with the remainder that completes its division identity
+(A11), and every one of them is **total** — a zero divisor answers rather than
+crashing (A3).
+
+@docs Integral, (//)
 
 
 ## Float
 
-@docs Float, toFloat, isNaN, isInfinite
+@docs Float, Fractional, (/), toFloat
 
 
 ## Equality
@@ -183,6 +194,7 @@ class Num a where
     sub : a -> a -> a
     mul : a -> a -> a
     negate : a -> a
+    pow : a -> a -> a
 
 
 
@@ -209,6 +221,70 @@ mulInt : Int -> Int -> Int
 negateInt : Int -> Int
 
 
+-- Truncating division and its remainder. Both have a **non-zero divisor** as a
+-- precondition (C13), which is why nothing outside this module may reach them:
+-- A3's total `//`, `divFloor`, `remainderBy` and `modBy` are the wrappers that
+-- guard it, and `powInt`'s halving is the one other caller -- it divides by 2.
+
+
+@prim("i32_div")
+divInt : Int -> Int -> Int
+
+
+@prim("i32_rem")
+remInt : Int -> Int -> Int
+
+
+-- `docs/arithmetic.md` A7 at an `Int`, which is the one `Num` method with no
+-- primitive under it at either member: the negative-exponent case is a rule
+-- about what the true value truncates to, and truncation of a fraction is not
+-- a machine instruction.
+--
+-- Square-and-multiply rather than repeated multiplication, because an exponent
+-- is an `Int` and `2 ^ 2147483647` must not be two billion multiplications. It
+-- is 31 of them, and every one wraps, so `2 ^ 32` is `0` and stays `0`.
+
+
+powInt : Int -> Int -> Int
+powInt base exponent =
+    if lt exponent 0 then
+        -- The true value is a fraction strictly between -1 and 1 at every base
+        -- but 1 and -1, so it truncates to zero -- and `0 ^ -n` is zero by A3
+        -- rather than by this branch, since the true value there is not finite.
+        if eq base 1 then
+            1
+
+        else if eq base (negate 1) then
+            if eq (remInt exponent 2) 0 then
+                1
+
+            else
+                negate 1
+
+        else
+            0
+
+    else
+        powIntLoop base exponent 1
+
+
+powIntLoop : Int -> Int -> Int -> Int
+powIntLoop base exponent acc =
+    if eq exponent 0 then
+        acc
+
+    else
+        powIntLoop
+            (mulInt base base)
+            (divInt exponent 2)
+            (if eq (remInt exponent 2) 0 then
+                acc
+
+             else
+                mulInt acc base
+            )
+
+
 instance Num Int where
     add a b =
         addInt a b
@@ -221,6 +297,9 @@ instance Num Int where
 
     negate a =
         negateInt a
+
+    pow a b =
+        powInt a b
 
 
 @prim("f64_add")
@@ -252,82 +331,181 @@ instance Num Float where
     negate a =
         negateFloat a
 
+    pow a b =
+        powFloat a b
 
-{-| Floating-point division:
+
+{-| The types you can divide with `//`, take a remainder of, and ask for a
+floor.
+
+`Integral` is `Int` and D2's other three integer types; `Fractional` is `Float`
+and `Float32`. Nothing is in both, which is what `classes.md` §0's defaulting
+rule leans on: `7 // 2` is an `Int` and `1 / 2` is a `Float` with neither
+written down.
+
+`//` truncates toward zero, so `10 // 4` is `2` and `-5 // 4` is `0 - 1`, and
+the remainder is discarded -- `3 // 4` gives what `truncate (3 / 4)` gives.
+
+**Every member is total.** `docs/arithmetic.md` A3 gives a zero divisor an
+answer rather than a crash, and the answer is picked so the division identity
+survives it: `n // 0` is `0` and `remainderBy 0 n` is `n`, because
+`n == (n // d) * d + remainderBy d n` at `d == 0` reads `n == 0 + n`. With `0`
+as the remainder it would read `n == 0`.
+
+`minInt // -1` wraps back to `minInt` the way every other integer operation
+wraps (A6): the true quotient `2147483648` has no 32-bit representation.
+
+A11 pairs each remainder with the division it is the remainder of:
+
+| pairing | division | remainder | identity |
+|---|---|---|---|
+| truncating | `//` | `remainderBy` | `n == (n // d) * d + remainderBy d n` |
+| Euclidean | `divFloor` | `modBy` | `n == divFloor d n * d + modBy d n` |
+
+Gren shipped both remainders and only one of the divisions, which is why the two
+names never managed to explain themselves: one of them was the odd one out.
+
+`modBy` is the one that behaves the way school arithmetic does at a negative
+dividend, and a common trick is `modBy 2` to tell even from odd:
+
+    Array.map (modBy 4) [ -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5 ]
+        --             == [  3,  0,  1,  2,  3, 0, 1, 2, 3, 0, 1 ]
+
+    Array.map (remainderBy 4) [ -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5 ]
+        --                    == [ -1,  0, -3, -2, -1, 0, 1, 2, 3, 0, 1 ]
+
+Daan Leijen's [Division and Modulus for Computer Scientists][dm] is the paper
+behind both, and A11's table is its two rows.
+
+[dm]: https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/divmodnote-letter.pdf
+
+-}
+class Integral a where
+    idiv : a -> a -> a
+    divFloor : a -> a -> a
+    remainderBy : a -> a -> a
+    modBy : a -> a -> a
+
+
+-- A3's zero guard and A11's Euclidean correction are here, in Geng, once. The
+-- primitives are the raw operations -- `i32_div` truncates and has a non-zero
+-- divisor as a precondition -- so what a backend audits is this text rather
+-- than four reimplementations of it (C13).
+--
+-- `signsDisagree` is the Euclidean correction, and it says: a truncating
+-- remainder whose sign disagrees with the divisor is one divisor away from the
+-- flooring one.
+
+
+instance Integral Int where
+    idiv n d =
+        if eq d 0 then
+            0
+
+        else
+            divInt n d
+
+    divFloor d n =
+        if eq d 0 then
+            0
+
+        else
+            let
+                q =
+                    divInt n d
+            in
+            if signsDisagree (remInt n d) d then
+                subInt q 1
+
+            else
+                q
+
+    remainderBy d n =
+        if eq d 0 then
+            n
+
+        else
+            remInt n d
+
+    modBy d n =
+        if eq d 0 then
+            n
+
+        else
+            let
+                r =
+                    remInt n d
+            in
+            if signsDisagree r d then
+                addInt r d
+
+            else
+                r
+
+
+signsDisagree : Int -> Int -> Bool
+signsDisagree r d =
+    and (not (eq r 0)) (not (eq (lt r 0) (lt d 0)))
+
+
+{-| Floating-point division, and the two questions only a fractional type can be
+asked.
 
     10 / 4 == 2.5
 
     11 / 4 == 2.75
 
-    12 / 4 == 3
-
     13 / 4 == 3.25
 
-    14
-        / 4
-        == 3.5
-        - 1
-        / 4
-        == -0.25
-        - 5
-        / 4
-        == -1.25
+IEEE answers `isNaN` and `isInfinite`: a `NaN` is not equal to itself, and A2's
+lawful `Eq` and `Ord` are written over exactly these.
+
+    isNaN (0 / 0) == True
+
+    isNaN (1 / 0) == False -- infinity is a number
+
+    isInfinite (1 / 0) == True
 
 -}
-fdiv : Float -> Float -> Float
-fdiv =
-    Gren.Kernel.Basics.fdiv
+class Fractional a where
+    fdiv : a -> a -> a
+    isNaN : a -> Bool
+    isInfinite : a -> Bool
 
 
-{-| Integer division:
-
-    10 // 4 == 2
-
-    11 // 4 == 2
-
-    12 // 4 == 3
-
-    13 // 4 == 3
-
-    14
-        // 4
-        == 3
-        - 1
-        // 4
-        == 0
-        - 5
-        // 4
-        == -1
-
-Notice that the remainder is discarded, so `3 // 4` is giving output
-similar to `truncate (3 / 4)`.
-
-It may sometimes be useful to pair this with the [`remainderBy`](#remainderBy)
-function.
-
--}
-idiv : Int -> Int -> Int
-idiv =
-    Gren.Kernel.Basics.idiv
+@prim("f64_div")
+divFloat : Float -> Float -> Float
 
 
-{-| Exponentiation
+@prim("f64_isnan")
+isNaNFloat : Float -> Bool
 
-    3 ^ 2 == 9
 
-    3 ^ 3 == 27
+@prim("f64_isinf")
+isInfiniteFloat : Float -> Bool
 
-**Not a method yet.** `classes.md` §1.2 lists `^` on `Num`, and it is the one
-operation there with no primitive behind it: `docs/arithmetic.md` A7's rule for
-a negative integer exponent is written code and not a machine instruction, so
-it lands with the rest of the written arithmetic at `docs/m1b-int.md` §I8's
-step 3. Until then this is one `Math.pow` for both members and an `Int` result
-outside the 32-bit range does not wrap.
 
--}
-pow : Num a => a -> a -> a
-pow =
+instance Fractional Float where
+    fdiv a b =
+        divFloat a b
+
+    isNaN a =
+        isNaNFloat a
+
+    isInfinite a =
+        isInfiniteFloat a
+
+
+-- A9 keeps `pow` out of the primitive set: V8, glibc, musl and Erlang already
+-- disagree in the last bits of `Math.pow`, so the float case is destined for
+-- the fdlibm port and is one kernel call until it arrives. The `Int` case never
+-- had a machine instruction to lose -- it is `powInt` above.
+
+
+powFloat : Float -> Float -> Float
+powFloat =
     Gren.Kernel.Basics.pow
+
 
 
 -- INT TO FLOAT / FLOAT TO INT
@@ -677,47 +855,6 @@ type at that use, and what used to decide it — a `typeof` test inside the kern
 -}
 class Appendable a where
     append : a -> a -> a
-
-
-
--- CRAZY FLOATS
-
-
-{-| Determine whether a float is an undefined or unrepresentable number.
-NaN stands for _not a number_ and it is [a standardized part of floating point
-numbers](https://en.wikipedia.org/wiki/NaN).
-
-    isNaN (0 / 0) == True
-
-    isNaN (sqrt -1) == True
-
-    isNaN (1 / 0) == False -- infinity is a number
-
-    isNaN 1 == False
-
--}
-isNaN : Float -> Bool
-isNaN =
-    Gren.Kernel.Basics.isNaN
-
-
-{-| Determine whether a float is positive or negative infinity.
-
-    isInfinite (0 / 0) == False
-
-    isInfinite (sqrt -1) == False
-
-    isInfinite (1 / 0) == True
-
-    isInfinite 1 == False
-
-Notice that NaN is not infinite! For float `n` to be finite implies that
-`not (isInfinite n || isNaN n)` evaluates to `True`.
-
--}
-isInfinite : Float -> Bool
-isInfinite =
-    Gren.Kernel.Basics.isInfinite
 
 
 

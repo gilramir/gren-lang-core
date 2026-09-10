@@ -418,7 +418,7 @@ To hash a password:
 
 
 import Array exposing ( Array )
-import Basics exposing ( clamp, toFloat, Never, Bool(..), Int, (>), (<), (<=), (>=), (==), (*), (^), (/), (/=), (|>), (&&) )
+import Basics exposing ( clamp, toFloat, Never, Bool(..), Int, Integral, (>), (<), (<=), (>=), (==), (*), (^), (/), (/=), (|>), (&&) )
 import Gren.Kernel.Crypto
 import Inspect
 import String exposing ( String )
@@ -430,7 +430,6 @@ import Maybe exposing ( Maybe(..) )
 import Result exposing ( Result(..) )
 import Set exposing ( Set )
 import Bitwise
-import Math
 import Json.Encode
 import Gren.Kernel.Json
 
@@ -674,7 +673,7 @@ generateRsaKeyHelper name permissions { modulusLength, hash, extractable } =
         clampedModulusLength = 
             clamp 2048 4096 modulusLength
     in
-    if Math.remainderBy 8 clampedModulusLength == 0 then
+    if remainderBy 8 clampedModulusLength == 0 then
         Gren.Kernel.Crypto.generateRsaKey 
             name
             clampedModulusLength
@@ -911,7 +910,7 @@ generateHmacKey _context { hash, length, extractable } =
                 clampedLength =
                     clamp 8 2048 passedLength
             in
-            if Math.remainderBy 8 clampedLength == 0 then
+            if remainderBy 8 clampedLength == 0 then
                 Gren.Kernel.Crypto.generateHmacKey
                     "HMAC"
                     (digestAlgorithmToString hash)
@@ -2345,7 +2344,7 @@ deriveBitsWithPbkdf2 { salt, iterations, hash } maybeLength (Key { key }) =
     else if iterations < pbkdf2MinIterations hash then
         Task.fail Pbkdf2DeriveBitsErrorIterationsInvalid
 
-    else if length > 0 && Math.remainderBy 8 length == 0 then
+    else if length > 0 && remainderBy 8 length == 0 then
         Gren.Kernel.Crypto.deriveBitsWithPbkdf2
             salt
             iterations

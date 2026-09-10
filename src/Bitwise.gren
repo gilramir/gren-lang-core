@@ -1,56 +1,156 @@
 module Bitwise exposing
-    ( and, or, xor, complement, countLeadingZeros
-    , shiftLeftBy, shiftRightBy, shiftRightZfBy
+    ( Bits
+    , countLeadingZeros
     )
 
 {-| Functions for doing [bitwise operations](https://en.wikipedia.org/wiki/Bitwise_operation).
 
-Bitwise operations only work on 32-bit integers.
-When an `Int` is passed to a bitwise operation, only the 32 least significant bits are used.
-
-@docs and, or, xor, complement, countLeadingZeros
-
-
-## Bit Shifts
-
-Note: Because bitwise operations only work on 32-bit integers, the shift distance is effectively limited to 31.
-If you shift by `n`, only the lowest 5 bits of `n` will be used and the binary will be shifted by `modBy 32 n`.
-For example, the following two commands perform the same operation:
-
-    Bitwise.shiftLeftBy  1 10
-    Bitwise.shiftLeftBy 33 10
-
-
-@docs shiftLeftBy, shiftRightBy, shiftRightZfBy
+@docs Bits, countLeadingZeros
 
 -}
 
-import Basics exposing (Int)
+import Basics exposing (Int, Bool, Num, Ord, (<), (>=))
 import Gren.Kernel.Bitwise
 
 
-{-| Bitwise AND
+{-| The types you can do bitwise arithmetic on: `Int`, and D2's other three
+integer types.
+
+A fourth closed class beside `Num`, `Integral` and `Fractional`
+(`docs/arithmetic.md` A5), and it exists because D2 gives Gren four integer
+types where it had one: a popcount, a bitset or a protobuf varint helper should
+be writable once rather than copied per width. It is declared here rather than
+in `Basics` for a blunter reason -- `and`, `or` and `xor` are `Basics`'s names
+for the `Bool` operations, and one module cannot hold two values of one name.
+
+**A shift count is an `Int`, whatever the type being shifted is.** A count is
+not a quantity of the same kind as the value: shifting an `Int64` by an `Int64`
+would make every call site convert a number that cannot exceed 64.
+
+**A count outside the width saturates** (A4): it is clamped to `[0, width]`, so
+`shiftLeftBy 32` is `0` rather than JavaScript's identity, and `shiftLeftBy -1`
+is the identity rather than a shift by 31. That is the limit of the shift as the
+count grows, which is the only rule that needs no per-target quirk memorized --
+JavaScript masks the count to five bits, C leaves a count at or past the width
+undefined, and the BEAM grows a bignum.
+
+| count | `shiftLeftBy` | `shiftRightZfBy` | `shiftRightBy` |
+|---|---|---|---|
+| `< 0` | identity | identity | identity |
+| `0 .. width-1` | ordinary | ordinary | ordinary |
+| `>= width` | `0` | `0` | `0` if non-negative, `-1` if negative |
+
+    and 12 10 == 8
+
+    or 12 10 == 14
+
+    xor 12 10 == 6
+
+    complement 0 == 0 - 1
+
+    shiftLeftBy 1 5 == 10
+
+    shiftRightBy 1 -32 == 0 - 16
+
+    shiftRightZfBy 1 -32 == 2147483632
+
 -}
+class Bits a where
+    and : a -> a -> a
+    or : a -> a -> a
+    xor : a -> a -> a
+    complement : a -> a
+    shiftLeftBy : Int -> a -> a
+    shiftRightBy : Int -> a -> a
+    shiftRightZfBy : Int -> a -> a
+
+
+-- The logical operations are the primitives unchanged: a 32-bit two's-complement
+-- `and` needs no wrapper, which is why they were `core`'s first four `@prim`
+-- declarations (D143, `docs/m1b-int.md` §I10).
+--
+-- The shifts are not. A4's clamp is written Geng over the raw primitive, whose
+-- precondition is a count in `[0, width)` -- the one place the four backends
+-- would otherwise disagree three ways. Shift counts are overwhelmingly
+-- literals, so constant folding erases the comparison in the code that would
+-- notice it.
+
+
 @prim("i32_and")
-and : Int -> Int -> Int
+andInt : Int -> Int -> Int
 
 
-{-| Bitwise OR
--}
 @prim("i32_or")
-or : Int -> Int -> Int
+orInt : Int -> Int -> Int
 
 
-{-| Bitwise XOR
--}
 @prim("i32_xor")
-xor : Int -> Int -> Int
+xorInt : Int -> Int -> Int
 
 
-{-| Flip each bit individually, often called bitwise NOT
--}
 @prim("i32_not")
-complement : Int -> Int
+complementInt : Int -> Int
+
+
+@prim("i32_shl")
+shlInt : Int -> Int -> Int
+
+
+@prim("i32_shr")
+shrInt : Int -> Int -> Int
+
+
+@prim("i32_ushr")
+ushrInt : Int -> Int -> Int
+
+
+instance Bits Int where
+    and a b =
+        andInt a b
+
+    or a b =
+        orInt a b
+
+    xor a b =
+        xorInt a b
+
+    complement a =
+        complementInt a
+
+    shiftLeftBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 32 then
+            0
+
+        else
+            shlInt value offset
+
+    shiftRightBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 32 then
+            if value < 0 then
+                -1
+
+            else
+                0
+
+        else
+            shrInt value offset
+
+    shiftRightZfBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 32 then
+            0
+
+        else
+            ushrInt value offset
+
 
 {-| Count the number of leading zero bits in an integer.
 
@@ -62,57 +162,3 @@ complement : Int -> Int
 countLeadingZeros : Int -> Int
 countLeadingZeros =
     Gren.Kernel.Bitwise.countLeadingZeros
-
-
-{-| Shift bits to the left by a given offset, filling new bits with zeros.
-This can be used to multiply numbers by powers of two.
-
-    shiftLeftBy 1 5 == 10
-
-    shiftLeftBy 5 1 == 32
-
--}
-shiftLeftBy : Int -> Int -> Int
-shiftLeftBy =
-    Gren.Kernel.Bitwise.shiftLeftBy
-
-
-{-| Shift bits to the right by a given offset, filling new bits with
-whatever is the topmost bit. This can be used to divide numbers by powers of two.
-
-    shiftRightBy 1 32 == 16
-
-    shiftRightBy 2 32 == 8
-
-    shiftRightBy 1 -32 == -16
-
-This is called an [arithmetic right shift][ars], often written `>>`, and
-sometimes called a sign-propagating right shift because it fills empty spots
-with copies of the highest bit.
-
-[ars]: https://en.wikipedia.org/wiki/Bitwise_operation#Arithmetic_shift
-
--}
-shiftRightBy : Int -> Int -> Int
-shiftRightBy =
-    Gren.Kernel.Bitwise.shiftRightBy
-
-
-{-| Shift bits to the right by a given offset, filling new bits with zeros.
-
-    shiftRightZfBy 1 32 == 16
-
-    shiftRightZfBy 2 32 == 8
-
-    shiftRightZfBy 1 -32 == 2147483632
-
-This is called an [logical right shift][lrs], often written `>>>`, and
-sometimes called a zero-fill right shift because it fills empty spots with
-zeros.
-
-[lrs]: https://en.wikipedia.org/wiki/Bitwise_operation#Logical_shift
-
--}
-shiftRightZfBy : Int -> Int -> Int
-shiftRightZfBy =
-    Gren.Kernel.Bitwise.shiftRightZfBy
