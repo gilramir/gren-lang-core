@@ -4,15 +4,6 @@
 
 // MATH
 
-var _Basics_add = F2(function (a, b) {
-  return a + b;
-});
-var _Basics_sub = F2(function (a, b) {
-  return a - b;
-});
-var _Basics_mul = F2(function (a, b) {
-  return a * b;
-});
 var _Basics_fdiv = F2(function (a, b) {
   return a / b;
 });

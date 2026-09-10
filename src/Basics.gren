@@ -1,5 +1,5 @@
 module Basics exposing
-    ( Int, Num, (+), (-), (*), (/), (//), (^), negate
+    ( Int, Num, (+), (-), (*), (/), (//), (^)
     , Float, toFloat, isNaN, isInfinite
     , Eq, (==), (/=)
     , Ord, (<), (>), (<=), (>=), max, min, clamp, Order(..)
@@ -13,7 +13,7 @@ module Basics exposing
 
 ## Numbers
 
-@docs Int, Num, (+), (-), (*), (/), (//), (^), negate
+@docs Int, Num, (+), (-), (*), (/), (//), (^)
 
 
 ## Float
@@ -145,20 +145,14 @@ type Float
 
 {-| The types arithmetic works on: `Int` and `Float`.
 
-`Num` is a **closed** class. Which types belong to it is fixed by the compiler
-and cannot be added to, so there are no instances to write and nothing to
-implement -- `Num` has no methods because one kernel implementation serves
-every member. What a `Num a =>` constraint buys is that `a` is one of them,
-and it is checked while your types are being worked out rather than by passing
-anything around, so it costs nothing at all at run time.
-
--}
-class Num a
-
-
-{-| Add two numbers. The `Num a =>` constraint means this operation can be
-specialized to `Int -> Int -> Int` or to `Float -> Float -> Float`. So you
-can do things like this:
+`Num` is a **closed** class: which types belong to it is fixed by the compiler
+(`classes.md` §1.2) and only `core` may write an instance. What it is not any
+more is *empty*. Until D2 one kernel `+` served both members, because an `Int`
+and a `Float` are both JavaScript doubles and `+` is the same machine
+operation; a 32-bit `Int` ends that, since a sum at `Int` has to come back into
+range and a sum at `Float` must not. So the one body becomes one per member,
+and the class grows the methods `classes.md` §1.2 always listed for it (D144,
+`docs/m1b-int.md` §I11).
 
     3002 + 4004 == 7006 -- all ints
 
@@ -179,30 +173,84 @@ exactly what type of number you are dealing with. When you try to _infer_ these
 conversions (as Scala does) it can be even more confusing. Gren has opted for a
 design that makes all conversions explicit.
 
--}
-add : Num a => a -> a -> a
-add =
-    Gren.Kernel.Basics.add
-
-
-{-| Subtract numbers like `4 - 3 == 1`.
-
-See [`(+)`](#+) for docs on the `Num` class.
+`negate` is what unary `-` means, at either member. At `Int` it wraps like
+everything else, so `negate x` and `0 - x` agree at every input including the
+minimum -- which is all `docs/arithmetic.md` A6 asks of it.
 
 -}
-sub : Num a => a -> a -> a
-sub =
-    Gren.Kernel.Basics.sub
+class Num a where
+    add : a -> a -> a
+    sub : a -> a -> a
+    mul : a -> a -> a
+    negate : a -> a
 
 
-{-| Multiply numbers like `2 * 3 == 6`.
 
-See [`(+)`](#+) for docs on the `Num` class.
+-- `Int`'s four bodies are the `i32` primitives and `Float`'s are the `f64`
+-- ones, which is what `docs/core.md` C13 means by "`instance Num Int` binds
+-- `+` to `addInt`". Nothing here says what wrapping is: the `| 0` at an `Int`
+-- and its absence at a `Float` are `Generate.CoreJS.Prim`'s, written once for
+-- every backend to read rather than eight times over here (A6, D2).
 
--}
-mul : Num a => a -> a -> a
-mul =
-    Gren.Kernel.Basics.mul
+
+@prim("i32_add")
+addInt : Int -> Int -> Int
+
+
+@prim("i32_sub")
+subInt : Int -> Int -> Int
+
+
+@prim("i32_mul")
+mulInt : Int -> Int -> Int
+
+
+@prim("i32_neg")
+negateInt : Int -> Int
+
+
+instance Num Int where
+    add a b =
+        addInt a b
+
+    sub a b =
+        subInt a b
+
+    mul a b =
+        mulInt a b
+
+    negate a =
+        negateInt a
+
+
+@prim("f64_add")
+addFloat : Float -> Float -> Float
+
+
+@prim("f64_sub")
+subFloat : Float -> Float -> Float
+
+
+@prim("f64_mul")
+mulFloat : Float -> Float -> Float
+
+
+@prim("f64_neg")
+negateFloat : Float -> Float
+
+
+instance Num Float where
+    add a b =
+        addFloat a b
+
+    sub a b =
+        subFloat a b
+
+    mul a b =
+        mulFloat a b
+
+    negate a =
+        negateFloat a
 
 
 {-| Floating-point division:
@@ -269,24 +317,17 @@ idiv =
 
     3 ^ 3 == 27
 
+**Not a method yet.** `classes.md` §1.2 lists `^` on `Num`, and it is the one
+operation there with no primitive behind it: `docs/arithmetic.md` A7's rule for
+a negative integer exponent is written code and not a machine instruction, so
+it lands with the rest of the written arithmetic at `docs/m1b-int.md` §I8's
+step 3. Until then this is one `Math.pow` for both members and an `Int` result
+outside the 32-bit range does not wrap.
+
 -}
 pow : Num a => a -> a -> a
 pow =
     Gren.Kernel.Basics.pow
-
-
-{-| Negate a number.
-
-    negate 42 == -42
-
-    negate -42 == 42
-
-    negate 0 == 0
-
--}
-negate : Num a => a -> a
-negate n =
-    -n
 
 
 -- INT TO FLOAT / FLOAT TO INT
