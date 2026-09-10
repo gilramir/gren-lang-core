@@ -166,11 +166,11 @@ instance Inspect Int where
 the three A1 says exist on every backend. `-0.0` renders with its sign even
 though A2 makes it compare equal to `0.0`.
 
-`String.fromFloat` is JavaScript's `Number.prototype.toString` today, so what
-is written here is the part of R5 that can be reached from it: the three
-non-finite names, the sign of negative zero, and a decimal point where JS omits
-one. R5's shortest-round-trip Ryu and its `1.0e21` exponent form are not built
-and are registered.
+`String.fromFloat` lays out R5's finite form — shortest round-trip digits,
+always a decimal point, `1.0e21` past the thresholds — so what is left here is
+the four values the two functions render **differently**, which R5 says they do
+on purpose: `fromFloat` writes what `String.toFloat` can read and this writes
+what R5 pins.
 
 -}
 instance Inspect Float where
@@ -189,21 +189,19 @@ instance Inspect Float where
             "-0.0"
 
         else
-            withDecimalPoint (String.fromFloat f)
+            String.fromFloat f
 
 
+{-| `1.0 / f` is the only thing that tells the two zeros apart, and it has to be
+asked for the **sign** of the infinity rather than for its presence: `1.0 / 0.0`
+is `infinity` and `1.0 / -0.0` is `-infinity`, so `isInfinite` alone answers
+`True` for both. It did, from §G43 until §Y6, and `inspect 0.0` was `-0.0` for
+as long — `corpus/accept/inspect-format` had the negative row and not the
+positive one, so nothing asked.
+-}
 isNegativeZero : Float -> Bool
 isNegativeZero f =
-    f == 0.0 && isInfinite (1.0 / f)
-
-
-withDecimalPoint : String -> String
-withDecimalPoint rendered =
-    if String.contains "." rendered || String.contains "e" rendered then
-        rendered
-
-    else
-        rendered ++ ".0"
+    f == 0.0 && 1.0 / f < 0.0
 
 
 instance Inspect Bool where

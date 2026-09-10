@@ -611,19 +611,159 @@ toFloat =
 
 {-| Convert a `Float` to a `String`.
 
-    String.fromFloat 123 == "123"
+    String.fromFloat 123 == "123.0"
 
-    String.fromFloat -42 == "-42"
+    String.fromFloat -42 == "-42.0"
 
     String.fromFloat 3.9 == "3.9"
 
-Check out [`inspect`](Inspect#Inspect) to convert any value that has an
-`Inspect` instance to a string for debugging purposes.
+    String.fromFloat 1.0e21 == "1.0e21"
+
+The result is the **shortest decimal that reads back as the same `Float`**, laid
+out the way `docs/representation.md` R5 pins it: always at least one digit on
+each side of the point, and scientific notation — written `1.0e21`, with no `+`
+— when the decimal exponent is below -6 or above 20. A `Float` therefore always
+looks like one, which `String.fromInt` of the same number does not.
+
+`nan`, the infinities and the sign of `-0.0` are the one place this differs from
+[`inspect`](Inspect#Inspect), and deliberately (R5): what `fromFloat` writes has
+to be what [`toFloat`](#toFloat) reads, and `inspect` answers to a format instead.
 
 -}
 fromFloat : Float -> String
-fromFloat =
-    Gren.Kernel.String.fromNumber
+fromFloat number =
+    if isNaN number || isInfinite number then
+        Gren.Kernel.String.fromNumber number
+
+    else
+        floatLayout (Gren.Kernel.String.fromNumber number)
+
+
+
+-- R5'S FLOAT LAYOUT
+--
+-- The digits are JavaScript's, which `docs/m1b-ryu.md` §Y2 measured to be the
+-- shortest that round-trip -- 299,876 random doubles, not one of them
+-- shortenable. What is not JavaScript's is where the point goes, so this reads
+-- `Number::toString`'s output apart into `sign`, `significant digits` and `the
+-- exponent of the first of them`, and lays it out again.
+--
+-- §Y6: on this backend the result is byte-for-byte what the Ryu port of §Y7
+-- will produce, which is what lets `corpus/accept/inspect-floats` be written
+-- before the port exists. When the port lands it replaces the first paragraph
+-- above and none of the second.
+
+
+floatLayout : String -> String
+floatLayout rendered =
+    let
+        { sign, body } =
+            if startsWith "-" rendered then
+                { sign = "-", body = dropFirst 1 rendered }
+
+            else
+                { sign = "", body = rendered }
+
+        { mantissa, exponent } =
+            when firstIndexOf "e" body is
+                Maybe.Just at ->
+                    { mantissa = takeFirst at body
+                    , exponent =
+                        dropFirst (at + 1) body
+                            |> replace "+" ""
+                            |> toInt
+                            |> Maybe.withDefault 0
+                    }
+
+                Maybe.Nothing ->
+                    { mantissa = body, exponent = 0 }
+
+        pointAt =
+            when firstIndexOf "." mantissa is
+                Maybe.Just at ->
+                    at
+
+                Maybe.Nothing ->
+                    count mantissa
+
+        allDigits =
+            replace "." "" mantissa
+
+        leadingZeros =
+            zerosAtStart 0 (toArray allDigits)
+
+        digits =
+            allDigits
+                |> dropFirst leadingZeros
+                |> dropZerosAtEnd
+    in
+    if digits == "" then
+        -- Every digit was a zero, so the value is one, and it has no exponent
+        -- worth deriving. `-0.0` reaches here as `"0"`: R5 gives the sign to
+        -- `inspect` and not to this function, so it is already gone.
+        sign ++ "0.0"
+
+    else
+        place sign digits (pointAt - leadingZeros - 1 + exponent)
+
+
+{-| `sign`, the significant digits, and the exponent of the first of them.
+
+R5's thresholds, and §Y3 is why they are these numbers: they are JavaScript's,
+which is where every expectation already written came from.
+-}
+place : String -> String -> Int -> String
+place sign digits exponent =
+    if exponent < -6 || exponent > 20 then
+        sign
+            ++ takeFirst 1 digits
+            ++ "."
+            ++ orZero (dropFirst 1 digits)
+            ++ "e"
+            ++ fromInt exponent
+
+    else if exponent < 0 then
+        sign ++ "0." ++ repeat (negate exponent - 1) "0" ++ digits
+
+    else if count digits > exponent + 1 then
+        sign
+            ++ takeFirst (exponent + 1) digits
+            ++ "."
+            ++ dropFirst (exponent + 1) digits
+
+    else
+        sign
+            ++ digits
+            ++ repeat (exponent + 1 - count digits) "0"
+            ++ ".0"
+
+
+orZero : String -> String
+orZero digits =
+    if digits == "" then
+        "0"
+
+    else
+        digits
+
+
+zerosAtStart : Int -> Array Char -> Int
+zerosAtStart sofar chars =
+    when Array.popFirst chars is
+        Maybe.Just { first = '0', rest } ->
+            zerosAtStart (sofar + 1) rest
+
+        _ ->
+            sofar
+
+
+dropZerosAtEnd : String -> String
+dropZerosAtEnd digits =
+    if endsWith "0" digits then
+        dropZerosAtEnd (dropLast 1 digits)
+
+    else
+        digits
 
 
 
