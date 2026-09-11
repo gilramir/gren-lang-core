@@ -1,4 +1,4 @@
-module Float32 exposing (fromFloat, toFloat)
+module Float32 exposing (fromFloat, toFloat, toBits, fromBits)
 
 {-| The conversions of a 32-bit IEEE 754 floating-point number.
 
@@ -20,9 +20,20 @@ is where the family of float constants belongs, beside the digits.
 
 @docs fromFloat, toFloat
 
+
+## Bits
+
+[Math.toBits](Math#toBits)'s pair at single precision: one sign bit, eight of
+exponent, twenty-three of mantissa, as a `UInt32`. Both directions live here
+rather than one of them in [UInt32](UInt32), for D155's reason -- a
+reinterpretation changes no value, so it is one operation and not two
+conversions.
+
+@docs toBits, fromBits
+
 -}
 
-import Basics exposing (Float, Float32)
+import Basics exposing (Float, Float32, UInt32)
 
 
 {-| Round a `Float` to single precision.
@@ -41,3 +52,19 @@ fromFloat : Float -> Float32
 -}
 @prim("f32_to_f64")
 toFloat : Float32 -> Float
+
+
+{-| A `Float32`'s IEEE 754 bit pattern.
+
+    Float32.toBits (Float32.fromFloat 1.0) == 1065353216
+
+-}
+@prim("f32_bits")
+toBits : Float32 -> UInt32
+
+
+{-| The `Float32` with these 32 bits. Total, and the inverse of
+[toBits](#toBits).
+-}
+@prim("f32_from_bits")
+fromBits : UInt32 -> Float32

@@ -4,6 +4,7 @@ module Math exposing
     , e, pi, maxSafeInteger, minSafeInteger, maxFloat, minFloat
     , degrees, radians, turns
     , cos, sin, tan, acos, asin, atan, atan2
+    , toBits, fromBits
     )
 
 {-| Functions for doing math
@@ -37,9 +38,23 @@ these are the `Int` ones because `Int` has no module of its own (D152).
 @docs cos, sin, tan, acos, asin, atan, atan2
 
 
+## Bits
+
+A `Float`'s 64 bits, read as a number and written back. This is the pair
+`docs/arithmetic.md` A9 requires -- the fdlibm port that makes `sin` and its
+neighbours the same on every backend is written over it -- and the one
+`docs/m1b-ryu.md` §Y7's shortest-digit algorithm starts from.
+
+It is here, rather than split between this module and
+[UInt64](UInt64), because neither half is a conversion: **a reinterpretation
+changes no value, so the two directions are one operation and live together**
+(D155). [Float32.toBits](Float32#toBits) is the same pair at single precision.
+
+@docs toBits, fromBits
+
 -}
 
-import Basics exposing (Int, Float, Num, Ord, Fractional, (==), (/), (*), (+), (-), (<), (>=))
+import Basics exposing (Int, Float, UInt64, Num, Ord, Fractional, (==), (/), (*), (+), (-), (<), (>=))
 import Gren.Kernel.Math
 
 
@@ -488,3 +503,37 @@ range of angles:
 atan2 : Float -> Float -> Float
 atan2 =
     Gren.Kernel.Math.atan2
+
+
+-- BITS
+
+
+{-| A `Float`'s IEEE 754 bit pattern, as a `UInt64`: one sign bit, eleven of
+exponent, fifty-two of mantissa.
+
+    Math.toBits 1.0 == 4607182418800017408
+
+    Math.toBits 0.0 == 0
+
+    Math.toBits -0.0 == 9223372036854775808
+
+The last of those is the difference between the two zeros, which is the one
+place `==` cannot see it (`docs/arithmetic.md` A2).
+
+-}
+@prim("f64_bits")
+toBits : Float -> UInt64
+
+
+{-| The `Float` with these 64 bits. The inverse of [toBits](#toBits), and total:
+every bit pattern is a float, including the ones that are `NaN`.
+
+    Math.fromBits 4607182418800017408 == 1.0
+
+**Every `NaN` bit pattern is the same `NaN` to a Gren program** (A1): there is
+one, and which of the payloads survives a round trip through these two functions
+is the host's business rather than the language's.
+
+-}
+@prim("f64_from_bits")
+fromBits : UInt64 -> Float
