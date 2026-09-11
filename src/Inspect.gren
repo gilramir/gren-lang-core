@@ -153,13 +153,40 @@ hasTopLevelSpace depth quote chars =
 -- THE PRIMITIVES
 --
 -- R5's scalar table, one instance per row. `Int` and `Float` print bare and
--- the sized numeric types are suffixed; D2 has not built those yet, so this
--- list is the two.
+-- the sized numeric types are suffixed.
 
 
 instance Inspect Int where
     inspect n =
         String.fromInt n
+
+
+{-| R5: `42i64`, sign and all, and the suffix is `syntax.md` S5's literal read
+back -- `inspect` at any of D2's widths produces a string the parser accepts as
+a literal of that same width.
+-}
+instance Inspect Int64 where
+    inspect n =
+        String.fromInt64 n ++ "i64"
+
+
+instance Inspect UInt32 where
+    inspect n =
+        String.fromUInt32 n ++ "u32"
+
+
+instance Inspect UInt64 where
+    inspect n =
+        String.fromUInt64 n ++ "u64"
+
+
+-- `Float32` has no instance yet, and that is deliberate: R5's `1.5f32` is the
+-- shortest digits that round-trip *as a single*, `core` has no function that
+-- produces them, and `String.fromFloat` would produce the double's digits --
+-- `0.1 : Float32` would render as `0.10000000149011612f32`. Writing the wrong
+-- rendering into an instance would pin it into a corpus case, which is the one
+-- thing R5's whole argument is against. It lands with Ryu's single-precision
+-- variant (`docs/m1b-ryu.md`, `docs/m1b-int.md` §I17.4 Q4).
 
 
 {-| R5: bare, always a decimal point, and `nan` / `infinity` / `-infinity` for

@@ -4,6 +4,7 @@ module String exposing
     , slice, takeFirst, takeLast, dropFirst, dropLast
     , contains, startsWith, endsWith, firstIndexOf, lastIndexOf, indices
     , toInt, fromInt
+    , fromInt64, fromUInt32, fromUInt64
     , toFloat, fromFloat
     , fromChar, pushFirst, pushLast, popFirst, popLast
     , toArray, fromArray
@@ -49,6 +50,17 @@ Unless otherwise noted, all functions in this module deal with code points.
 @docs toInt, fromInt
 
 
+## Sized Integer Conversions
+
+D2's three sized integer types render their decimal digits here rather than
+through [fromInt](#fromInt), because none of them fits in an `Int`: a `UInt32`
+runs to `4294967295` and the two 64-bit widths run far past that. These are
+what [Inspect](Inspect#Inspect) writes R5's `42i64` over, and what a program
+that wants the digits without the suffix calls directly.
+
+@docs fromInt64, fromUInt32, fromUInt64
+
+
 ## Float Conversions
 
 @docs toFloat, fromFloat
@@ -89,8 +101,11 @@ import Bitwise
 import Char exposing (Char)
 import Gren.Kernel.String
 import Gren.Kernel.Utils
+import Int64
 import Maybe exposing (Maybe)
 import Result exposing (Result)
+import UInt32
+import UInt64
 
 
 
@@ -580,6 +595,100 @@ Check out [`inspect`](Inspect#Inspect) to convert any value that has an
 fromInt : Int -> String
 fromInt =
     Gren.Kernel.String.fromNumber
+
+
+
+-- SIZED INTEGER CONVERSIONS
+--
+-- Written in Gren rather than handed to `Gren.Kernel.String.fromNumber`,
+-- because that kernel function is JavaScript's `String(x)` and a `BigInt` is
+-- not the only thing these are: `docs/core.md` C13 has a backend where an
+-- `Int64` is an `i64` and a `UInt64` is a `u64`, and a decimal rendering by
+-- repeated division is the same rendering on all of them. The division is the
+-- width's own `//` and `remainderBy`, which A3 makes total and A11 makes
+-- truncating.
+
+
+{-| Convert an `Int64` to a `String`.
+
+    String.fromInt64 9223372036854775807i64 == "9223372036854775807"
+
+    String.fromInt64 -42i64 == "-42"
+
+-}
+fromInt64 : Int64 -> String
+fromInt64 n =
+    if n < 0 then
+        "-" ++ int64Digits n
+
+    else
+        int64Digits (negate n)
+
+
+{-| The decimal digits of a **non-positive** `Int64`, without a sign.
+
+Counting down rather than up is not a flourish: A6 makes `negate` at
+`Int64.minValue` answer `Int64.minValue`, so a loop that normalized to the
+positive side would be wrong at exactly one value -- the one a test reaches
+last, and the one D2 exists to stop being wrong about.
+
+-}
+int64Digits : Int64 -> String
+int64Digits n =
+    let
+        quotient =
+            n // 10
+
+        digit =
+            fromInt (Int64.toInt (negate (remainderBy 10 n)))
+    in
+    if quotient == 0 then
+        digit
+
+    else
+        int64Digits quotient ++ digit
+
+
+{-| Convert a `UInt32` to a `String`.
+
+    String.fromUInt32 4294967295u32 == "4294967295"
+
+-}
+fromUInt32 : UInt32 -> String
+fromUInt32 n =
+    let
+        quotient =
+            n // 10
+
+        digit =
+            fromInt (UInt32.toInt (remainderBy 10 n))
+    in
+    if quotient == 0 then
+        digit
+
+    else
+        fromUInt32 quotient ++ digit
+
+
+{-| Convert a `UInt64` to a `String`.
+
+    String.fromUInt64 18446744073709551615u64 == "18446744073709551615"
+
+-}
+fromUInt64 : UInt64 -> String
+fromUInt64 n =
+    let
+        quotient =
+            n // 10
+
+        digit =
+            fromInt (UInt64.toInt (remainderBy 10 n))
+    in
+    if quotient == 0 then
+        digit
+
+    else
+        fromUInt64 quotient ++ digit
 
 
 
