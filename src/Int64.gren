@@ -89,12 +89,15 @@ import Maybe exposing (Maybe(..))
 {-| `-9223372036854775808`.
 
 Written as the complement of [maxValue](#maxValue) rather than as digits, and
-the reason is a limit of the frontend rather than of the type: a literal is
-carried through canonicalization as a machine `Int`, so `9223372036854775808`
--- one past that -- cannot be written down even though its negation is a
-perfectly good `Int64`. D63's range check at `docs/m1b-int.md` §I8 step 6 is
-where that has to be fixed; until then this is the honest way to say it, and it
-is exact by two's complement.
+what it is waiting for has changed. §I16 of `docs/m1b-int.md` widened the
+literal both of D86's parsers carry, so `9223372036854775808` reaches the
+lowering now -- but nothing has told the lowering that a literal one past a
+signed width's top, under a `-`, is that width's bottom. It wraps to
+`minValue` and the `negate` wraps it back, so the digits would give the right
+answer for a reason that is about to stop being true: `syntax.md` S5 says the
+range check folds a directly enclosing `Negate` before it decides, and D63's
+check at §I8 step 6 is where that is written. The complement is exact by two's
+complement and says what it means today.
 
 -}
 minValue : Int64

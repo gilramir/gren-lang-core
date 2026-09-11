@@ -66,7 +66,6 @@ conversion itself is exact at every `Float` it is given.
 -}
 
 import Basics exposing (Bool, Float, Int, Int64, UInt32, UInt64, Num, Ord, Fractional, (-), (<), (>), (>=))
-import Bitwise
 import Int64
 import Maybe exposing (Maybe(..))
 import UInt32
@@ -84,15 +83,15 @@ minValue =
 
 {-| `18446744073709551615`.
 
-Written as the complement of `0` rather than as digits, for the reason
-[Int64.minValue](Int64#minValue) gives: a literal is carried through
-canonicalization as a machine `Int`, which stops one decimal short of every
-`UInt64` above `2^63 - 1`.
+Digits, and it was `Bitwise.complement 0` until §I16 of `docs/m1b-int.md`: a
+literal used to be carried through canonicalization as a machine `Int`, which
+stops one decimal short of every `UInt64` above `2^63 - 1`. Both of D86's
+parsers carry one exactly now.
 
 -}
 maxValue : UInt64
 maxValue =
-    Bitwise.complement 0
+    18446744073709551615
 
 
 
