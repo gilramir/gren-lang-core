@@ -1,6 +1,7 @@
 module Int64 exposing
     ( minValue, maxValue
     , fromInt, toInt, toIntWrap, toIntChecked
+    , fromUInt32, fromUInt64, fromUInt64Wrap, fromUInt64Checked
     , toFloat
     )
 
@@ -43,13 +44,24 @@ caller who wants the low bits says so.
 @docs fromInt, toInt, toIntWrap, toIntChecked
 
 
+## From another width
+
+A10's table has a conversion for every ordered pair of numeric types, and D151
+puts each one in the module of the type it **produces** -- except where that
+type is `Int` or `Float`, which have no module and are reached by the `to*`
+names above. So this section is every width an `Int64` can be made from, and
+`UInt32.fromInt64` and `UInt64.fromInt64` are where an `Int64` goes.
+
+@docs fromUInt32, fromUInt64, fromUInt64Wrap, fromUInt64Checked
+
+
 ## To a float
 
 @docs toFloat
 
 -}
 
-import Basics exposing (Bool, Float, Int, Int64, Num, Ord, (<), (>))
+import Basics exposing (Bool, Float, Int, Int64, UInt32, UInt64, Num, Ord, (<), (>))
 import Bitwise
 import Maybe exposing (Maybe(..))
 
@@ -158,6 +170,79 @@ maxIntAsInt64 =
 minIntAsInt64 : Int64
 minIntAsInt64 =
     -2147483648
+
+
+-- FROM ANOTHER WIDTH
+
+
+{-| Widen a `UInt32`. Exact and total: 32 unsigned bits fit inside 63 signed
+ones with a bit to spare, so this conversion has one name the way
+[fromInt](#fromInt) does.
+
+    Int64.fromUInt32 UInt32.maxValue == 4294967295
+
+-}
+@prim("u32_to_i64")
+fromUInt32 : UInt32 -> Int64
+
+
+{-| Reinterpret a `UInt64`, **saturating** at [maxValue](#maxValue).
+
+The two types are the same 64 bits and neither is a subset of the other: the
+top half of a `UInt64` has no signed reading, and a negative `Int64` has no
+unsigned one. So this is the narrowing shape and it carries three names.
+
+    Int64.fromUInt64 (UInt64.fromInt 42) == 42
+
+    Int64.fromUInt64 UInt64.maxValue == Int64.maxValue
+
+-}
+fromUInt64 : UInt64 -> Int64
+fromUInt64 n =
+    if n > maxValueAsUInt64 then
+        maxValue
+
+    else
+        fromUInt64Wrap n
+
+
+{-| Reinterpret a `UInt64`'s 64 bits as signed. No bit moves.
+
+    Int64.fromUInt64Wrap UInt64.maxValue == -1
+
+-}
+@prim("u64_as_i64")
+fromUInt64Wrap : UInt64 -> Int64
+
+
+{-| Reinterpret a `UInt64`, or `Nothing` when it is above
+[maxValue](#maxValue).
+
+    Int64.fromUInt64Checked UInt64.maxValue == Nothing
+
+-}
+fromUInt64Checked : UInt64 -> Maybe Int64
+fromUInt64Checked n =
+    if n > maxValueAsUInt64 then
+        Nothing
+
+    else
+        Just (fromUInt64Wrap n)
+
+
+-- This width's upper bound, as a `UInt64`. It is digits rather than a
+-- conversion of `maxValue` for D149's reason, and it is the one bound in this
+-- family that can be written down: `9223372036854775807` is a machine `Int` and
+-- `9223372036854775808` is not (§I13.6).
+
+
+maxValueAsUInt64 : UInt64
+maxValueAsUInt64 =
+    9223372036854775807
+
+
+
+-- TO A FLOAT
 
 
 {-| Convert to a `Float`.

@@ -2,6 +2,8 @@ module UInt32 exposing
     ( minValue, maxValue
     , fromInt, fromIntWrap, fromIntChecked
     , toInt, toIntWrap, toIntChecked
+    , fromInt64, fromInt64Wrap, fromInt64Checked
+    , fromUInt64, fromUInt64Wrap, fromUInt64Checked
     , toFloat
     )
 
@@ -47,13 +49,25 @@ for, read in the other direction.
 @docs toInt, toIntWrap, toIntChecked
 
 
+## From another width
+
+D151 puts a conversion in the module of the type it **produces**, so this is
+every width a `UInt32` can be made from; a `UInt32` goes to another width
+through [Int64.fromUInt32](Int64#fromUInt32) and
+[UInt64.fromUInt32](UInt64#fromUInt32), which are both exact and have one name
+each.
+
+@docs fromInt64, fromInt64Wrap, fromInt64Checked
+@docs fromUInt64, fromUInt64Wrap, fromUInt64Checked
+
+
 ## To a float
 
 @docs toFloat
 
 -}
 
-import Basics exposing (Bool, Float, Int, Int64, UInt32, Num, Ord, (<), (>))
+import Basics exposing (Bool, Float, Int, Int64, UInt32, UInt64, Num, Ord, (<), (>))
 import Int64
 import Maybe exposing (Maybe(..))
 
@@ -170,6 +184,120 @@ maxIntAsUInt32 =
     2147483647
 
 
+-- FROM ANOTHER WIDTH
+
+
+{-| Narrow an `Int64`, **saturating** at both of this type's bounds. An `Int64`
+below `0` becomes [minValue](#minValue) and one above `4294967295` becomes
+[maxValue](#maxValue).
+
+    UInt32.fromInt64 (Int64.fromInt 42) == UInt32.fromInt 42
+
+    UInt32.fromInt64 Int64.minValue == UInt32.minValue
+
+    UInt32.fromInt64 Int64.maxValue == UInt32.maxValue
+
+-}
+fromInt64 : Int64 -> UInt32
+fromInt64 n =
+    if n < zeroAsInt64 then
+        minValue
+
+    else if n > maxValueAsInt64 then
+        maxValue
+
+    else
+        fromInt64Wrap n
+
+
+{-| Narrow an `Int64` by keeping its **low 32 bits**.
+
+Composed rather than primitive, and the composition is the whole of what it
+means: drop to 32 bits, then read those bits as unsigned.
+
+    UInt32.fromInt64Wrap (Int64.fromInt -1) == UInt32.maxValue
+
+-}
+fromInt64Wrap : Int64 -> UInt32
+fromInt64Wrap n =
+    fromIntWrap (Int64.toIntWrap n)
+
+
+{-| Narrow an `Int64`, or `Nothing` when it does not fit.
+
+    UInt32.fromInt64Checked Int64.maxValue == Nothing
+
+-}
+fromInt64Checked : Int64 -> Maybe UInt32
+fromInt64Checked n =
+    if n < zeroAsInt64 then
+        Nothing
+
+    else if n > maxValueAsInt64 then
+        Nothing
+
+    else
+        Just (fromInt64Wrap n)
+
+
+{-| Narrow a `UInt64`, **saturating** at [maxValue](#maxValue). Both types are
+unsigned, so there is no lower bound to saturate at.
+
+    UInt32.fromUInt64 UInt64.maxValue == UInt32.maxValue
+
+-}
+fromUInt64 : UInt64 -> UInt32
+fromUInt64 n =
+    if n > maxValueAsUInt64 then
+        maxValue
+
+    else
+        fromUInt64Wrap n
+
+
+{-| Narrow a `UInt64` by keeping its **low 32 bits**.
+
+    UInt32.fromUInt64Wrap UInt64.maxValue == UInt32.maxValue
+
+-}
+@prim("u64_to_u32")
+fromUInt64Wrap : UInt64 -> UInt32
+
+
+{-| Narrow a `UInt64`, or `Nothing` when it is above [maxValue](#maxValue).
+-}
+fromUInt64Checked : UInt64 -> Maybe UInt32
+fromUInt64Checked n =
+    if n > maxValueAsUInt64 then
+        Nothing
+
+    else
+        Just (fromUInt64Wrap n)
+
+
+-- This width's bounds, at the two widths they are compared against. Digits
+-- rather than conversions, for D149's reason.
+
+
+zeroAsInt64 : Int64
+zeroAsInt64 =
+    0
+
+
+maxValueAsInt64 : Int64
+maxValueAsInt64 =
+    4294967295
+
+
+maxValueAsUInt64 : UInt64
+maxValueAsUInt64 =
+    4294967295
+
+
+
+-- TO A FLOAT
+
+
 {-| Convert to a `Float`. Exact: 32 bits of magnitude fit in a `Float`'s 53
 with room to spare.
 
@@ -178,15 +306,10 @@ with room to spare.
 -}
 toFloat : UInt32 -> Float
 toFloat n =
-    Int64.toFloat (widen n)
+    Int64.toFloat (Int64.fromUInt32 n)
 
 
--- The lossless widening to `Int64`, which is `Int64.fromUInt32` under another
--- name and will be that when the rest of A10's table lands. It is here now
--- because `Core.Prim` has no `u32_to_f64`: 32 bits of magnitude reach a `Float`
--- exactly through any path, and one that goes through the widest integer is
--- the path every backend already has.
-
-
-@prim("u32_to_i64")
-widen : UInt32 -> Int64
+-- The path through `Int64` is not an accident of this module: `Core.Prim` has
+-- no `u32_to_f64`, and 32 bits of magnitude reach a `Float` exactly by any
+-- path, so the one through the widest integer is the path every backend
+-- already has.

@@ -2,6 +2,7 @@ module UInt64 exposing
     ( minValue, maxValue
     , fromInt, fromIntWrap, fromIntChecked
     , toInt, toIntWrap, toIntChecked
+    , fromUInt32, fromInt64, fromInt64Wrap, fromInt64Checked
     , toFloat
     )
 
@@ -30,6 +31,17 @@ for a 64-bit bit pattern and not for a loop counter.
 @docs toInt, toIntWrap, toIntChecked
 
 
+## From another width
+
+D151 puts a conversion in the module of the type it **produces**, so this is
+every width a `UInt64` can be made from; a `UInt64` leaves through
+[UInt32.fromUInt64](UInt32#fromUInt64) and
+[Int64.fromUInt64](Int64#fromUInt64), both of which narrow and so carry the
+three names.
+
+@docs fromUInt32, fromInt64, fromInt64Wrap, fromInt64Checked
+
+
 ## To a float
 
 @docs toFloat
@@ -38,7 +50,9 @@ for a 64-bit bit pattern and not for a loop counter.
 
 import Basics exposing (Bool, Float, Int, Int64, UInt32, UInt64, Num, Ord, (<), (>))
 import Bitwise
+import Int64
 import Maybe exposing (Maybe(..))
+import UInt32
 
 
 -- BOUNDS
@@ -89,7 +103,7 @@ fromInt n =
 -}
 fromIntWrap : Int -> UInt64
 fromIntWrap n =
-    reinterpretInt64 (widenInt n)
+    fromInt64Wrap (Int64.fromInt n)
 
 
 {-| Widen an `Int`, or `Nothing` when it is negative.
@@ -128,7 +142,7 @@ toInt n =
 -}
 toIntWrap : UInt64 -> Int
 toIntWrap n =
-    reinterpretUInt32 (narrowToUInt32 n)
+    UInt32.toIntWrap (UInt32.fromUInt64Wrap n)
 
 
 {-| Narrow to an `Int`, or `Nothing` when it does not fit.
@@ -147,6 +161,75 @@ maxIntAsUInt64 =
     2147483647
 
 
+-- FROM ANOTHER WIDTH
+--
+-- This is also where the two `Int` conversions above get their bits: an `Int`
+-- reaches a `UInt64` through `Int64.fromInt` and `fromInt64Wrap`, and leaves
+-- through `UInt32.fromUInt64Wrap` and `UInt32.toIntWrap`. Those four crossings
+-- were private primitives while `Int` was the only other width A10's table had
+-- reached; they are the table's own entries now, and nothing here declares a
+-- primitive twice.
+
+
+{-| Widen a `UInt32`. Exact and total: every `UInt32` is a `UInt64`.
+
+    UInt64.fromUInt32 UInt32.maxValue == 4294967295
+
+-}
+@prim("u32_to_u64")
+fromUInt32 : UInt32 -> UInt64
+
+
+{-| Reinterpret an `Int64`, **saturating** at [minValue](#minValue). The two
+types are the same 64 bits, and the only `Int64` a `UInt64` cannot hold is a
+negative one.
+
+    UInt64.fromInt64 (Int64.fromInt 42) == 42
+
+    UInt64.fromInt64 Int64.minValue == UInt64.minValue
+
+-}
+fromInt64 : Int64 -> UInt64
+fromInt64 n =
+    if n < zeroAsInt64 then
+        minValue
+
+    else
+        fromInt64Wrap n
+
+
+{-| Reinterpret an `Int64`'s 64 bits as unsigned. No bit moves.
+
+    UInt64.fromInt64Wrap (Int64.fromInt -1) == UInt64.maxValue
+
+-}
+@prim("i64_as_u64")
+fromInt64Wrap : Int64 -> UInt64
+
+
+{-| Reinterpret an `Int64`, or `Nothing` when it is negative.
+
+    UInt64.fromInt64Checked Int64.minValue == Nothing
+
+-}
+fromInt64Checked : Int64 -> Maybe UInt64
+fromInt64Checked n =
+    if n < zeroAsInt64 then
+        Nothing
+
+    else
+        Just (fromInt64Wrap n)
+
+
+zeroAsInt64 : Int64
+zeroAsInt64 =
+    0
+
+
+
+-- TO A FLOAT
+
+
 {-| Convert to a `Float`.
 
 Total, and lossy above `2^53`: a `UInt64` has 64 bits of magnitude and a
@@ -155,24 +238,3 @@ Total, and lossy above `2^53`: a `UInt64` has 64 bits of magnitude and a
 -}
 @prim("u64_to_f64")
 toFloat : UInt64 -> Float
-
-
--- The four crossings the two `Int` conversions are composed from. Each is a
--- primitive with no precondition, and each is half of a pair the rest of A10's
--- table will expose in its own right.
-
-
-@prim("i32_to_i64")
-widenInt : Int -> Int64
-
-
-@prim("i64_as_u64")
-reinterpretInt64 : Int64 -> UInt64
-
-
-@prim("u64_to_u32")
-narrowToUInt32 : UInt64 -> UInt32
-
-
-@prim("u32_as_i32")
-reinterpretUInt32 : UInt32 -> Int
