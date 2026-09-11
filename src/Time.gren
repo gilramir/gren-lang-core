@@ -4,6 +4,19 @@ effect module Time where { subscription = MySub } exposing
   , every
   , posixToMillis
   , millisToPosix
+  , Duration
+  , milliseconds
+  , seconds
+  , minutes
+  , hours
+  , days
+  , inMilliseconds
+  , inSeconds
+  , inMinutes
+  , inHours
+  , inDays
+  , add
+  , diff
   , Zone
   , utc
   , here
@@ -27,6 +40,17 @@ effect module Time where { subscription = MySub } exposing
 
 @docs Posix, now, every, posixToMillis, millisToPosix
 
+## Durations
+
+A `Duration` is a length of time, as a `Posix` is a point in one. Adding a
+timeout to a timestamp used to be bare arithmetic on milliseconds that nothing
+checked; `docs/int64-migration.md` M3 added this because D2's widening was the
+one moment a breaking change to `Time` was free.
+
+@docs Duration, milliseconds, seconds, minutes, hours, days
+@docs inMilliseconds, inSeconds, inMinutes, inHours, inDays
+@docs add, diff
+
 ## Time Zones
 @docs Zone, utc, here
 
@@ -46,6 +70,7 @@ import Array exposing (Array)
 import Basics exposing (..)
 import Dict
 import Inspect
+import Int64
 import Math
 import Maybe exposing (Maybe(..))
 import Platform
@@ -66,7 +91,7 @@ have a phone call or meeting at a certain POSIX time, there is no ambiguity.
 It is very hard for humans to _read_ a POSIX time though, so we use functions
 like [`toHour`](#toHour) and [`toMinute`](#toMinute) to `view` them.
 -}
-type Posix = Posix Int
+type Posix = Posix Int64
 
 
 {-| Get the POSIX time at the moment when this task is run.
@@ -79,16 +104,131 @@ now =
 {-| Turn a `Posix` time into the number of milliseconds since 1970 January 1
 at 00:00:00 UTC. It was a Thursday.
 -}
-posixToMillis : Posix -> Int
+posixToMillis : Posix -> Int64
 posixToMillis (Posix millis) =
   millis
 
 
 {-| Turn milliseconds into a `Posix` time.
 -}
-millisToPosix : Int -> Posix
+millisToPosix : Int64 -> Posix
 millisToPosix =
   Posix
+
+
+
+-- DURATIONS
+
+
+{-| A length of time, in milliseconds.
+
+`Posix` is a point in time and this is a distance between two of them, which is
+the distinction bare millisecond arithmetic could not make. Build one with
+[seconds](#seconds) and its neighbours, take one apart with
+[inSeconds](#inSeconds) and its, and move a `Posix` with [add](#add).
+
+    Time.add (Time.minutes 5) deadline
+-}
+type Duration = Duration Int64
+
+
+{-| A duration of some number of milliseconds.
+-}
+milliseconds : Int64 -> Duration
+milliseconds =
+  Duration
+
+
+{-| A duration of some number of seconds.
+-}
+seconds : Int64 -> Duration
+seconds n =
+  Duration (n * 1000)
+
+
+{-| A duration of some number of minutes.
+-}
+minutes : Int64 -> Duration
+minutes n =
+  Duration (n * 60000)
+
+
+{-| A duration of some number of hours.
+-}
+hours : Int64 -> Duration
+hours n =
+  Duration (n * 3600000)
+
+
+{-| A duration of some number of days.
+
+A day here is exactly 24 hours. Calendar days are not all 24 hours long, and
+turning one of those into a duration needs a `Zone`.
+-}
+days : Int64 -> Duration
+days n =
+  Duration (n * 86400000)
+
+
+{-| How many milliseconds a duration is. Exact: this is what one holds.
+-}
+inMilliseconds : Duration -> Int64
+inMilliseconds (Duration millis) =
+  millis
+
+
+{-| How many whole seconds a duration is.
+
+Every accessor but [inMilliseconds](#inMilliseconds) **truncates toward zero**,
+which is `//`'s rule (A11): 1500 milliseconds is 1 second and -1500 is -1.
+-}
+inSeconds : Duration -> Int64
+inSeconds (Duration millis) =
+  millis // 1000
+
+
+{-| How many whole minutes a duration is, truncating toward zero.
+-}
+inMinutes : Duration -> Int64
+inMinutes (Duration millis) =
+  millis // 60000
+
+
+{-| How many whole hours a duration is, truncating toward zero.
+-}
+inHours : Duration -> Int64
+inHours (Duration millis) =
+  millis // 3600000
+
+
+{-| How many whole 24-hour days a duration is, truncating toward zero.
+-}
+inDays : Duration -> Int64
+inDays (Duration millis) =
+  millis // 86400000
+
+
+{-| Move a point in time by a duration.
+
+    Time.add (Time.hours 1) noon
+
+A6 makes the addition wrap at 64 bits rather than saturate, the way every other
+integer operation does. `Int64` milliseconds spans 292 million years either way,
+so reaching the wrap is not a thing a program does by accident.
+-}
+add : Duration -> Posix -> Posix
+add (Duration millis) (Posix time) =
+  Posix (time + millis)
+
+
+{-| The duration **from** the first time **to** the second, so that
+`add (diff a b) a == b`.
+
+It is negative when the second time is the earlier one.
+-}
+diff : Posix -> Posix -> Duration
+diff (Posix from) (Posix to) =
+  Duration (to - from)
 
 
 
@@ -296,7 +436,11 @@ toMinute zone time =
 -}
 toSecond : Zone -> Posix -> Int
 toSecond _ time =
-  modBy 60 (flooredDiv (posixToMillis time) 1000)
+  -- The `modBy` happens at `Int64` and the narrowing after it. Dividing first
+  -- and narrowing the quotient would put seconds-since-1970 through an `Int`,
+  -- which stops working in 2038 -- the bug D2 exists to end, reintroduced in
+  -- the module that motivated D2.
+  Int64.toInt (modBy 60 (divFloor 1000 (posixToMillis time)))
 
 
 {-|
@@ -308,7 +452,7 @@ toSecond _ time =
 -}
 toMillis : Zone -> Posix -> Int
 toMillis _ time =
-  modBy 1000 (posixToMillis time)
+  Int64.toInt (modBy 1000 (posixToMillis time))
 
 
 
@@ -317,7 +461,20 @@ toMillis _ time =
 
 toAdjustedMinutes : Zone -> Posix -> Int
 toAdjustedMinutes (Zone { offset = defaultOffset, eras }) time =
-  toAdjustedMinutesHelp defaultOffset (flooredDiv (posixToMillis time) 60000) eras
+  toAdjustedMinutesHelp defaultOffset (minutesSinceEpoch time) eras
+
+
+{-| Whole minutes since 1970, floored, as an `Int`.
+
+`Int` and not `Int64` on purpose: the calendar arithmetic below it is all `Int`
+and a `Zone`'s eras are minutes too. 2^31 minutes is 4083 years, so the width is
+not the constraint here the way it was on milliseconds -- and `Int64.toInt`
+saturates rather than wrapping, so a timestamp past the year 6053 clamps to the
+end of time instead of landing in the Bronze Age.
+-}
+minutesSinceEpoch : Posix -> Int
+minutesSinceEpoch time =
+  Int64.toInt (divFloor 60000 (posixToMillis time))
 
 
 toAdjustedMinutesHelp : Int -> Int -> Array Era -> Int
@@ -334,9 +491,9 @@ toAdjustedMinutesHelp defaultOffset posixMinutes eras =
 
 
 toCivil : Int -> { year : Int, month : Int, day : Int }
-toCivil minutes =
+toCivil minutesSince1970 =
   let
-    rawDay    = flooredDiv minutes (60 * 24) + 719468
+    rawDay    = flooredDiv minutesSince1970 (60 * 24) + 719468
     era       = (if rawDay >= 0 then rawDay else rawDay - 146096) // 146097
     dayOfEra  = rawDay - era * 146097 -- [0, 146096]
     yearOfEra = (dayOfEra - dayOfEra // 1460 + dayOfEra // 36524 - dayOfEra // 146096) // 365 -- [0, 399]

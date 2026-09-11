@@ -79,7 +79,6 @@ four at `Int` (D152).
 -}
 
 import Basics exposing (Bool, Float, Int, Int64, UInt32, UInt64, Num, Ord, Fractional, (+), (-), (<), (>), (>=))
-import Bitwise
 import Maybe exposing (Maybe(..))
 
 
@@ -88,21 +87,19 @@ import Maybe exposing (Maybe(..))
 
 {-| `-9223372036854775808`.
 
-Written as the complement of [maxValue](#maxValue) rather than as digits, and
-what it is waiting for has changed. §I16 of `docs/m1b-int.md` widened the
-literal both of D86's parsers carry, so `9223372036854775808` reaches the
-lowering now -- but nothing has told the lowering that a literal one past a
-signed width's top, under a `-`, is that width's bottom. It wraps to
-`minValue` and the `negate` wraps it back, so the digits would give the right
-answer for a reason that is about to stop being true: `syntax.md` S5 says the
-range check folds a directly enclosing `Negate` before it decides, and D63's
-check at §I8 step 6 is where that is written. The complement is exact by two's
-complement and says what it means today.
+Written as its digits since D2's flag day (`docs/m1b-int.md` §I20). It was
+`Bitwise.complement maxValue` for two milestones and for two different reasons:
+first because neither parser could carry `9223372036854775808` at all, and then
+-- after §I16 widened both -- because the digits arrived at the right answer by
+wrapping twice, the literal being one past the signed width's top. `syntax.md`
+S5's rule is written now: a literal directly under a `-` is folded before it is
+range-checked and before it is lowered, so this is one value with no arithmetic
+anywhere near it.
 
 -}
 minValue : Int64
 minValue =
-    Bitwise.complement maxValue
+    -9223372036854775808
 
 
 {-| `9223372036854775807`.

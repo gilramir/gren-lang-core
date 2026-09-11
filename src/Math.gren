@@ -335,18 +335,27 @@ pi =
     Gren.Kernel.Math.pi
 
 
-{-| The largest integer value that can be exactly represented and compared in a JavaScript environment.
-Integers above this value may not work as you expect.
+{-| The largest integer a `Float` holds exactly: 2^53 - 1.
+
+A `Float` is an IEEE 754 double on every backend (R2), and above this value the
+integers stop being consecutive -- 2^53 and 2^53 + 1 are the same `Float`. So
+this is the bound on doing integer arithmetic in a `Float` at all, which is what
+a number arriving from JavaScript is.
+
+**It was typed `Int` until D2's flag day**, and that was a statement no longer
+true of any backend: an `Int` is 32 bits now (`docs/m1b-int.md` §I20), and
+9007199254740991 is not one. If what you want is the largest `Int`, it is
+2147483647; if you want a 64-bit one, [Int64.maxValue](Int64#maxValue) is that.
 -}
-maxSafeInteger : Int
+maxSafeInteger : Float
 maxSafeInteger =
     Gren.Kernel.Math.maxSafeInteger
 
 
-{-| The smallest integer value that can be exactly represented and compared in a JavaScript environment.
-Integers below this value may not work as you expect.
+{-| The smallest integer a `Float` holds exactly: -(2^53 - 1). See
+[maxSafeInteger](#maxSafeInteger), which this is the mirror of.
 -}
-minSafeInteger : Int
+minSafeInteger : Float
 minSafeInteger =
     Gren.Kernel.Math.minSafeInteger
 

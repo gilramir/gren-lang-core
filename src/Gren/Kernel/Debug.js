@@ -73,6 +73,15 @@ function _Debug_toAnsiString(ansi, value) {
     return _Debug_numberColor(ansi, value + "");
   }
 
+  // D2's 64-bit types are `BigInt`s (D74). The printer is untyped -- it is what
+  // the REPL, `Debug.log` and an incomplete `case` use -- so it cannot tell an
+  // `Int64` from a `UInt64` and does not try: what it can say is the number,
+  // which is more than `<internals>` said. `inspect` is the typed renderer and
+  // is where R5's `42i64` suffix comes from.
+  if (typeof value === "bigint") {
+    return _Debug_numberColor(ansi, value.toString());
+  }
+
   if (value instanceof String) {
     return _Debug_charColor(ansi, "'" + _Debug_addSlashes(value, true) + "'");
   }

@@ -35,7 +35,6 @@ import Array exposing (Array)
 import Basics exposing (..)
 import Maybe exposing (Maybe(..))
 import String exposing (String)
-import Math
 import Gren.Kernel.Regex
 
 
@@ -144,7 +143,7 @@ If you want some really fancy splits, a library like
 -}
 split : Regex -> String -> Array String
 split =
-  Gren.Kernel.Regex.splitAtMost Math.maxSafeInteger
+  Gren.Kernel.Regex.splitAtMost unbounded
 
 
 {-| Find matches in a string:
@@ -170,7 +169,7 @@ If you need `submatches` for some reason, a library like
 -}
 find : Regex -> String -> Array Match
 find =
-  Gren.Kernel.Regex.findAtMost Math.maxSafeInteger
+  Gren.Kernel.Regex.findAtMost unbounded
 
 
 {-| The details about a particular match:
@@ -227,7 +226,7 @@ you use the details of a specific match when making replacements.
 -}
 replace : Regex -> (Match -> String) -> String -> String
 replace =
-  Gren.Kernel.Regex.replaceAtMost Math.maxSafeInteger
+  Gren.Kernel.Regex.replaceAtMost unbounded
 
 
 
@@ -268,3 +267,16 @@ the long run.
 replaceAtMost : Int -> Regex -> (Match -> String) -> String -> String
 replaceAtMost =
   Gren.Kernel.Regex.replaceAtMost
+
+
+{-| The count `split`, `find` and `replace` pass when they mean "all of them".
+
+`Int.maxValue` under another name, written out because `Int` has no module to
+put one in. It was `Math.maxSafeInteger` until D2's flag day, which was 2^53 - 1
+and so not an `Int` at all once an `Int` became 32 bits (`docs/m1b-int.md`
+§I20) -- a limit nobody reaches either way, but one of the two spellings is a
+number of the type it claims.
+-}
+unbounded : Int
+unbounded =
+    2147483647

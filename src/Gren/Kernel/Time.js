@@ -7,7 +7,11 @@ import Gren.Kernel.Scheduler exposing (binding, succeed)
 
 function _Time_now(millisToPosix) {
   return __Scheduler_binding(function (callback) {
-    callback(__Scheduler_succeed(millisToPosix(Date.now())));
+    // `Posix` holds an `Int64` since `int64-migration.md` M3, and D74 makes an
+    // `Int64` a `BigInt` here. `Date.now()` is a Number, so the conversion is
+    // written down rather than left to `millisToPosix` -- which cannot do it,
+    // because in Core it is the identity.
+    callback(__Scheduler_succeed(millisToPosix(BigInt(Date.now()))));
   });
 }
 

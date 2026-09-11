@@ -77,7 +77,7 @@ type alias Task x a =
     import Time
 
 
-    timeInMillis : Task x Int
+    timeInMillis : Task x Int64
     timeInMillis =
         Time.now
             |> Task.andThen (\t -> Task.succeed (Time.posixToMillis t))
@@ -121,7 +121,7 @@ out what time it will be in one hour:
 
     addAnHour : Time.Posix -> Time.Posix
     addAnHour time =
-        Time.millisToPosix (Time.posixToMillis time + 60 * 60 * 1000)
+        Time.add (Time.hours 1) time
 
 [time]: Time
 
