@@ -4,6 +4,7 @@ module UInt64 exposing
     , toInt, toIntWrap, toIntChecked
     , fromUInt32, fromInt64, fromInt64Wrap, fromInt64Checked
     , toFloat
+    , round, floor, ceiling, truncate
     )
 
 {-| The bounds and the conversions of a 64-bit unsigned integer.
@@ -46,9 +47,25 @@ three names.
 
 @docs toFloat
 
+
+## From a float
+
+A10's float-to-integer family, at this width: each **saturates** at
+[minValue](#minValue) and [maxValue](#maxValue), a `NaN` is `0`, and each takes
+a `Float` only, a `Float32` widening first. [Math](Math)'s four of these names
+are the same operations at `Int` (D152).
+
+This is the one width whose range a `Float` cannot cover. Above `2^53` the
+doubles are further apart than the integers -- by `2^63` they are 2048 apart --
+so most `UInt64`s are not the conversion of any `Float` at all, and an argument
+that came from arithmetic has already rounded before it gets here. The
+conversion itself is exact at every `Float` it is given.
+
+@docs round, floor, ceiling, truncate
+
 -}
 
-import Basics exposing (Bool, Float, Int, Int64, UInt32, UInt64, Num, Ord, (<), (>))
+import Basics exposing (Bool, Float, Int, Int64, UInt32, UInt64, Num, Ord, Fractional, (-), (<), (>), (>=))
 import Bitwise
 import Int64
 import Maybe exposing (Maybe(..))
@@ -238,3 +255,105 @@ Total, and lossy above `2^53`: a `UInt64` has 64 bits of magnitude and a
 -}
 @prim("u64_to_f64")
 toFloat : UInt64 -> Float
+
+
+-- FROM A FLOAT
+
+
+{-| Round to the nearest `UInt64`, **saturating** at this type's bounds. A tie
+goes towards positive infinity.
+
+    UInt64.round 1.5 == UInt64.fromInt 2
+
+    UInt64.round -1.5 == UInt64.minValue
+
+    UInt64.round (0 / 0) == UInt64.minValue
+
+-}
+round : Float -> UInt64
+round x =
+    fromFloatBelow Int64.round x
+
+
+{-| Round down to a `UInt64`, **saturating** at this type's bounds.
+
+    UInt64.floor 1.5 == UInt64.fromInt 1
+
+-}
+floor : Float -> UInt64
+floor x =
+    fromFloatBelow Int64.floor x
+
+
+{-| Round up to a `UInt64`, **saturating** at this type's bounds.
+
+    UInt64.ceiling 1.5 == UInt64.fromInt 2
+
+-}
+ceiling : Float -> UInt64
+ceiling x =
+    fromFloatBelow Int64.ceiling x
+
+
+{-| Round towards zero to a `UInt64`, **saturating** at this type's bounds.
+
+    UInt64.truncate -0.5 == UInt64.minValue
+
+-}
+truncate : Float -> UInt64
+truncate x =
+    fromFloatBelow Int64.truncate x
+
+
+-- The four above, with the rounding they differ by passed in.
+--
+-- **Above 2^63 there is no rounding left to do**, and that is what lets this
+-- module borrow `Int64`'s four instead of writing them a third time: the
+-- doubles from 2^63 up are 2048 apart, so every one of them is already an
+-- integer and `round`, `floor`, `ceiling` and `truncate` are all the identity
+-- there. Below 2^63 the value fits in an `Int64`, which has the rounding and
+-- the saturation written out, and narrowing its answer saturates again at `0`
+-- -- which is the only bound of this type the signed range does not already
+-- cover.
+--
+-- The band between 2^63 and 2^64 is the one place a 64-bit unsigned conversion
+-- cannot be borrowed from a 64-bit signed one, and it is two operations rather
+-- than a primitive: subtract the modulus, which is exact because both are
+-- multiples of 2048 and the difference lands in `[-2^63, 0)`, then read the
+-- 64 bits back as unsigned. That is what wrapping *means* at this width, and
+-- `Core.Prim` needs no `f64_to_u64_trunc` for it.
+fromFloatBelow : (Float -> Int64) -> Float -> UInt64
+fromFloatBelow below x =
+    if isNaN x then
+        minValue
+
+    else if x >= twoToThe64 then
+        maxValue
+
+    else if x >= twoToThe63 then
+        fromInt64Wrap (truncToInt64 (x - twoToThe64))
+
+    else
+        fromInt64 (below x)
+
+
+@prim("f64_to_i64_trunc")
+truncToInt64 : Float -> Int64
+
+
+-- The two powers of two this width is bracketed by, as floats. Both are exact,
+-- and both are written as literals with a fraction: §I13.6's machine-`Int`
+-- ceiling and §I14.5's `2^53` one are limits on how a *digit* literal is
+-- carried, and a float literal is carried as its text by both of D86's parsers.
+-- `maxValue` itself is not a `Float` -- 2^64 - 1 rounds to 2^64 -- which is why
+-- the upper test is `>=` against the power of two and not `>` against the bound.
+
+
+twoToThe63 : Float
+twoToThe63 =
+    9223372036854775808.0
+
+
+twoToThe64 : Float
+twoToThe64 =
+    18446744073709551616.0

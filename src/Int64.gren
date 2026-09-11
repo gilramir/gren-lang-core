@@ -3,6 +3,7 @@ module Int64 exposing
     , fromInt, toInt, toIntWrap, toIntChecked
     , fromUInt32, fromUInt64, fromUInt64Wrap, fromUInt64Checked
     , toFloat
+    , round, floor, ceiling, truncate
     )
 
 {-| The bounds and the conversions of a 64-bit signed integer.
@@ -59,9 +60,25 @@ names above. So this section is every width an `Int64` can be made from, and
 
 @docs toFloat
 
+
+## From a float
+
+A10's float-to-integer family, at this width. Each **saturates** -- a value
+above [maxValue](#maxValue) becomes it, one below [minValue](#minValue) becomes
+that, and a `NaN` becomes `0` -- and each is defined from `Float` only, because
+a `Float32` widens first.
+
+The four names are the four roundings and not four narrowings, which is why
+they are not called `fromFloat`: a `Float` does not fit in an `Int64` in the way
+a `UInt32` does, and the caller has to say which integer near the value they
+mean. [Math](Math)'s `round`, `floor`, `ceiling` and `truncate` are these same
+four at `Int` (D152).
+
+@docs round, floor, ceiling, truncate
+
 -}
 
-import Basics exposing (Bool, Float, Int, Int64, UInt32, UInt64, Num, Ord, (<), (>))
+import Basics exposing (Bool, Float, Int, Int64, UInt32, UInt64, Num, Ord, Fractional, (+), (-), (<), (>), (>=))
 import Bitwise
 import Maybe exposing (Maybe(..))
 
@@ -257,3 +274,133 @@ finite answer it could saturate at, because it always has one.
 -}
 @prim("i64_to_f64")
 toFloat : Int64 -> Float
+
+
+-- FROM A FLOAT
+
+
+{-| Round to the nearest `Int64`, **saturating** at this type's bounds. A tie
+goes towards positive infinity.
+
+    Int64.round 1.5 == Int64.fromInt 2
+
+    Int64.round -1.5 == Int64.fromInt -1
+
+    Int64.round 1.0e30 == Int64.maxValue
+
+    Int64.round (0 / 0) == Int64.fromInt 0
+
+-}
+round : Float -> Int64
+round x =
+    fromIntegralFloat (roundFloat x)
+
+
+{-| Round down to an `Int64`, **saturating** at this type's bounds.
+
+    Int64.floor -1.5 == Int64.fromInt -2
+
+-}
+floor : Float -> Int64
+floor x =
+    fromIntegralFloat (floorFloat x)
+
+
+{-| Round up to an `Int64`, **saturating** at this type's bounds.
+
+    Int64.ceiling 1.5 == Int64.fromInt 2
+
+-}
+ceiling : Float -> Int64
+ceiling x =
+    fromIntegralFloat (ceilFloat x)
+
+
+{-| Round towards zero to an `Int64`, **saturating** at this type's bounds.
+
+    Int64.truncate -1.5 == Int64.fromInt -1
+
+-}
+truncate : Float -> Int64
+truncate x =
+    fromIntegralFloat (truncFloat x)
+
+
+@prim("f64_floor")
+floorFloat : Float -> Float
+
+
+@prim("f64_ceil")
+ceilFloat : Float -> Float
+
+
+@prim("f64_trunc")
+truncFloat : Float -> Float
+
+
+@prim("f64_to_i64_trunc")
+truncToInt64 : Float -> Int64
+
+
+-- Round to nearest as a `Float`, ties towards positive infinity. The same six
+-- lines as `Math`'s, for the same reason it is not `floorFloat (x + 0.5)` --
+-- that spelling is wrong at `0.49999999999999994` -- and the second of the two
+-- copies there will be. The step is width-independent and the narrowing below
+-- it is not, so the only way to share it would be a public `Float -> Float`
+-- rounding that A10 does not ask for.
+roundFloat : Float -> Float
+roundFloat x =
+    let
+        down =
+            floorFloat x
+    in
+    if x - down < 0.5 then
+        down
+
+    else
+        down + 1
+
+
+-- A10's saturation, at this width's bounds. The argument is already integral.
+--
+-- **The `NaN` test comes first**, because A2's `Ord Float` is a total order
+-- with a `NaN` above every number, so `x >= twoToThe63` is `True` for one and a
+-- `NaN` would answer `maxValue` rather than the `0` A10 asks for.
+--
+-- The upper test is `>=` against 2^63 and not `>` against `maxValue`, and the
+-- difference is the whole reason the bounds here are powers of two: **2^63 - 1
+-- is not a `Float`**. The nearest double to it is 2^63 itself, so `>` against a
+-- rounded `maxValue` would let 2^63 through to a primitive whose precondition
+-- it breaks. 2^63 is exact, every double below it is at most 2^63 - 1024, and
+-- `-2^63` is exactly `minValue`, which is why that test is `<`.
+fromIntegralFloat : Float -> Int64
+fromIntegralFloat x =
+    if isNaN x then
+        0
+
+    else if x >= twoToThe63 then
+        maxValue
+
+    else if x < negativeTwoToThe63 then
+        minValue
+
+    else
+        truncToInt64 x
+
+
+-- The two bounds of the conversion, as floats. Both are written as decimal
+-- literals with a fraction, and that is not the thing §I13.6 forbids: a float
+-- literal is carried as its *text* by both of D86's parsers -- the Haskell one
+-- keeps the source bytes and the Gren one calls `String.toFloat` on them -- so
+-- neither the machine `Int` a digit literal is accumulated in nor §I14.5's
+-- `2^53` ceiling is in the path. 2^63 and its negation are exact.
+
+
+twoToThe63 : Float
+twoToThe63 =
+    9223372036854775808.0
+
+
+negativeTwoToThe63 : Float
+negativeTwoToThe63 =
+    -9223372036854775808.0

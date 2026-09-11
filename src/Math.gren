@@ -10,6 +10,13 @@ module Math exposing
 
 @docs round, floor, ceiling, truncate, abs, sqrt, logBase
 
+The first four are `Float -> Int`, and `docs/arithmetic.md` A10 makes them
+**saturate**: a value too large for an `Int` becomes `2147483647`, one too
+small becomes `-2147483648`, and a `NaN` becomes `0`. The same four exist at
+each of D2's other integer widths, in that width's own module --
+[Int64.round](Int64#round), [UInt32.floor](UInt32#floor) and so on -- and
+these are the `Int` ones because `Int` has no module of its own (D152).
+
 `modBy` and `remainderBy` used to be here and are `Basics`'s now: they are
 `Integral`'s methods, so they live where the class does, beside the `//` and
 `divFloor` each of them is the remainder of (`docs/arithmetic.md` A11).
@@ -32,11 +39,11 @@ module Math exposing
 
 -}
 
-import Basics exposing (Int, Float, Num, Ord, (==), (/), (*), (<))
+import Basics exposing (Int, Float, Num, Ord, Fractional, (==), (/), (*), (+), (-), (<), (>=))
 import Gren.Kernel.Math
 
 
-{-| Round a number to the nearest integer.
+{-| Round a number to the nearest integer, **saturating** at `Int`'s bounds.
 
     round 1.0 == 1
 
@@ -52,13 +59,21 @@ import Gren.Kernel.Math
 
     round -1.8 == -2
 
+A tie goes towards positive infinity, which is why `round -1.5` is `-1` rather
+than `-2`. `docs/arithmetic.md` A10 says what happens when the answer does not
+fit in an `Int`, and it is the same at all four of these:
+
+    round 1.0e30 == 2147483647
+
+    round (0 / 0) == 0
+
 -}
 round : Float -> Int
-round =
-    Gren.Kernel.Math.round
+round x =
+    fromIntegralFloat (roundFloat x)
 
 
-{-| Floor function, rounding down.
+{-| Floor function, rounding down, **saturating** at `Int`'s bounds.
 
     floor 1.0 == 1
 
@@ -74,13 +89,15 @@ round =
 
     floor -1.8 == -2
 
+    floor -1.0e30 == -2147483648
+
 -}
 floor : Float -> Int
-floor =
-    Gren.Kernel.Math.floor
+floor x =
+    fromIntegralFloat (floorFloat x)
 
 
-{-| Ceiling function, rounding up.
+{-| Ceiling function, rounding up, **saturating** at `Int`'s bounds.
 
     ceiling 1.0 == 1
 
@@ -98,11 +115,11 @@ floor =
 
 -}
 ceiling : Float -> Int
-ceiling =
-    Gren.Kernel.Math.ceiling
+ceiling x =
+    fromIntegralFloat (ceilFloat x)
 
 
-{-| Truncate a number, rounding towards zero.
+{-| Truncate a number, rounding towards zero, **saturating** at `Int`'s bounds.
 
     truncate 1.0 == 1
 
@@ -120,8 +137,99 @@ ceiling =
 
 -}
 truncate : Float -> Int
-truncate =
-    Gren.Kernel.Math.truncate
+truncate x =
+    fromIntegralFloat (truncFloat x)
+
+
+-- THE FOUR ABOVE, AND WHY THEY ARE NO LONGER ONE KERNEL CALL EACH
+--
+-- Each of them was `Gren.Kernel.Math`'s function of the same name until D2, and
+-- a kernel call is the one thing they cannot be now: JavaScript's `Math.round`
+-- answers a double, so `round 1.0e30` typed `Int` would hold `1e30` and D2's
+-- deliverable -- an `Int`-typed expression always holds an integer -- would not
+-- be true. So each is the float-to-float rounding primitive its name means,
+-- followed by A10's saturating narrowing.
+--
+-- The same four exist at the other three integer widths, as `Int64.round`,
+-- `UInt32.floor` and so on. **D152 is why `Int`'s are here** and not in a
+-- module called `Int`: D151 puts a conversion in the module of the type it
+-- produces, `Int` has no module for the same reason `Int64.toInt` exists, and
+-- `Math` is where a Gren programmer has always looked for `round`.
+--
+-- They narrow through `f64_to_i32_trunc` rather than through `Int64`, which is
+-- the reason `Core.Prim` carries that entry beside `f64_to_i64_trunc`: on
+-- JavaScript this is a coercion and the path through `Int64` would be a
+-- `BigInt` round trip in the most common conversion in the language.
+
+
+@prim("f64_floor")
+floorFloat : Float -> Float
+
+
+@prim("f64_ceil")
+ceilFloat : Float -> Float
+
+
+@prim("f64_trunc")
+truncFloat : Float -> Float
+
+
+@prim("f64_to_i32_trunc")
+truncToInt : Float -> Int
+
+
+-- Round to nearest as a `Float`, ties towards positive infinity.
+--
+-- **Not `floorFloat (x + 0.5)`**, which is the spelling this asks for and is
+-- wrong at one input: `0.49999999999999994 + 0.5` rounds up to exactly `1.0` in
+-- double precision, so that version answers `1` where every other language
+-- answers `0`. Taking the difference *after* the floor cannot round, because
+-- `x - floorFloat x` is exact for every finite `x` -- the fraction bits it
+-- keeps are a subset of the ones `x` already had.
+--
+-- A `NaN` or an infinity comes back unchanged, by both branches: `floorFloat`
+-- answers the value itself, the difference is a `NaN`, `NaN < 0.5` is `False`
+-- because A2's total order puts a `NaN` at the top, and adding one to a `NaN`
+-- or an infinity is that value again. `fromIntegralFloat` is what turns them
+-- into A10's answers.
+roundFloat : Float -> Float
+roundFloat x =
+    let
+        down =
+            floorFloat x
+    in
+    if x - down < 0.5 then
+        down
+
+    else
+        down + 1
+
+
+-- A10's saturation, at `Int`'s two bounds. The argument is already integral, so
+-- all that is left to decide is whether it fits.
+--
+-- **The `NaN` test comes first and it has to.** A2's `Ord Float` is a total
+-- order that puts a `NaN` above every number, so `x >= 2147483648.0` is `True`
+-- for one; test the bounds first and every `NaN` saturates to `2147483647`
+-- instead of answering the `0` A10 asks for.
+--
+-- The bounds are written as the powers of two that bracket the type rather than
+-- as `minValue` and `maxValue`, because what is being tested is
+-- `f64_to_i32_trunc`'s precondition -- finite, and inside 2^31 -- and not the
+-- value's fit. Both are exactly representable, so neither comparison rounds.
+fromIntegralFloat : Float -> Int
+fromIntegralFloat x =
+    if isNaN x then
+        0
+
+    else if x >= 2147483648.0 then
+        2147483647
+
+    else if x < -2147483648.0 then
+        -2147483648
+
+    else
+        truncToInt x
 
 
 {-| Get the [absolute value][abs] of a number.

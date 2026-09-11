@@ -5,6 +5,7 @@ module UInt32 exposing
     , fromInt64, fromInt64Wrap, fromInt64Checked
     , fromUInt64, fromUInt64Wrap, fromUInt64Checked
     , toFloat
+    , round, floor, ceiling, truncate
     )
 
 {-| The bounds and the conversions of a 32-bit unsigned integer.
@@ -64,6 +65,16 @@ each.
 ## To a float
 
 @docs toFloat
+
+
+## From a float
+
+A10's float-to-integer family, at this width: each **saturates** at
+[minValue](#minValue) and [maxValue](#maxValue), a `NaN` is `0`, and each takes
+a `Float` only, a `Float32` widening first. [Math](Math)'s four of these names
+are the same operations at `Int` (D152).
+
+@docs round, floor, ceiling, truncate
 
 -}
 
@@ -313,3 +324,65 @@ toFloat n =
 -- no `u32_to_f64`, and 32 bits of magnitude reach a `Float` exactly by any
 -- path, so the one through the widest integer is the path every backend
 -- already has.
+
+
+-- FROM A FLOAT
+
+
+{-| Round to the nearest `UInt32`, **saturating** at this type's bounds. A tie
+goes towards positive infinity.
+
+    UInt32.round 1.5 == UInt32.fromInt 2
+
+    UInt32.round -1.5 == UInt32.minValue
+
+    UInt32.round 1.0e30 == UInt32.maxValue
+
+-}
+round : Float -> UInt32
+round x =
+    fromInt64 (Int64.round x)
+
+
+{-| Round down to a `UInt32`, **saturating** at this type's bounds.
+
+    UInt32.floor 1.5 == UInt32.fromInt 1
+
+-}
+floor : Float -> UInt32
+floor x =
+    fromInt64 (Int64.floor x)
+
+
+{-| Round up to a `UInt32`, **saturating** at this type's bounds.
+
+    UInt32.ceiling 1.5 == UInt32.fromInt 2
+
+-}
+ceiling : Float -> UInt32
+ceiling x =
+    fromInt64 (Int64.ceiling x)
+
+
+{-| Round towards zero to a `UInt32`, **saturating** at this type's bounds.
+
+    UInt32.truncate -0.5 == UInt32.minValue
+
+-}
+truncate : Float -> UInt32
+truncate x =
+    fromInt64 (Int64.truncate x)
+
+
+-- These four are a composition rather than four more copies of the rounding and
+-- the saturation, and the composition is exact: every `UInt32` is an `Int64`,
+-- so `Int64`'s answer saturates at bounds that are outside this type's, and
+-- narrowing it saturates again at the ones that are not. A `NaN` is `0` at both
+-- steps and a negative value is `0` at the second.
+--
+-- It is the same path `toFloat` above takes and for the same reason: the way
+-- between a `UInt32` and a `Float` that every backend already has runs through
+-- the widest integer. What it costs on JavaScript is a `BigInt` round trip,
+-- which is what `Math`'s four go out of their way to avoid -- and the
+-- difference between the two modules is traffic. `round` at `Int` is in every
+-- program; `round` at `UInt32` converts a measurement into a bit pattern.
