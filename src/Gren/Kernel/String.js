@@ -1,5 +1,6 @@
 /*
 
+import Basics exposing (LT, EQ, GT)
 import Maybe exposing (Just, Nothing)
 
 */
@@ -67,6 +68,49 @@ var _String_popLast = function (string) {
 
 var _String_append = F2(function (a, b) {
   return a + b;
+});
+
+// COMPARISON
+
+// `Ord String` is codepoint order (D8, `docs/m1b-str.md` §T13), and JavaScript
+// `<` is code unit order. The two disagree only when a surrogate is involved: a
+// surrogate pair encodes a codepoint above 0xFFFF with a lead unit in
+// 0xD800..0xDBFF, which is *below* 0xE000..0xFFFF, so "\u{10000}" < "\u{FFFE}"
+// on `<` and greater on any reading of the characters. A string with no code
+// unit in the surrogate range sorts identically either way.
+//
+// So the regex is a guard and not an approximation: when it fires for neither
+// side, `<` is the answer. When it fires, the scan walks to the first differing
+// code unit and `codePointAt` reads the whole codepoint there — a lead surrogate
+// reads as the astral character it starts, a BMP unit as itself — which is the
+// fixup nobody wants to write by hand.
+//
+// §T13.2 measured four ways of doing this. The scan alone is 8.7x native on
+// keys with a long shared prefix, which is what a compiler's `Dict String v`
+// holds; the guard keeps it at 2.4x by paying two native regex scans instead of
+// an interpreted loop over the prefix.
+var _String_surrogate = /[\uD800-\uDFFF]/;
+
+var _String_compare = F2(function (a, b) {
+  if (a === b) {
+    return __Basics_EQ;
+  }
+
+  if (!_String_surrogate.test(a) && !_String_surrogate.test(b)) {
+    return a < b ? __Basics_LT : __Basics_GT;
+  }
+
+  var n = a.length < b.length ? a.length : b.length;
+  var i = 0;
+  while (i < n && a.charCodeAt(i) === b.charCodeAt(i)) {
+    i++;
+  }
+
+  if (i === n) {
+    return a.length < b.length ? __Basics_LT : __Basics_GT;
+  }
+
+  return a.codePointAt(i) < b.codePointAt(i) ? __Basics_LT : __Basics_GT;
 });
 
 var _String_repeat = F2(function (num, chunk) {

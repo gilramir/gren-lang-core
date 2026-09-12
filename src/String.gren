@@ -1148,9 +1148,17 @@ instance Eq String where
         Gren.Kernel.Utils.identical a b
 
 
+-- Codepoint order, which JavaScript `<` is not: the kernel's comparison is
+-- guarded so that it pays for the difference only when a surrogate is present
+-- (D8, `docs/m1b-str.md` §T13). What this called before was
+-- `Gren.Kernel.Utils.compare`, whose string branch is `<` -- so `Array.sort`,
+-- `Dict` and `Set`, which consult `compare` and nothing else, sorted every
+-- astral character below U+E000-U+FFFF.
+
+
 instance Ord String where
     compare a b =
-        Gren.Kernel.Utils.compare a b
+        Gren.Kernel.String.compare a b
 
 
 -- `a ++ b` is `prepend`, not `append`: `String.append` is the reversed one
