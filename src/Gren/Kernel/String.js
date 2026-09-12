@@ -162,21 +162,11 @@ var _String_slice = F3(function (start, end, str) {
   return Array.from(str).slice(start, end).join("");
 });
 
-function _String_trim(str) {
-  return str.trim();
-}
-
-function _String_trimLeft(str) {
-  return str.replace(/^\s+/, "");
-}
-
-function _String_trimRight(str) {
-  return str.replace(/\s+$/, "");
-}
-
-function _String_words(str) {
-  return str.trim().split(/\s+/g);
-}
+// `_String_trim`, `_String_trimLeft`, `_String_trimRight` and `_String_words`
+// used to be here, as `str.trim()` and a `/\s+/` split. They are Geng now, over
+// the `White_Space` table — `docs/unicode.md` U2 switches the intrinsics rule
+// off for anything whose answer depends on a Unicode version, and ECMAScript's
+// whitespace is not Unicode's (`docs/m1b-str.md` §T16).
 
 function _String_lines(str) {
   return str.split(/\r\n|\r|\n/g);

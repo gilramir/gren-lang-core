@@ -102,11 +102,12 @@ import Char exposing (Char)
 import Gren.Kernel.String
 import Gren.Kernel.Utils
 import Int64
-import Maybe exposing (Maybe)
+import Maybe exposing (Maybe(..))
 import Result exposing (Result)
 import String.Ryu as Ryu
 import UInt32
 import UInt64
+import Unicode.Lookup
 
 
 
@@ -274,10 +275,36 @@ join =
 
     words "How are \t you? \n Good?" == [ "How", "are", "you?", "Good?" ]
 
+A string with no words in it — empty, or nothing but whitespace — has no words
+in it: `words "" == []`.
+
+Whitespace here is Unicode's `White_Space` property at the version
+[`Unicode.version`](Unicode#version) names, and not the host's idea of it
+(`docs/unicode.md` U2).
+
 -}
 words : String -> Array String
-words =
-    Gren.Kernel.String.words
+words string =
+    let
+        step c acc =
+            if Unicode.Lookup.isWhitespace c then
+                { done = closeWord acc, current = "" }
+
+            else
+                { acc | current = pushLast c acc.current }
+    in
+    closeWord (foldl step { done = [], current = "" } string)
+
+
+{-| Move a half-built word into the answer, unless there is no word there.
+-}
+closeWord : { done : Array String, current : String } -> Array String
+closeWord acc =
+    if acc.current == "" then
+        acc.done
+
+    else
+        Array.pushLast acc.current acc.done
 
 
 {-| Break a string into lines, splitting on newlines.
@@ -544,10 +571,15 @@ padRight n char string =
 
     trim "  hats  \n" == "hats"
 
+Whitespace is Unicode's `White_Space` property at the version
+[`Unicode.version`](Unicode#version) names — 25 codepoints, and the same 25 on
+every backend. It is *not* the host's: ECMAScript trims U+FEFF, which is not
+`White_Space`, and does not trim U+0085, which is (`docs/unicode.md` U2).
+
 -}
 trim : String -> String
-trim =
-    Gren.Kernel.String.trim
+trim string =
+    trimRight (trimLeft string)
 
 
 {-| Get rid of whitespace on the left of a string.
@@ -556,8 +588,17 @@ trim =
 
 -}
 trimLeft : String -> String
-trimLeft =
-    Gren.Kernel.String.trimLeft
+trimLeft string =
+    when popFirst string is
+        Just { first, rest } ->
+            if Unicode.Lookup.isWhitespace first then
+                trimLeft rest
+
+            else
+                string
+
+        Nothing ->
+            string
 
 
 {-| Get rid of whitespace on the right of a string.
@@ -566,8 +607,17 @@ trimLeft =
 
 -}
 trimRight : String -> String
-trimRight =
-    Gren.Kernel.String.trimRight
+trimRight string =
+    when popLast string is
+        Just { last, rest } ->
+            if Unicode.Lookup.isWhitespace last then
+                trimRight rest
+
+            else
+                string
+
+        Nothing ->
+            string
 
 
 

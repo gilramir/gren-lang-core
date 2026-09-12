@@ -1,0 +1,248 @@
+module Unicode.Lookup exposing
+    ( isNonPrintable
+    , isWhitespace
+    , lowerDelta
+    , lowerExpansion
+    , upperDelta
+    , upperExpansion
+    )
+
+{-| Reading `Unicode.Tables`: four questions, one binary search.
+
+`docs/unicode.md` U2 says that every Unicode-dependent operation in `core` is
+answered from a pinned version rather than from the host, and that the
+intrinsics rule is switched **off** for them — a backend may not substitute
+`String.prototype.toUpperCase`, because the whole point is that each host
+carries a different Unicode version. So this module is the only implementation
+there is, on every backend, and `docs/m1b-str.md` §T16 is where it was built.
+
+**Nothing here mentions `String`,** and that is structural rather than a
+matter of taste: `String` imports this module, so a `String` in a signature
+here would be an import cycle. A case mapping is therefore a *delta* and, for
+the hundred-odd codepoints whose mapping is longer than one codepoint, an
+`Array Char`. `String.toUpper` is what turns either into text.
+
+**Not exposed.** `gren.json` does not list it. What a program should call is
+`String.trim`, `String.toUpper` or `inspect`; `Unicode` exposes the version and
+nothing else, because a Unicode-aware predicate family belongs to the
+`geng/unicode` package U4 describes and not to `core`.
+
+@docs isWhitespace, isNonPrintable
+@docs upperDelta, upperExpansion, lowerDelta, lowerExpansion
+
+-}
+
+import Array exposing (Array)
+import Basics exposing (..)
+import Bitwise
+import Char exposing (Char)
+import Maybe exposing (Maybe(..))
+import Unicode.Tables as Tables
+
+
+{-| Is this codepoint `White_Space`?
+
+The property, not the host's idea of whitespace: U+0085 is here and U+FEFF is
+not, which is the pair ECMAScript's `trim` gets the other way round.
+
+-}
+isWhitespace : Char -> Bool
+isWhitespace c =
+    let
+        code =
+            Char.toCode c
+    in
+    if code < 128 then
+        asciiBit code Tables.whitespaceAscii
+
+    else
+        inRanges code Tables.whitespaceRanges
+
+
+{-| Is this codepoint one R5 escapes rather than prints?
+
+U2 defines it: general category `Cc`, `Cf`, `Cs`, `Co`, `Cn`, `Zl`, `Zp`, or a
+`Zs` that is not the space itself. `Cn` is why an unassigned codepoint escapes,
+and why this answer moves when the pin moves.
+
+-}
+isNonPrintable : Char -> Bool
+isNonPrintable c =
+    let
+        code =
+            Char.toCode c
+    in
+    if code < 128 then
+        asciiBit code Tables.nonPrintableAscii
+
+    else
+        inRanges code Tables.nonPrintableRanges
+
+
+{-| How far this codepoint's uppercase is from it, or `0` for a codepoint that
+uppercases to itself — which is nearly all of them, and is also the answer for
+the hundred that uppercase to *more* than one codepoint.
+
+`0` carries no ambiguity: a mapping onto itself is dropped by the generator, so
+no run has a delta of zero.
+
+-}
+upperDelta : Char -> Int
+upperDelta c =
+    delta (Char.toCode c) Tables.upperRuns
+
+
+{-| The uppercase of a codepoint that has no single-codepoint one:
+`upperExpansion 'ß'` is `Just [ 'S', 'S' ]`.
+
+Non-locale and unconditional, per U2.
+
+-}
+upperExpansion : Char -> Maybe (Array Char)
+upperExpansion c =
+    expansion (Char.toCode c) Tables.upperMultiFrom Tables.upperMultiTo
+
+
+{-| How far this codepoint's lowercase is from it, or `0`. -}
+lowerDelta : Char -> Int
+lowerDelta c =
+    delta (Char.toCode c) Tables.lowerRuns
+
+
+{-| `lowerExpansion 'İ'` is `Just [ 'i', '\u{0307}' ]`, and it is the only
+codepoint in the database whose lowercase is longer than one codepoint.
+
+`Final_Sigma` is what dropping the *conditional* entries of
+`SpecialCasing.txt` gives up, so a final `Σ` lowercases to `σ` here and to `ς`
+in a context-aware implementation. U2 decided that, and
+`corpus/accept/string-case-mapping` records it.
+
+-}
+lowerExpansion : Char -> Maybe (Array Char)
+lowerExpansion c =
+    expansion (Char.toCode c) Tables.lowerMultiFrom Tables.lowerMultiTo
+
+
+
+-- THE SEARCHES
+
+
+{-| Is `code`, which must be below 128, set in an ASCII bitmap?
+
+The bitmap is generated from the same ranges `inRanges` searches, so this
+cannot answer differently; what it saves is the search. Four or five
+`Array.get`s become one record field and two integer operations, and that is
+four or five `Maybe`s not allocated per character — which is the whole cost of
+the table on a string of ASCII, and ASCII is what strings are made of (§T16.2).
+
+`shiftRightBy` and not `shiftRightZfBy`: `Int` is 32 bits (D2) and a word whose
+top bit is set is negative, which a zero-filling shift would answer above the
+range.
+-}
+asciiBit : Int -> { w0 : Int, w1 : Int, w2 : Int, w3 : Int } -> Bool
+asciiBit code bits =
+    let
+        word =
+            if code < 32 then
+                bits.w0
+
+            else if code < 64 then
+                bits.w1
+
+            else if code < 96 then
+                bits.w2
+
+            else
+                bits.w3
+    in
+    Bitwise.and (Bitwise.shiftRightBy (Bitwise.and code 31) word) 1 == 1
+
+
+{-| Is `code` in a flat `[lo, hi, ...]` table? -}
+inRanges : Int -> Array Int -> Bool
+inRanges code table =
+    halve code table 2 0 (Array.length table // 2 - 1) >= 0
+
+
+{-| The delta of the `[lo, hi, delta]` run holding `code`, or `0`. -}
+delta : Int -> Array Int -> Int
+delta code table =
+    let
+        run =
+            halve code table 3 0 (Array.length table // 3 - 1)
+    in
+    if run < 0 then
+        0
+
+    else
+        when Array.get (run * 3 + 2) table is
+            Just d ->
+                d
+
+            Nothing ->
+                0
+
+
+{-| The entry `code` keys in a sorted array of single codepoints. -}
+expansion : Int -> Array Int -> Array (Array Char) -> Maybe (Array Char)
+expansion code keys values =
+    let
+        i =
+            halve code keys 1 0 (Array.length keys - 1)
+    in
+    if i < 0 then
+        Nothing
+
+    else
+        Array.get i values
+
+
+{-| Binary search over a flat table of `stride`-wide blocks sorted by their
+first element, where a block of stride 1 is a single codepoint and a wider one
+is a range from its first element to its second. Answers the block's index, or
+`-1`.
+
+An index rather than a `Maybe Int`, because this is called once per character
+of every string that is trimmed, uppercased or inspected, and every probe it
+makes already allocates a `Maybe` of its own: `Array.get` has no other shape.
+
+-}
+halve : Int -> Array Int -> Int -> Int -> Int -> Int
+halve code table stride low high =
+    if low > high then
+        -1
+
+    else
+        let
+            mid =
+                low + (high - low) // 2
+
+            at =
+                mid * stride
+        in
+        when Array.get at table is
+            Just first ->
+                if code < first then
+                    halve code table stride low (mid - 1)
+
+                else if stride == 1 then
+                    if code > first then
+                        halve code table stride (mid + 1) high
+
+                    else
+                        mid
+
+                else
+                    when Array.get (at + 1) table is
+                        Just end ->
+                            if code > end then
+                                halve code table stride (mid + 1) high
+
+                            else
+                                mid
+
+                        Nothing ->
+                            -1
+
+            Nothing ->
+                -1
