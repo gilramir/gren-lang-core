@@ -7,12 +7,18 @@ import Set exposing (toArray)
 
 // LOG
 
-var _Debug_log__PROD = F2(function (tag, value) {
+// `Debug.log` renders in Gren now (D158), so what arrives here is the finished
+// line rather than a value: `inspect` has already been applied and the tag
+// joined on. That is what takes `_Debug_toAnsiString` off this path — two
+// callers of it remain, an incomplete `case` and the REPL — and what lets
+// `core.md` C13's `debug_log` be a primitive every backend can answer with a
+// `console.log`, rather than one that obliges each of them to walk a value.
+var _Debug_log__PROD = F2(function (line, value) {
   return value;
 });
 
-var _Debug_log__DEBUG = F2(function (tag, value) {
-  console.log(tag + ": " + _Debug_toString(value));
+var _Debug_log__DEBUG = F2(function (line, value) {
+  console.log(line);
   return value;
 });
 

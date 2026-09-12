@@ -12,7 +12,9 @@ so there is nothing to write to reach it.
 
 -}
 
+import Basics exposing ((++))
 import Gren.Kernel.Debug
+import Inspect exposing (Inspect)
 import String exposing (String)
 
 
@@ -33,10 +35,17 @@ the situations you reach for it. It is a barrier no Core pass may move, and
 that is affordable only because it cannot appear in a package or a release
 build.
 
+**Note:** the value has to be `Inspect`able (D158). That is what makes the line
+this prints the same on every backend — it is `inspect`'s, so
+`docs/representation.md` R5 pins it — and it is what keeps a backend from having
+to carry a second printer that knows how a `Dict` is built (`core.md` C13's
+`debug_log` is handed the finished string). The cost is that you cannot log a
+function, a `Task`, or an abstract type whose author wrote no instance.
+
 -}
-log : String -> a -> a
-log =
-    Gren.Kernel.Debug.log
+log : Inspect a => String -> a -> a
+log tag value =
+    Gren.Kernel.Debug.log (tag ++ ": " ++ inspect value) value
 
 
 {-| This is a placeholder for code that you will write later.
