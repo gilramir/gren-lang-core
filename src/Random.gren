@@ -399,10 +399,14 @@ You could also do this for lower case ASCII letters:
 
     letter : Random.Generator Char
     letter =
-      Random.map (\n -> Char.fromCode (n + 97)) (Random.int 0 25)
+      Random.map
+        (\n -> Maybe.withDefault 'a' (Char.fromCode (n + 97)))
+        (Random.int 0 25)
 
 The `letter` generator first picks a number between 0 and 25 inclusive.
-It then uses `Char.fromCode` to turn [ASCII codes][ascii] into `Char` values.
+It then uses `Char.fromCode` to turn [ASCII codes][ascii] into `Char` values —
+which answers a `Maybe`, because not every number is a character, and every one
+of these is.
 
 [ascii]: https://en.wikipedia.org/wiki/ASCII#Printable_characters
 -}

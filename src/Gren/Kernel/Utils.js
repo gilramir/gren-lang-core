@@ -25,19 +25,15 @@ var _Utils_identical = F2(function (a, b) {
 // Code in Generate/JavaScript.hs, Basics.js, and depends on
 // the particular integer values assigned to LT, EQ, and GT.
 
+// A `Char` used to need a case here: it was a one-character string that a dev
+// build boxed in a `String` object, so `typeof x` was `"object"` and the
+// comparison fell through to the array walk. A `Char` is a code point now
+// (C8, `m1b-str.md` §T12) and a number takes the first branch, which is also
+// why dev and release compare it the same way.
 function _Utils_cmp(x, y) {
   if (typeof x !== "object") {
     return x === y ? /*EQ*/ 0 : x < y ? /*LT*/ -1 : /*GT*/ 1;
   }
-
-  /**__DEBUG/
-	if (x instanceof String)
-	{
-		var a = x.valueOf();
-		var b = y.valueOf();
-		return a === b ? 0 : a < b ? -1 : 1;
-	}
-	//*/
 
   // At this point, we can only be comparing arrays
   for (var idx = 0; idx < x.length; idx++) {
@@ -65,15 +61,6 @@ var _Utils_compare = F2(function (x, y) {
   var n = _Utils_cmp(x, y);
   return n < 0 ? __Basics_LT : n ? __Basics_GT : __Basics_EQ;
 });
-
-// COMMON VALUES
-
-function _Utils_chr__PROD(c) {
-  return c;
-}
-function _Utils_chr__DEBUG(c) {
-  return new String(c);
-}
 
 // RECORDS
 

@@ -2,7 +2,6 @@
 
 import Bytes.Encode as Encode exposing (getLength, write)
 import Gren.Kernel.Scheduler exposing (binding, succeed)
-import Gren.Kernel.Utils exposing (chr)
 import Maybe exposing (Just, Nothing)
 
 */

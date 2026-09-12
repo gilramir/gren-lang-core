@@ -29,8 +29,8 @@ module Char exposing
 -}
 
 import Basics exposing ((&&), (<=), (>=), (||), Bool, Eq, Int, Ord)
-import Gren.Kernel.Char
 import Gren.Kernel.Utils
+import Maybe exposing (Maybe(..))
 
 
 
@@ -262,49 +262,76 @@ isHexDigit char =
 
     toCode '😃' == 0x0001F603
 
+A `Char` *is* its code point (C8), so this is the identity on every backend and
+is the primitive itself rather than a wrapper around one.
+
 -}
+@prim("char_to_i32")
 toCode : Char -> Int
-toCode =
-    Gren.Kernel.Char.toCode
 
 
-{-| Convert a Unicode [code point][cp] to a character.
+{-| Convert a Unicode [code point][cp] to a character, when the number is one.
 
-    fromCode 65 == 'A'
+    fromCode 65 == Just 'A'
 
-    fromCode 66 == 'B'
+    fromCode 0x6728 == Just '木'
 
-    fromCode 0x6728 == '木'
+    fromCode 0x0001F603 == Just '😃'
 
-    fromCode 0x0001D306 == '𝌆'
+    fromCode 0xD800 == Nothing
 
-    fromCode 0x0001F603 == '😃'
+    fromCode 0x110000 == Nothing
 
-    fromCode -1 == '�'
+    fromCode -1 == Nothing
 
-The full range of unicode is from `0` to `0x10FFFF`. With numbers outside that
-range, you get [the replacement character][fffd].
+A `Char` is a Unicode **scalar value**: a code point in `0 .. 0x10FFFF` that is
+not one of the surrogates, `0xD800 .. 0xDFFF`. Those exist to encode the
+characters above `0xFFFF` in UTF-16 and are not characters themselves, so
+`fromCode` refuses them along with everything outside the range — which is why
+this returns a [`Maybe`](Maybe#Maybe) rather than picking a character nobody
+asked for.
 
 [cp]: https://en.wikipedia.org/wiki/Code_point
-[fffd]: https://en.wikipedia.org/wiki/Specials_(Unicode_block)#Replacement_character
 
 -}
-fromCode : Int -> Char
-fromCode =
-    Gren.Kernel.Char.fromCode
+fromCode : Int -> Maybe Char
+fromCode code =
+    if 0 <= code && code <= 0xD7FF then
+        Just (codeToCharPrim code)
+
+    else if 0xE000 <= code && code <= 0x10FFFF then
+        Just (codeToCharPrim code)
+
+    else
+        Nothing
 
 
--- Not `Gren.Kernel.Utils.identical`, which the other four primitive instances
--- are: a `Char` is a one-character string in a release build and a boxed
--- `String` object in a dev build, so that the kernel's untyped printer — what
--- `Debug.log` and an incomplete `case` render with — can tell one from a
--- `String`, and `===` on two boxes is reference equality. `Char.identical`
--- unwraps in the mode that wraps (D142, `docs/m1b-classes.md` §G40).
+-- `toCode` above is `char_to_i32` and this is its inverse, and both are the
+-- identity at run time on a backend whose `Char` is a machine integer -- which
+-- is every backend there is. They are primitives rather than kernel functions
+-- because the representation is the compiler's to know:
+-- `Generate.CoreJS.Prim` writes the JavaScript and `Generate.LowC` the C, and
+-- neither has anything to convert.
+--
+-- This half is **unchecked**, which is why it is private and why `toCode` is
+-- not: its precondition is `fromCode`'s two ranges, and nothing else in `core`
+-- may reach it.
+
+
+@prim("i32_to_char")
+codeToCharPrim : Int -> Char
+
+
+-- `Eq Char` is reference equality, the same as `Eq Int` and for the same reason:
+-- a `Char` is a code point, so two of them are equal exactly when the numbers
+-- are (D142, `docs/m1b-classes.md` §G40). It used to be `Char.identical`,
+-- because a `Char` was a one-character string that a dev build boxed in a
+-- `String` object; `m1b-str.md` §T12 is where that box went.
 
 
 instance Eq Char where
     eq a b =
-        Gren.Kernel.Char.identical a b
+        Gren.Kernel.Utils.identical a b
 
 
 instance Ord Char where

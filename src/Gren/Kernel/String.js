@@ -1,16 +1,26 @@
 /*
 
-import Gren.Kernel.Utils exposing (chr)
 import Maybe exposing (Just, Nothing)
 
 */
 
+// A `Char` here is a **code point**: an ordinary JavaScript number, the same
+// value `Char.toCode` answers with (C8, `docs/m1b-str.md` §T12). It used to be
+// a one-character string, boxed in a `String` object by dev builds so that the
+// untyped printer could tell one from a `String`, and every function below that
+// takes or yields a character is where that difference lived.
+//
+// So a `String` is still UTF-16 and a character is no longer a piece of one:
+// `String.fromCodePoint` and `codePointAt` are the conversion, and they are
+// here rather than at the call sites in `String.gren` because this is the file
+// that knows what a JavaScript string is made of.
+
 var _String_pushFirst = F2(function (char, string) {
-  return char + string;
+  return String.fromCodePoint(char) + string;
 });
 
 var _String_pushLast = F2(function (char, string) {
-  return string + char;
+  return string + String.fromCodePoint(char);
 });
 
 var _String_popFirst = function (string) {
@@ -19,11 +29,10 @@ var _String_popFirst = function (string) {
   }
 
   var firstPointNumber = string.codePointAt(0);
-  var firstChar = String.fromCodePoint(firstPointNumber);
 
   return __Maybe_Just({
-    __$first: __Utils_chr(firstChar),
-    __$rest: string.slice(firstChar.length),
+    __$first: firstPointNumber,
+    __$rest: string.slice(firstPointNumber > 0xffff ? 2 : 1),
   });
 };
 
@@ -34,7 +43,7 @@ var _String_popLast = function (string) {
     return __Maybe_Nothing;
   } else if (strLen === 1) {
     return __Maybe_Just({
-      __$last: __Utils_chr(string),
+      __$last: string.charCodeAt(0),
       __$rest: "",
     });
   }
@@ -45,13 +54,13 @@ var _String_popLast = function (string) {
   if (possiblyLastPoint > 0xffff) {
     // last character is two units
     return __Maybe_Just({
-      __$last: __Utils_chr(String.fromCodePoint(possiblyLastPoint)),
+      __$last: possiblyLastPoint,
       __$rest: string.slice(0, strLen - 2),
     });
   }
 
   return __Maybe_Just({
-    __$last: __Utils_chr(string[strLen - 1]),
+    __$last: string.charCodeAt(strLen - 1),
     __$rest: string.slice(0, strLen - 1),
   });
 };
@@ -72,9 +81,12 @@ var _String_repeat = F2(function (num, chunk) {
   }
 });
 
+// `for (let char of string)` iterates by code point, which is what makes these
+// two the codepoint-oriented folds; what the loop yields is a one- or
+// two-unit string, and `codePointAt(0)` is the number it stands for.
 var _String_foldl = F3(function (func, state, string) {
   for (let char of string) {
-    state = A2(func, __Utils_chr(char), state);
+    state = A2(func, char.codePointAt(0), state);
   }
 
   return state;
@@ -84,11 +96,11 @@ var _String_foldr = F3(function (func, state, string) {
   let reversed = [];
 
   for (let char of string) {
-    reversed.unshift(char);
+    reversed.unshift(char.codePointAt(0));
   }
 
-  for (let char of reversed) {
-    state = A2(func, __Utils_chr(char), state);
+  for (let code of reversed) {
+    state = A2(func, code, state);
   }
 
   return state;
@@ -136,7 +148,7 @@ function _String_toLower(str) {
 
 var _String_any = F2(function (isGood, string) {
   for (let char of string) {
-    if (isGood(__Utils_chr(char))) {
+    if (isGood(char.codePointAt(0))) {
       return true;
     }
   }
@@ -234,8 +246,17 @@ function _String_toFloat(s) {
   return n === n ? __Maybe_Just(n) : __Maybe_Nothing;
 }
 
+// Not `String.fromCodePoint(...chars)`: a spread is an argument list, and an
+// argument list has a length limit that a `String` does not. `join` over a
+// mapped array is the same answer for every size of input.
 function _String_fromArray(chars) {
-  return chars.join("");
+  var out = "";
+
+  for (var i = 0; i < chars.length; i++) {
+    out += String.fromCodePoint(chars[i]);
+  }
+
+  return out;
 }
 
 // UNITS
@@ -244,19 +265,31 @@ var _String_unitLength = function (str) {
   return str.length;
 };
 
-var _String_getUnit = F2(function (index, str) {
-  var char = str.at(index);
+// THE UNITS FAMILY YIELDS SOMETHING THAT IS NOT A `Char`
+//
+// A UTF-16 code unit can be half of a surrogate pair, and half a pair is not a
+// scalar value, so what these three hand the caller is a number in
+// `0 .. 0xFFFF` that C8 says is not a `Char`. That was true before a `Char` was
+// a number as well -- `String.gren`'s own docs say the value "could possibly
+// represent one half of a full code point" -- and D8 is what closes it: the
+// family leaves `core` for a `target = "js"` package (`m1b-str.md` §T4, step 6).
+// Until then this is the one place in `core` where the `Char` type is a lie, and
+// it is a smaller lie than it was: the number is the code unit, where before it
+// was a string holding an unpaired surrogate.
 
-  if (typeof char === "undefined") {
+var _String_getUnit = F2(function (index, str) {
+  var i = index < 0 ? str.length + index : index;
+
+  if (i < 0 || i >= str.length) {
     return __Maybe_Nothing;
   }
 
-  return __Maybe_Just(__Utils_chr(char));
+  return __Maybe_Just(str.charCodeAt(i));
 });
 
 var _String_foldlUnits = F3(function (fn, state, str) {
   for (let i = 0; i < str.length; i++) {
-    state = A2(fn, __Utils_chr(str[i]), state);
+    state = A2(fn, str.charCodeAt(i), state);
   }
 
   return state;
@@ -264,7 +297,7 @@ var _String_foldlUnits = F3(function (fn, state, str) {
 
 var _String_foldrUnits = F3(function (fn, state, str) {
   for (let i = str.length - 1; i >= 0; i--) {
-    state = A2(fn, __Utils_chr(str[i]), state);
+    state = A2(fn, str.charCodeAt(i), state);
   }
 
   return state;

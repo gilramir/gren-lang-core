@@ -325,19 +325,23 @@ escape quote c =
 hex : Int -> String
 hex n =
     if n < 16 then
-        String.fromChar (hexDigit n)
+        hexDigit n
 
     else
-        hex (Bitwise.shiftRightZfBy 4 n) ++ String.fromChar (hexDigit (Bitwise.and n 0xF))
+        hex (Bitwise.shiftRightZfBy 4 n) ++ hexDigit (Bitwise.and n 0xF)
 
 
-hexDigit : Int -> Char
+-- A digit read out of the sixteen rather than computed from `'0'` and `'A'`,
+-- which is what this was until `Char.fromCode` became `Int -> Maybe Char` (C8,
+-- `m1b-str.md` §T12). The arithmetic cannot fail and the `Maybe` it now returns
+-- would have to be discarded with a default character standing in for a digit,
+-- which is a worse thing to write down than an index into a string of the
+-- digits themselves.
+
+
+hexDigit : Int -> String
 hexDigit n =
-    if n < 10 then
-        Char.fromCode (Char.toCode '0' + n)
-
-    else
-        Char.fromCode (Char.toCode 'A' + n - 10)
+    String.slice n (n + 1) "0123456789ABCDEF"
 
 
 
