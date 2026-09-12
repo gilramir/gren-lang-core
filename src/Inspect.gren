@@ -31,6 +31,7 @@ import Char exposing (Char)
 import Maybe exposing (Maybe(..))
 import Result exposing (Result(..))
 import String exposing (String)
+import Unicode.Lookup
 
 
 {-| Types that can be rendered as a string.
@@ -297,6 +298,14 @@ R5: `\\`, `\"`, `\n`, `\r`, `\t`, and any other non-printable as `\u{XXXX}`
 with uppercase hex and no leading zeros. A quote is escaped only when it is the
 one doing the enclosing, so `'"'` and `"'"` stay readable.
 
+**Non-printable is `docs/unicode.md` U2's definition**, read out of the table
+at the version [`Unicode.version`](Unicode#version) names: general category
+`Cc`, `Cf`, `Cs`, `Co` or `Cn`, or `Zl`, `Zp` or a `Zs` that is not the space
+itself. That is a wider set than the C0 controls this used to test for, and
+`Cn` is why an *unassigned* codepoint escapes — a program's output therefore
+moves when the pin moves, which is what U3 makes a minor version of the
+language (`docs/m1b-str.md` §T18).
+
 -}
 escape : Char -> Char -> String
 escape quote c =
@@ -315,7 +324,7 @@ escape quote c =
     else if c == '\t' then
         "\\t"
 
-    else if Char.toCode c < 0x20 || Char.toCode c == 0x7F then
+    else if Unicode.Lookup.isNonPrintable c then
         "\\u{" ++ hex (Char.toCode c) ++ "}"
 
     else
