@@ -172,13 +172,10 @@ function _String_lines(str) {
   return str.split(/\r\n|\r|\n/g);
 }
 
-function _String_toUpper(str) {
-  return str.toUpperCase();
-}
-
-function _String_toLower(str) {
-  return str.toLowerCase();
-}
+// `_String_toUpper` and `_String_toLower` used to be here, as `toUpperCase()`
+// and `toLowerCase()`. They are Geng now, over the case-mapping table — U2 again
+// (`docs/m1b-str.md` §T17), and here the host was not wrong so much as dated:
+// what it maps depends on which Unicode version its engine was built with.
 
 var _String_any = F2(function (isGood, string) {
   for (let char of string) {

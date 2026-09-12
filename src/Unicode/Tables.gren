@@ -1,9 +1,11 @@
 module Unicode.Tables exposing
-    ( lowerMultiFrom
+    ( lowerAscii
+    , lowerMultiFrom
     , lowerMultiTo
     , lowerRuns
     , nonPrintableAscii
     , nonPrintableRanges
+    , upperAscii
     , upperMultiFrom
     , upperMultiTo
     , upperRuns
@@ -26,15 +28,17 @@ Every table is a sorted array of ranges, stored flat, and every lookup in
     those two, as a record of four 32-bit words — the same answer, reachable
     without a search and without allocating (§T16.2).
   - `upperRuns` and `lowerRuns` are `[lo, hi, delta, ...]`: every codepoint
-    from `lo` to `hi` maps to itself plus `delta`.
+    from `lo` to `hi` maps to itself plus `delta`. `upperAscii` and `lowerAscii`
+    are the single run of each that covers ASCII, lifted out so that a letter
+    does not pay for a search of the other 687 (§T17.2).
   - `upperMultiFrom` and `upperMultiTo` are the mappings that produce more than
     one codepoint, which no delta can express — `ß` to `SS` and its kind. They
     are `Array Char` and not `String` because `String` imports the lookups that
     read these tables, and a `String` here would close that circle.
 
 @docs whitespaceRanges, whitespaceAscii
-@docs upperRuns, upperMultiFrom, upperMultiTo
-@docs lowerRuns, lowerMultiFrom, lowerMultiTo
+@docs upperRuns, upperAscii, upperMultiFrom, upperMultiTo
+@docs lowerRuns, lowerAscii, lowerMultiFrom, lowerMultiTo
 @docs nonPrintableRanges, nonPrintableAscii
 
 -}
@@ -2155,6 +2159,18 @@ upperRuns =
     , 125251
     , -34
     ]
+
+
+{-| The one run of the uppercase mapping that covers ASCII: `lo` to `hi`
+inclusive, each mapping to itself plus `delta`. Nothing else below 128 maps at
+all, which `scripts/unicode-tables.py` checks rather than assumes.
+-}
+upperAscii : { lo : Int, hi : Int, delta : Int }
+upperAscii =
+    { lo = 97
+    , hi = 122
+    , delta = -32
+    }
 
 
 {-| The 102 codepoints whose uppercase is more than one codepoint.
@@ -4411,6 +4427,18 @@ lowerRuns =
     , 125217
     , 34
     ]
+
+
+{-| The one run of the lowercase mapping that covers ASCII: `lo` to `hi`
+inclusive, each mapping to itself plus `delta`. Nothing else below 128 maps at
+all, which `scripts/unicode-tables.py` checks rather than assumes.
+-}
+lowerAscii : { lo : Int, hi : Int, delta : Int }
+lowerAscii =
+    { lo = 65
+    , hi = 90
+    , delta = 32
+    }
 
 
 {-| The 1 codepoints whose lowercase is more than one codepoint.

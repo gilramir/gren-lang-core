@@ -89,7 +89,15 @@ no run has a delta of zero.
 -}
 upperDelta : Char -> Int
 upperDelta c =
-    delta (Char.toCode c) Tables.upperRuns
+    let
+        code =
+            Char.toCode c
+    in
+    if code < 128 then
+        asciiDelta code Tables.upperAscii
+
+    else
+        delta code Tables.upperRuns
 
 
 {-| The uppercase of a codepoint that has no single-codepoint one:
@@ -100,13 +108,29 @@ Non-locale and unconditional, per U2.
 -}
 upperExpansion : Char -> Maybe (Array Char)
 upperExpansion c =
-    expansion (Char.toCode c) Tables.upperMultiFrom Tables.upperMultiTo
+    let
+        code =
+            Char.toCode c
+    in
+    if code < 128 then
+        Nothing
+
+    else
+        expansion code Tables.upperMultiFrom Tables.upperMultiTo
 
 
 {-| How far this codepoint's lowercase is from it, or `0`. -}
 lowerDelta : Char -> Int
 lowerDelta c =
-    delta (Char.toCode c) Tables.lowerRuns
+    let
+        code =
+            Char.toCode c
+    in
+    if code < 128 then
+        asciiDelta code Tables.lowerAscii
+
+    else
+        delta code Tables.lowerRuns
 
 
 {-| `lowerExpansion 'İ'` is `Just [ 'i', '\u{0307}' ]`, and it is the only
@@ -120,11 +144,36 @@ in a context-aware implementation. U2 decided that, and
 -}
 lowerExpansion : Char -> Maybe (Array Char)
 lowerExpansion c =
-    expansion (Char.toCode c) Tables.lowerMultiFrom Tables.lowerMultiTo
+    let
+        code =
+            Char.toCode c
+    in
+    if code < 128 then
+        Nothing
+
+    else
+        expansion code Tables.lowerMultiFrom Tables.lowerMultiTo
 
 
 
 -- THE SEARCHES
+
+
+{-| The case-mapping distance for a codepoint below 128.
+
+ASCII is one run in each direction — `a`-`z` and `A`-`Z` — and nothing else
+under 128 maps at all. `scripts/unicode-tables.py` checks both of those against
+the database and refuses to generate a table where they stop being true, which
+is what lets the lookups above skip the 688-entry search and the hundred-entry
+expansion table for every letter of every ASCII string (§T17.2).
+-}
+asciiDelta : Int -> { lo : Int, hi : Int, delta : Int } -> Int
+asciiDelta code run =
+    if code >= run.lo && code <= run.hi then
+        run.delta
+
+    else
+        0
 
 
 {-| Is `code`, which must be below 128, set in an ASCII bitmap?

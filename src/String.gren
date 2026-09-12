@@ -505,10 +505,24 @@ and VIRTUAL YELLING.
 
     toUpper "skinner" == "SKINNER"
 
+    toUpper "stra\u{00DF}e" == "STRASSE"
+
+Full, non-locale case mapping at the version
+[`Unicode.version`](Unicode#version) names: a character may uppercase to more
+than one character, as `\u{00DF}` does, so the result is not always as long as
+the argument. It is not the host's mapping, and it is the same mapping on every
+backend (`docs/unicode.md` U2).
+
+The *conditional* mappings are not applied, because they depend on a locale or
+on the surrounding text and `core` has no notion of either. The one that is
+visible in practice is final sigma: `toLower "\u{039F}\u{0394}\u{039F}\u{03A3}"`
+is `"\u{03BF}\u{03B4}\u{03BF}\u{03C3}"` here, with an ordinary sigma at the
+end rather than `\u{03C2}`.
+
 -}
 toUpper : String -> String
-toUpper =
-    Gren.Kernel.String.toUpper
+toUpper string =
+    foldl (mapCase Unicode.Lookup.upperDelta Unicode.Lookup.upperExpansion) "" string
 
 
 {-| Convert a string to all lower case. Useful for case-insensitive comparisons.
@@ -517,8 +531,42 @@ toUpper =
 
 -}
 toLower : String -> String
-toLower =
-    Gren.Kernel.String.toLower
+toLower string =
+    foldl (mapCase Unicode.Lookup.lowerDelta Unicode.Lookup.lowerExpansion) "" string
+
+
+{-| One character of a case mapping, onto the end of what is built so far.
+
+Two tables and three cases, in the order they are cheap: a character whose
+mapping is one character is a distance from it, a character whose mapping is
+longer is looked up in a much smaller table, and everything else — which is
+nearly every character of nearly every string — maps to itself.
+-}
+mapCase : (Char -> Int) -> (Char -> Maybe (Array Char)) -> Char -> String -> String
+mapCase delta expansion c acc =
+    let
+        distance =
+            delta c
+    in
+    if distance /= 0 then
+        when Char.fromCode (Char.toCode c + distance) is
+            Just mapped ->
+                pushLast mapped acc
+
+            -- Unreachable: a case mapping never names a surrogate and never
+            -- leaves the codespace. `Char.fromCode` is `Maybe` since C8, and
+            -- the honest answer to a `Nothing` that cannot happen is the one
+            -- given to a character with no mapping at all.
+            Nothing ->
+                pushLast c acc
+
+    else
+        when expansion c is
+            Just chars ->
+                acc ++ fromArray chars
+
+            Nothing ->
+                pushLast c acc
 
 
 {-| Pad a string on both sides until it has a given length.
