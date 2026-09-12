@@ -5,7 +5,7 @@ module String exposing
     , contains, startsWith, endsWith, firstIndexOf, lastIndexOf, indices
     , toInt, fromInt
     , fromInt64, fromUInt32, fromUInt64
-    , toFloat, fromFloat
+    , toFloat, fromFloat, fromFloat32
     , fromChar, pushFirst, pushLast, popFirst, popLast
     , toArray, fromArray
     , toUpper, toLower, pad, padLeft, padRight, trim, trimLeft, trimRight
@@ -63,7 +63,7 @@ that wants the digits without the suffix calls directly.
 
 ## Float Conversions
 
-@docs toFloat, fromFloat
+@docs toFloat, fromFloat, fromFloat32
 
 
 ## Char Conversions
@@ -769,6 +769,64 @@ fromFloat number =
 
             { mantissa, exponent } =
                 Ryu.decimal number
+
+            digits =
+                fromUInt64 mantissa
+        in
+        place sign digits (exponent + count digits - 1)
+
+
+{-| Convert a `Float32` to a `String`.
+
+    String.fromFloat32 1.5f32 == "1.5"
+
+    String.fromFloat32 0.1f32 == "0.1"
+
+[`fromFloat`](#fromFloat) at the other width, and the same R5 layout over the
+same thresholds -- what differs is the digits, which are the shortest that read
+back **as a single**. That is not the same set as the double's and the second
+line above is why: `0.1f32` is not the `Float` `0.1`, it is the binary32 nearest
+it, and widening that to a `Float` and printing it gives
+`"0.10000000149011612"`. Both strings name the same `Float32`; this one is the
+shortest that does.
+
+There is no `toFloat32` for this to be the inverse of, and the pair that looks
+like one -- [`toFloat`](#toFloat) and then
+[`Float32.fromFloat`](Float32#fromFloat) -- **is not always its inverse**. That
+pair rounds twice, decimal to a `Float` and `Float` to a `Float32`, and what
+this function writes is the shortest decimal that rounds **once** onto the value,
+which is what R5 pins and what a `strtof` does. The two disagree at exactly one
+`Float32` in the whole 2^32 -- `7.038531e-26`, at either sign -- where the round
+trip lands on the neighbour instead (`docs/m1b-ryu.md` §Y14.6, which counted
+them, and where the fix is a `String.toFloat32` that rounds once).
+
+-}
+fromFloat32 : Float32 -> String
+fromFloat32 number =
+    if isNaN number then
+        "NaN"
+
+    else if isInfinite number then
+        if number < 0 then
+            "-Infinity"
+
+        else
+            "Infinity"
+
+    else if number == 0 then
+        "0.0"
+
+    else
+        let
+            sign =
+                if number < 0 then
+                    "-"
+
+                else
+                    ""
+
+            { mantissa, exponent } =
+                Ryu.decimal32 number
 
             digits =
                 fromUInt64 mantissa

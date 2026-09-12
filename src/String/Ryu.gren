@@ -1,4 +1,4 @@
-module String.Ryu exposing (decimal)
+module String.Ryu exposing (decimal, decimal32)
 
 {-| Ryu: the shortest decimal that reads back as the same `Float`.
 
@@ -8,16 +8,20 @@ and `String.fromFloat` and the same on every backend, and
 it answers with a mantissa and a power of ten, and `String.fromFloat` lays
 those out per R5.
 
-**Not exposed.** `gren.json` does not list it, because what a program should
-call is `String.fromFloat`.
+[decimal32](#decimal32) is the same algorithm at single precision, which R5
+needs for `1.5f32` and which `docs/m1b-ryu.md` §Y14 is.
 
-@docs decimal
+**Not exposed.** `gren.json` does not list it, because what a program should
+call is `String.fromFloat` or `String.fromFloat32`.
+
+@docs decimal, decimal32
 
 -}
 
 import Array exposing (Array)
 import Basics exposing (..)
 import Bitwise
+import Float32
 import Math
 import Maybe
 import String.Ryu.Tables as Tables
@@ -53,6 +57,35 @@ decimal f =
             Bitwise.and bits 4503599627370495
     in
     shortest ieeeMantissa ieeeExponent
+
+
+{-| The shortest decimal for a **finite, non-zero** `Float32`, in the record
+`decimal` answers with: `decimal32 1.5f32` is `{ mantissa = 15, exponent = -1 }`.
+
+The digits are not the double's, which is the whole reason this exists.
+`0.1f32` is the binary32 nearest a tenth, and widened it is the `Float`
+`0.10000000149011612`; the shortest decimal that reads back as *that single* is
+`0.1` again, because no other single is nearer. Rendering a `Float32` through
+[decimal](#decimal) would print the widening instead, which is the wrong string
+for the value in hand (`docs/m1b-ryu.md` §Y14).
+
+**Precondition: finite and not zero**, as [decimal](#decimal)'s is, and
+`String.fromFloat32` answers those four values before it gets here.
+
+-}
+decimal32 : Float32 -> { mantissa : UInt64, exponent : Int }
+decimal32 f =
+    let
+        bits =
+            UInt64.fromUInt32 (Float32.toBits f)
+
+        ieeeExponent =
+            UInt64.toInt (Bitwise.and (Bitwise.shiftRightZfBy mantissaBits32 bits) 255)
+
+        ieeeMantissa =
+            Bitwise.and bits 8388607
+    in
+    shortest32 ieeeMantissa ieeeExponent
 
 
 -- THE ALGORITHM
@@ -168,6 +201,11 @@ type alias Scaled =
     , acceptBounds : Bool
     , vrIsTrailingZeros : Bool
     , vmIsTrailingZeros : Bool
+    -- The digit below the last one of `vr`, when step 3 had to compute it
+    -- because step 4's loop will not run. Always zero at double precision,
+    -- where the loop always runs at least once; `scaleUp32` and `scaleDown32`
+    -- are where it can be something else (§Y14).
+    , lastRemoved : UInt64
     }
 
 
@@ -203,6 +241,7 @@ scaleUp mv mmShift acceptBounds e2 =
             , acceptBounds = acceptBounds
             , vrIsTrailingZeros = False
             , vmIsTrailingZeros = False
+            , lastRemoved = 0
             }
     in
     -- Above 21 the answer is always "no": 5^22 does not divide any 55-bit
@@ -256,6 +295,7 @@ scaleDown mv mmShift acceptBounds e2 =
             , acceptBounds = acceptBounds
             , vrIsTrailingZeros = False
             , vmIsTrailingZeros = False
+            , lastRemoved = 0
             }
     in
     if q <= 1 then
@@ -310,7 +350,12 @@ removeQuickly s =
                 }
 
             else
-                { vr = s.vr, vp = s.vp, vm = s.vm, removed = 0, roundUp = False }
+                { vr = s.vr
+                , vp = s.vp
+                , vm = s.vm
+                , removed = 0
+                , roundUp = s.lastRemoved >= 5
+                }
 
         final =
             quickLoop start
@@ -371,7 +416,7 @@ removeExactly s =
                 , vp = s.vp
                 , vm = s.vm
                 , removed = 0
-                , lastRemoved = 0
+                , lastRemoved = s.lastRemoved
                 , vrIsTrailingZeros = s.vrIsTrailingZeros
                 , vmIsTrailingZeros = s.vmIsTrailingZeros
                 }
@@ -453,6 +498,269 @@ zerosLoop state =
             , vrIsTrailingZeros = state.vrIsTrailingZeros && state.lastRemoved == 0
             , vmIsTrailingZeros = state.vmIsTrailingZeros
             }
+
+
+-- SINGLE PRECISION
+--
+-- `f2d` in the reference implementation (`ryu/f2s.c`), which is `d2d` above at
+-- 24 bits of mantissa and 8 of exponent. The interval, the multiply and the
+-- removal loop are the same; three things differ, and only the third is
+-- anywhere near subtle.
+--
+-- *The tables are the top halves of the double's.* A 64-bit factor is a
+-- 128-bit one with its low half dropped, so both bitcounts come down by 64 and
+-- `pow5Hi` and `pow5InvHi` are read at indices no larger than 47 and 30. This
+-- is the reference's own default build -- its `f2s_full_table.h` is a
+-- compile-time option and not the shipped path -- and it is why the
+-- single-precision half of R5 costs no table bytes at all (§Y14).
+--
+-- **The reciprocal takes a `+ 1` and the power does not**, which is §Y12.3's
+-- "the roundings go opposite ways" one level down. `pow5InvHi` holds
+-- `floor(2^x / 5^q)`, because dropping the low half of an entry that was
+-- rounded *up* truncates it again; `mulShift32` needs a bound from outside, so
+-- the one is put back. `pow5Hi` is truncated by design and wants no such thing.
+-- Leaving it out is not a rounding nicety: it is 1,375,209 renderings out of
+-- 2^32 with a wrong last digit, which is how §Y14.5 found it.
+--
+-- *`q` is not backed off by one.* `scaleUp` and `scaleDown` take a digit fewer
+-- than the exponent allows, so that the removal loop always runs at least once
+-- and the digit it rounds on is always a digit it removed.
+--
+-- *So the digit to round on can be missing*, and when the loop will not run,
+-- step 3 computes it: one more `mulShift32`, one power of five lower, whose
+-- last digit is the one that was about to be dropped. `Scaled.lastRemoved`
+-- carries it into step 4, which is shared with the double and where it is
+-- always zero.
+
+
+mantissaBits32 : Int
+mantissaBits32 =
+    23
+
+
+bias32 : Int
+bias32 =
+    127
+
+
+pow5Bitcount32 : Int
+pow5Bitcount32 =
+    pow5Bitcount - 64
+
+
+pow5InvBitcount32 : Int
+pow5InvBitcount32 =
+    pow5InvBitcount - 64
+
+
+shortest32 : UInt64 -> Int -> { mantissa : UInt64, exponent : Int }
+shortest32 ieeeMantissa ieeeExponent =
+    let
+        { e2, m2 } =
+            if ieeeExponent == 0 then
+                { e2 = 1 - bias32 - mantissaBits32 - 2
+                , m2 = ieeeMantissa
+                }
+
+            else
+                { e2 = ieeeExponent - bias32 - mantissaBits32 - 2
+                , m2 = Bitwise.or 8388608 ieeeMantissa
+                }
+
+        acceptBounds =
+            Bitwise.and m2 1 == 0
+
+        mv =
+            4 * m2
+
+        -- `shortest`'s annotation, for `shortest`'s reason (§Y13).
+        mmShift : UInt64
+        mmShift =
+            if ieeeMantissa /= 0 || ieeeExponent <= 1 then
+                1
+
+            else
+                0
+
+        scaled =
+            if e2 >= 0 then
+                scaleUp32 mv mmShift acceptBounds e2
+
+            else
+                scaleDown32 mv mmShift acceptBounds e2
+
+        shortened =
+            if scaled.vmIsTrailingZeros || scaled.vrIsTrailingZeros then
+                removeExactly scaled
+
+            else
+                removeQuickly scaled
+    in
+    { mantissa = shortened.mantissa
+    , exponent = scaled.e10 + shortened.removed
+    }
+
+
+scaleUp32 : UInt64 -> UInt64 -> Bool -> Int -> Scaled
+scaleUp32 mv mmShift acceptBounds e2 =
+    let
+        q =
+            log10Pow2 e2
+
+        mul =
+            pow5Inv q
+
+        i =
+            negate e2 + q + (pow5InvBitcount32 + pow5bits q - 1)
+
+        mm =
+            mv - 1 - mmShift
+
+        base =
+            { vr = mulShift32 mv mul i
+            , vp = mulShift32 (mv + 2) mul i
+            , vm = mulShift32 mm mul i
+            , e10 = q
+            , acceptBounds = acceptBounds
+            , vrIsTrailingZeros = False
+            , vmIsTrailingZeros = False
+            , lastRemoved = 0
+            }
+
+        seeded =
+            if q /= 0 && (base.vp - 1) // 10 <= base.vm // 10 then
+                { base | lastRemoved = remainderBy 10 (belowUp mv q e2) }
+
+            else
+                base
+    in
+    -- Above 9 the answer is always "no": a 26-bit number cannot end in that
+    -- many powers of five.
+    if q > 9 then
+        seeded
+
+    else if remainderBy 5 mv == 0 then
+        -- At most one of the three can be a multiple of five, so these are
+        -- three cases and not three questions.
+        { seeded | vrIsTrailingZeros = isMultipleOfPowerOf5 mv q }
+
+    else if acceptBounds then
+        { seeded | vmIsTrailingZeros = isMultipleOfPowerOf5 mm q }
+
+    else if isMultipleOfPowerOf5 (mv + 2) q then
+        { seeded | vp = seeded.vp - 1 }
+
+    else
+        seeded
+
+
+scaleDown32 : UInt64 -> UInt64 -> Bool -> Int -> Scaled
+scaleDown32 mv mmShift acceptBounds e2 =
+    let
+        q =
+            log10Pow5 (negate e2)
+
+        i =
+            negate e2 - q
+
+        mul =
+            at Tables.pow5Hi i
+
+        j =
+            q - (pow5bits i - pow5Bitcount32)
+
+        base =
+            { vr = mulShift32 mv mul j
+            , vp = mulShift32 (mv + 2) mul j
+            , vm = mulShift32 (mv - 1 - mmShift) mul j
+            , e10 = q + e2
+            , acceptBounds = acceptBounds
+            , vrIsTrailingZeros = False
+            , vmIsTrailingZeros = False
+            , lastRemoved = 0
+            }
+
+        seeded =
+            if q /= 0 && (base.vp - 1) // 10 <= base.vm // 10 then
+                { base | lastRemoved = remainderBy 10 (belowDown mv q i) }
+
+            else
+                base
+    in
+    if q <= 1 then
+        -- `mv` is four times something, so it ends in two zero bits whatever
+        -- the value is.
+        if acceptBounds then
+            { seeded
+                | vrIsTrailingZeros = True
+                , vmIsTrailingZeros = mmShift == 1
+            }
+
+        else
+            { seeded
+                | vrIsTrailingZeros = True
+                , vp = seeded.vp - 1
+            }
+
+    else if q < 31 then
+        { seeded | vrIsTrailingZeros = isMultipleOfPowerOf2 mv (q - 1) }
+
+    else
+        seeded
+
+
+{-| The value one power of ten further down, whose last digit is the one step 4
+would have removed. Two of them, because the two branches index different
+tables; each is its own branch's multiply with `q` and `i` moved by one.
+-}
+belowUp : UInt64 -> Int -> Int -> UInt64
+belowUp mv q e2 =
+    mulShift32 mv
+        (pow5Inv (q - 1))
+        (negate e2 + q - 1 + (pow5InvBitcount32 + pow5bits (q - 1) - 1))
+
+
+{-| The reciprocal of `5^q` as a 64-bit factor: the double's entry with its low
+half dropped, and the `+ 1` that puts back the rounding the drop took off. The
+section comment above says why only this one has it.
+-}
+pow5Inv : Int -> UInt64
+pow5Inv q =
+    at Tables.pow5InvHi q + 1
+
+
+belowDown : UInt64 -> Int -> Int -> UInt64
+belowDown mv q i =
+    mulShift32 mv
+        (at Tables.pow5Hi (i + 1))
+        (q - 1 - (pow5bits (i + 1) - pow5Bitcount32))
+
+
+{-| `m * factor >> shift`, where `factor` is 64 bits and `shift` is over 32.
+
+`m` is at most 26 bits and `factor` at most 61, so the two halves of the product
+are each exact in a `UInt64` and nothing needs `umul128`. The low 32 bits of the
+lower half cannot reach the answer and are dropped unread, which is the whole of
+why the single-precision path is cheaper than `mulShift` and not merely
+narrower.
+
+-}
+mulShift32 : UInt64 -> UInt64 -> Int -> UInt64
+mulShift32 m factor shift =
+    let
+        bits0 =
+            m * Bitwise.and factor 4294967295
+
+        bits1 =
+            m * Bitwise.shiftRightZfBy 32 factor
+    in
+    -- The mask is the reference's `(uint32_t)` cast. The answer fits in 32 bits
+    -- by construction -- it is a scaled 24-bit mantissa -- so this takes
+    -- nothing off; it is here because a transcription that silently widens is
+    -- a transcription whose overflow behaviour nobody checked.
+    Bitwise.and
+        (Bitwise.shiftRightZfBy (shift - 32) (Bitwise.shiftRightZfBy 32 bits0 + bits1))
+        4294967295
 
 
 -- 128-BIT ARITHMETIC

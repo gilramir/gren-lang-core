@@ -180,15 +180,6 @@ instance Inspect UInt64 where
         String.fromUInt64 n ++ "u64"
 
 
--- `Float32` has no instance yet, and that is deliberate: R5's `1.5f32` is the
--- shortest digits that round-trip *as a single*, `core` has no function that
--- produces them, and `String.fromFloat` would produce the double's digits --
--- `0.1 : Float32` would render as `0.10000000149011612f32`. Writing the wrong
--- rendering into an instance would pin it into a corpus case, which is the one
--- thing R5's whole argument is against. It lands with Ryu's single-precision
--- variant (`docs/m1b-ryu.md`, `docs/m1b-int.md` §I17.4 Q4).
-
-
 {-| R5: bare, always a decimal point, and `nan` / `infinity` / `-infinity` for
 the three A1 says exist on every backend. `-0.0` renders with its sign even
 though A2 makes it compare equal to `0.0`.
@@ -219,6 +210,40 @@ instance Inspect Float where
             String.fromFloat f
 
 
+{-| R5: `1.5f32`, over digits that are the shortest to round-trip **as a
+single** -- `String.fromFloat32`'s, which is Ryu at 24 bits of mantissa
+(`docs/m1b-ryu.md` §Y14). This instance waited for that function rather than
+widening, because `inspect (0.1 : Float32)` through the double's digits would
+be `"0.10000000149011612f32"`: a true statement about the value and the wrong
+string, pinned into a corpus case.
+
+**The three non-finite spellings carry no suffix** (D156). `nan`, `infinity`
+and `-infinity` are what R5 pins at both widths, because a suffix is a literal
+read back and these are not literals at any width -- A1 gives every backend the
+same three values and no way to write one down. `-0.0f32` does have the suffix,
+because it is a literal and because that is the value the suffix was invented
+for: a narrow zero and a wide one look alike everywhere else.
+
+-}
+instance Inspect Float32 where
+    inspect f =
+        if isNaN f then
+            "nan"
+
+        else if isInfinite f then
+            if f < 0 then
+                "-infinity"
+
+            else
+                "infinity"
+
+        else if isNegativeZero32 f then
+            "-0.0f32"
+
+        else
+            String.fromFloat32 f ++ "f32"
+
+
 {-| `1.0 / f` is the only thing that tells the two zeros apart, and it has to be
 asked for the **sign** of the infinity rather than for its presence: `1.0 / 0.0`
 is `infinity` and `1.0 / -0.0` is `-infinity`, so `isInfinite` alone answers
@@ -228,6 +253,22 @@ positive one, so nothing asked.
 -}
 isNegativeZero : Float -> Bool
 isNegativeZero f =
+    f == 0.0 && 1.0 / f < 0.0
+
+
+{-| The same question at the other width.
+
+Written twice rather than once over a constraint, and the constrained version
+was tried: `(Fractional a, Num a, Ord a, Eq a) => a -> Bool` compiles and
+answers correctly at both widths -- D149's hole does not reach it, because the
+literals here are written with a point and it is an *integer* literal under a
+type variable that lowers wrong. What it costs is four witnesses passed into a
+two-operation function on every `inspect` of a float, where these two are a
+comparison and a divide with nothing in front of them.
+
+-}
+isNegativeZero32 : Float32 -> Bool
+isNegativeZero32 f =
     f == 0.0 && 1.0 / f < 0.0
 
 
