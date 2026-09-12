@@ -417,11 +417,21 @@ endsWith =
 
 {-| Find the index of the first string within the second one, if it's there.
 
-    indexOf "the" "theory" == Just 0
+    firstIndexOf "the" "theory" == Just 0
 
-    indexOf "ory" "theory" == Just 3
-    
-    indexOf "a" "theory" == Nothing
+    firstIndexOf "ory" "theory" == Just 3
+
+    firstIndexOf "a" "theory" == Nothing
+
+The index is a **codepoint** index, so it can be handed straight to
+[slice](#slice), [takeFirst](#takeFirst) and [dropFirst](#dropFirst), which take
+one:
+
+    theory = "\u{1D11E}ory"
+
+    firstIndexOf "ory" theory == Just 1
+
+    slice 1 4 theory == "ory"
 
 -}
 firstIndexOf : String -> String -> Maybe Int
@@ -435,6 +445,8 @@ firstIndexOf =
 
     lastIndexOf "barb" "abracadabra" == Nothing
 
+A codepoint index, as in [firstIndexOf](#firstIndexOf).
+
 -}
 lastIndexOf : String -> String -> Maybe Int
 lastIndexOf =
@@ -443,11 +455,13 @@ lastIndexOf =
 
 {-| Get all of the indices for a substring in another string.
 
-    indexes "i" "Mississippi" == [ 1, 4, 7, 10 ]
+    indices "i" "Mississippi" == [ 1, 4, 7, 10 ]
 
-    indexes "ss" "Mississippi" == [ 2, 5 ]
+    indices "ss" "Mississippi" == [ 2, 5 ]
 
-    indexes "needle" "haystack" == []
+    indices "needle" "haystack" == []
+
+Codepoint indices, as in [firstIndexOf](#firstIndexOf).
 
 -}
 indices : String -> String -> Array Int

@@ -57,6 +57,7 @@ you need to provide a `Problem` for certain scenarios.**
 
 import Basics exposing (..)
 import Bitwise
+import Gren.Kernel.String
 import String exposing (String)
 import Array exposing (Array)
 import Char exposing (Char)
@@ -920,7 +921,11 @@ isSubString smallString offset row col bigString =
       String.sliceUnits offset (offset + String.unitLength smallString) bigString
 
     newlineIndices =
-      String.indices "\n" smallString
+      -- Unit indices, because `sliceLength` below is a unit length and the two
+      -- are subtracted. `String.indices` answers codepoint indices as of D8's
+      -- step 3 (`docs/m1b-str.md` §T15), and this module's offset model is the
+      -- one thing in `core` that is still counted in units.
+      Gren.Kernel.String.indexesUnits "\n" smallString
 
     sliceLength =
       String.unitLength slice
@@ -1004,9 +1009,11 @@ findSubString smallString offset row col bigString =
       String.unitLength slice
 
     newlines =
-      String.indices "\n" slice
+      -- Unit indices again, and for the same reason: `newOffset` below is
+      -- `offset + idx` with a unit `offset` (§T15.3).
+      Gren.Kernel.String.indexesUnits "\n" slice
   in
-  when String.firstIndexOf smallString slice is
+  when Gren.Kernel.String.indexOfUnits smallString slice is
     Just idx ->
       let
         relevantNewlines =

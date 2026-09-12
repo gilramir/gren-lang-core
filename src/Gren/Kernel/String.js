@@ -200,40 +200,128 @@ var _String_any = F2(function (isGood, string) {
   return false;
 });
 
+// SEARCHING, AND WHAT AN INDEX IS
+//
+// An index into a `String` is a **codepoint** index (D8, `docs/m1b-str.md`
+// §T15). JavaScript's `indexOf` answers in code units, so every function below
+// that produces an index converts, and the two that produce a `Bool` have to
+// agree with them about what counts as a match.
+//
+// Two separate questions, and keeping them apart is what makes this cheap.
+//
+// **Does the match land on codepoint boundaries?** Two `charCodeAt`s decide it
+// at each end, no scan. It can fail: a needle that begins with a lone trail
+// surrogate matches the back half of an astral character, one that ends with a
+// lone lead surrogate matches the front half, and a `String` can hold a lone
+// surrogate today (§T12.4, and `sliceUnits` cutting a pair). D160 says such a
+// match is not a match — there is no codepoint index for it, and the promise
+// `firstIndexOf` makes is that slicing at what it answers returns the needle.
+// **Both** ends have to be checked; checking only the start was this step's
+// first mistake, and `accept/string-index-surrogate-half`'s `startsWith` row is
+// what caught it.
+//
+// **What codepoint offset does a unit offset correspond to?** The unit offset
+// minus the number of surrogate *pairs* that start before it, because a pair is
+// the only thing that spends two units on one codepoint; a lone surrogate is
+// one codepoint of one unit and must not be counted. The count comes from this
+// regex rather than an interpreted loop, and the difference is not small: on a
+// 30 KB source with astral characters in it, 20 us against 180 (§T15.2).
+//
+// The regex is also free on most strings, which is the thing worth knowing
+// about this file. V8 stores a string whose every character is at or below 0xFF
+// in one byte per character, and no such string can hold a surrogate, so the
+// search is decided from the string's kind without reading it: 0.06 us on a
+// 30 KB Latin-1 string against 19.6 on a 30 KB two-byte one. The line is "does
+// this string contain a character above U+00FF", not "does it contain a
+// surrogate".
+var _String_pair = /[\uD800-\uDBFF][\uDC00-\uDFFF]/g;
+
+function _String_splitsPair(str, i) {
+  if (i <= 0 || i >= str.length) {
+    return false;
+  }
+
+  var lead = str.charCodeAt(i - 1);
+  if (lead < 0xd800 || lead > 0xdbff) {
+    return false;
+  }
+
+  var trail = str.charCodeAt(i);
+  return trail >= 0xdc00 && trail <= 0xdfff;
+}
+
+function _String_codepointOffset(str, i) {
+  _String_pair.lastIndex = 0;
+
+  var pairs = 0;
+  var match;
+  while ((match = _String_pair.exec(str)) !== null && match.index + 2 <= i) {
+    pairs++;
+  }
+
+  return i - pairs;
+}
+
+function _String_aligned(sub, str, i) {
+  return !_String_splitsPair(str, i) && !_String_splitsPair(str, i + sub.length);
+}
+
+// The first unit offset at or after `from` where `sub` occurs on codepoint
+// boundaries at both ends, or -1.
+function _String_alignedIndexOf(sub, str, from) {
+  var i = str.indexOf(sub, from);
+
+  while (i > -1 && !_String_aligned(sub, str, i)) {
+    i = str.indexOf(sub, i + 1);
+  }
+
+  return i;
+}
+
 var _String_contains = F2(function (sub, str) {
-  return str.indexOf(sub) > -1;
+  return _String_alignedIndexOf(sub, str, 0) > -1;
 });
 
+// Offset 0 cannot be inside a pair; the far end of the needle can be.
 var _String_startsWith = F2(function (sub, str) {
-  return str.indexOf(sub) === 0;
+  return str.indexOf(sub) === 0 && !_String_splitsPair(str, sub.length);
 });
 
 var _String_endsWith = F2(function (sub, str) {
   return (
-    str.length >= sub.length && str.lastIndexOf(sub) === str.length - sub.length
+    str.length >= sub.length &&
+    str.lastIndexOf(sub) === str.length - sub.length &&
+    !_String_splitsPair(str, str.length - sub.length)
   );
 });
 
 var _String_indexOf = F2(function (sub, str) {
-  var ret = str.indexOf(sub);
+  var i = _String_alignedIndexOf(sub, str, 0);
 
-  if (ret > -1) {
-    return __Maybe_Just(ret);
+  if (i > -1) {
+    return __Maybe_Just(_String_codepointOffset(str, i));
   }
 
   return __Maybe_Nothing;
 });
 
 var _String_lastIndexOf = F2(function (sub, str) {
-  var ret = str.lastIndexOf(sub);
+  var i = str.lastIndexOf(sub);
 
-  if (ret > -1) {
-    return __Maybe_Just(ret);
+  while (i > 0 && !_String_aligned(sub, str, i)) {
+    i = str.lastIndexOf(sub, i - 1);
+  }
+
+  if (i > -1) {
+    return __Maybe_Just(_String_codepointOffset(str, i));
   }
 
   return __Maybe_Nothing;
 });
 
+// One walk for every match, not one walk each. The unit offsets come out
+// increasing, so a single pass of the pair regex converts all of them: per-match
+// conversion is 125 ms where this is 0.4 on the same 30 KB source (§T15.2).
 var _String_indexes = F2(function (sub, str) {
   var subLen = sub.length;
 
@@ -241,15 +329,32 @@ var _String_indexes = F2(function (sub, str) {
     return [];
   }
 
-  var i = 0;
-  var is = [];
+  var units = [];
+  var i = _String_alignedIndexOf(sub, str, 0);
 
-  while ((i = str.indexOf(sub, i)) > -1) {
-    is.push(i);
-    i = i + subLen;
+  while (i > -1) {
+    units.push(i);
+    i = _String_alignedIndexOf(sub, str, i + subLen);
   }
 
-  return is;
+  _String_pair.lastIndex = 0;
+
+  var match = _String_pair.exec(str);
+  var pairs = 0;
+  var out = [];
+
+  for (var k = 0; k < units.length; k++) {
+    var unit = units[k];
+
+    while (match !== null && match.index + 2 <= unit) {
+      pairs++;
+      match = _String_pair.exec(str);
+    }
+
+    out.push(unit - pairs);
+  }
+
+  return out;
 });
 
 // TO STRING
@@ -308,6 +413,48 @@ function _String_fromArray(chars) {
 var _String_unitLength = function (str) {
   return str.length;
 };
+
+// THE TWO INDEX FUNCTIONS THE UNIT MODEL STILL NEEDS
+//
+// `String.Parser.Advanced` threads a code-unit offset through every combinator
+// -- `sliceUnits` consumes it and `unitLength` produces it -- and two of its
+// call sites reach for `String.firstIndexOf` and `String.indices` to move that
+// offset along. Those answer codepoint indices as of D8's step 3, so adding one
+// to a unit offset is now a type error the compiler cannot see, and these are
+// the bodies those two call sites used to get.
+//
+// They are not exposed from `String`: the `*Units` family stays at five, and
+// `m1b-str.md` §T4's table -- which counted `unitLength`, `getUnit` and
+// `sliceUnits` and missed these two -- is corrected in §T15.3. They die with the
+// offset model, at step 6.
+
+var _String_indexOfUnits = F2(function (sub, str) {
+  var ret = str.indexOf(sub);
+
+  if (ret > -1) {
+    return __Maybe_Just(ret);
+  }
+
+  return __Maybe_Nothing;
+});
+
+var _String_indexesUnits = F2(function (sub, str) {
+  var subLen = sub.length;
+
+  if (subLen < 1) {
+    return [];
+  }
+
+  var i = 0;
+  var is = [];
+
+  while ((i = str.indexOf(sub, i)) > -1) {
+    is.push(i);
+    i = i + subLen;
+  }
+
+  return is;
+});
 
 // THE UNITS FAMILY YIELDS SOMETHING THAT IS NOT A `Char`
 //
