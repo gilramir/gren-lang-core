@@ -1,0 +1,624 @@
+module String.Ryu exposing (decimal)
+
+{-| Ryu: the shortest decimal that reads back as the same `Float`.
+
+`docs/representation.md` R5 asks for one digit generator shared by `inspect`
+and `String.fromFloat` and the same on every backend, and
+`docs/m1b-ryu.md` §Y7 is the port. This module is the digits and nothing else:
+it answers with a mantissa and a power of ten, and `String.fromFloat` lays
+those out per R5.
+
+**Not exposed.** `gren.json` does not list it, because what a program should
+call is `String.fromFloat`.
+
+@docs decimal
+
+-}
+
+import Array exposing (Array)
+import Basics exposing (..)
+import Bitwise
+import Math
+import Maybe
+import String.Ryu.Tables as Tables
+import UInt64
+
+
+{-| The shortest decimal for a **finite, non-zero** `Float`, as a mantissa and
+the power of ten its last digit stands for: `decimal 1.5` is
+`{ mantissa = 15, exponent = -1 }`.
+
+The sign is not here. A sign is a property of the rendering and not of the
+digits, and reading the bits of `-1.5` and of `1.5` gives the same answer to
+everything below.
+
+**Precondition: finite and not zero.** `nan`, both infinities and both zeros
+are R5 layout questions rather than digit questions, and `String.fromFloat`
+answers them before it gets here. It terminates at `0.0` rather than looping,
+and answers `{ mantissa = 0, exponent = -325 }`, which is not a rendering of
+anything: the interval the algorithm searches has no number in it, and the
+lower end of it wraps below zero on the way.
+
+-}
+decimal : Float -> { mantissa : UInt64, exponent : Int }
+decimal f =
+    let
+        bits =
+            Math.toBits f
+
+        ieeeExponent =
+            UInt64.toInt (Bitwise.and (Bitwise.shiftRightZfBy mantissaBits bits) 2047)
+
+        ieeeMantissa =
+            Bitwise.and bits 4503599627370495
+    in
+    shortest ieeeMantissa ieeeExponent
+
+
+-- THE ALGORITHM
+--
+-- A transcription of `d2d` in Ulf Adams's reference implementation (`ryu/d2s.c`),
+-- which is the paper's own code. The names are its names, so that the two can be
+-- read side by side: `m2` and `e2` are the binary mantissa and exponent, `mv` is
+-- four times the mantissa, and `vr`, `vp` and `vm` are the value and the two
+-- halfway points around it, scaled into decimal.
+--
+-- What Ryu does, in one paragraph. A double is one point in an interval of real
+-- numbers that all round back to it, and the shortest decimal in that interval
+-- is the answer. Multiplying by a power of five moves the interval into decimal
+-- without losing a bit -- that is what the tables are for -- and then digits
+-- come off the bottom for as long as the interval still contains something.
+-- The subtlety is entirely in the ends: whether each end is inside or outside,
+-- and whether what was dropped was exactly a half.
+
+
+mantissaBits : Int
+mantissaBits =
+    52
+
+
+bias : Int
+bias =
+    1023
+
+
+{-| The width the tables were generated at, and `scripts/ryu-tables.py` is the
+other place these two numbers appear.
+-}
+pow5Bitcount : Int
+pow5Bitcount =
+    125
+
+
+pow5InvBitcount : Int
+pow5InvBitcount =
+    125
+
+
+shortest : UInt64 -> Int -> { mantissa : UInt64, exponent : Int }
+shortest ieeeMantissa ieeeExponent =
+    let
+        -- The implicit leading bit, and two extra bits of room so that the two
+        -- halfway points below are whole numbers.
+        { e2, m2 } =
+            if ieeeExponent == 0 then
+                { e2 = 1 - bias - mantissaBits - 2
+                , m2 = ieeeMantissa
+                }
+
+            else
+                { e2 = ieeeExponent - bias - mantissaBits - 2
+                , m2 = Bitwise.or 4503599627370496 ieeeMantissa
+                }
+
+        -- An even mantissa owns both ends of its interval, because a tie
+        -- rounds to even and this is the even one.
+        acceptBounds =
+            Bitwise.and m2 1 == 0
+
+        mv =
+            4 * m2
+
+        -- The lower end is a whole step away except at a power of two, where
+        -- the interval below is half as wide.
+        --
+        -- The annotation is load-bearing and not decoration: without it this
+        -- binding's type is `Num a => a`, and `docs/m1b-ryu.md` §Y13 is what
+        -- that produces.
+        mmShift : UInt64
+        mmShift =
+            if ieeeMantissa /= 0 || ieeeExponent <= 1 then
+                1
+
+            else
+                0
+
+        scaled =
+            if e2 >= 0 then
+                scaleUp mv mmShift acceptBounds e2
+
+            else
+                scaleDown mv mmShift acceptBounds e2
+
+        shortened =
+            if scaled.vmIsTrailingZeros || scaled.vrIsTrailingZeros then
+                removeExactly scaled
+
+            else
+                removeQuickly scaled
+    in
+    { mantissa = shortened.mantissa
+    , exponent = scaled.e10 + shortened.removed
+    }
+
+
+-- STEP 3: INTO DECIMAL
+--
+-- One multiply by a power of five, or by its reciprocal, taking the value and
+-- both halfway points with it. `vrIsTrailingZeros` and `vmIsTrailingZeros`
+-- record what the multiply cannot: whether the exact product ends in zeros, and
+-- therefore whether a digit removed later was really there.
+
+
+type alias Scaled =
+    { vr : UInt64
+    , vp : UInt64
+    , vm : UInt64
+    , e10 : Int
+    , acceptBounds : Bool
+    , vrIsTrailingZeros : Bool
+    , vmIsTrailingZeros : Bool
+    }
+
+
+scaleUp : UInt64 -> UInt64 -> Bool -> Int -> Scaled
+scaleUp mv mmShift acceptBounds e2 =
+    let
+        q =
+            log10Pow2 e2
+                - (if e2 > 3 then
+                    1
+
+                   else
+                    0
+                  )
+
+        k =
+            pow5InvBitcount + pow5bits q - 1
+
+        i =
+            negate e2 + q + k
+
+        mul =
+            { lo = at Tables.pow5InvLo q, hi = at Tables.pow5InvHi q }
+
+        mm =
+            mv - 1 - mmShift
+
+        base =
+            { vr = mulShift mv mul i
+            , vp = mulShift (mv + 2) mul i
+            , vm = mulShift mm mul i
+            , e10 = q
+            , acceptBounds = acceptBounds
+            , vrIsTrailingZeros = False
+            , vmIsTrailingZeros = False
+            }
+    in
+    -- Above 21 the answer is always "no": 5^22 does not divide any 55-bit
+    -- number, so nothing can end in that many zeros.
+    if q > 21 then
+        base
+
+    else if remainderBy 5 mv == 0 then
+        -- At most one of the three can be a multiple of five, so these are
+        -- three cases and not three questions.
+        { base | vrIsTrailingZeros = isMultipleOfPowerOf5 mv q }
+
+    else if acceptBounds then
+        { base | vmIsTrailingZeros = isMultipleOfPowerOf5 mm q }
+
+    else if isMultipleOfPowerOf5 (mv + 2) q then
+        -- The upper end is outside the interval, so a value that lands exactly
+        -- on it has to come down by one.
+        { base | vp = base.vp - 1 }
+
+    else
+        base
+
+
+scaleDown : UInt64 -> UInt64 -> Bool -> Int -> Scaled
+scaleDown mv mmShift acceptBounds e2 =
+    let
+        q =
+            log10Pow5 (negate e2)
+                - (if negate e2 > 1 then
+                    1
+
+                   else
+                    0
+                  )
+
+        i =
+            negate e2 - q
+
+        j =
+            q - (pow5bits i - pow5Bitcount)
+
+        mul =
+            { lo = at Tables.pow5Lo i, hi = at Tables.pow5Hi i }
+
+        base =
+            { vr = mulShift mv mul j
+            , vp = mulShift (mv + 2) mul j
+            , vm = mulShift (mv - 1 - mmShift) mul j
+            , e10 = q + e2
+            , acceptBounds = acceptBounds
+            , vrIsTrailingZeros = False
+            , vmIsTrailingZeros = False
+            }
+    in
+    if q <= 1 then
+        -- `mv` is four times something, so it ends in two zero bits whatever
+        -- the value is.
+        if acceptBounds then
+            { base
+                | vrIsTrailingZeros = True
+                , vmIsTrailingZeros = mmShift == 1
+            }
+
+        else
+            { base
+                | vrIsTrailingZeros = True
+                , vp = base.vp - 1
+            }
+
+    else if q < 63 then
+        { base | vrIsTrailingZeros = isMultipleOfPowerOf2 mv q }
+
+    else
+        base
+
+
+-- STEP 4: THE SHORTEST DECIMAL IN THE INTERVAL
+--
+-- Digits come off the bottom while the interval still holds more than one
+-- number, which is `vp // 10 > vm // 10`. Two versions of the same loop: the
+-- common one, which only has to remember whether the last digit dropped was
+-- five or more, and the exact one, which has to know whether what it dropped
+-- was a real zero or a rounding artefact. The second runs for about 0.7% of
+-- doubles, and only it can answer a tie.
+
+
+type alias Shortened =
+    { mantissa : UInt64
+    , removed : Int
+    }
+
+
+removeQuickly : Scaled -> Shortened
+removeQuickly s =
+    let
+        -- Two digits at a time first, which is where most values stop.
+        start =
+            if s.vp // 100 > s.vm // 100 then
+                { vr = s.vr // 100
+                , vp = s.vp // 100
+                , vm = s.vm // 100
+                , removed = 2
+                , roundUp = remainderBy 100 s.vr >= 50
+                }
+
+            else
+                { vr = s.vr, vp = s.vp, vm = s.vm, removed = 0, roundUp = False }
+
+        final =
+            quickLoop start
+    in
+    { mantissa =
+        final.vr
+            + (if final.vr == final.vm || final.roundUp then
+                1
+
+               else
+                0
+              )
+    , removed = final.removed
+    }
+
+
+quickLoop :
+    { vr : UInt64, vp : UInt64, vm : UInt64, removed : Int, roundUp : Bool }
+    -> { vr : UInt64, vp : UInt64, vm : UInt64, removed : Int, roundUp : Bool }
+quickLoop state =
+    let
+        vpDiv10 =
+            state.vp // 10
+
+        vmDiv10 =
+            state.vm // 10
+    in
+    if vpDiv10 <= vmDiv10 then
+        state
+
+    else
+        quickLoop
+            { vr = state.vr // 10
+            , vp = vpDiv10
+            , vm = vmDiv10
+            , removed = state.removed + 1
+            , roundUp = remainderBy 10 state.vr >= 5
+            }
+
+
+type alias Exact =
+    { vr : UInt64
+    , vp : UInt64
+    , vm : UInt64
+    , removed : Int
+    , lastRemoved : UInt64
+    , vrIsTrailingZeros : Bool
+    , vmIsTrailingZeros : Bool
+    }
+
+
+removeExactly : Scaled -> Shortened
+removeExactly s =
+    let
+        afterInterval =
+            exactLoop
+                { vr = s.vr
+                , vp = s.vp
+                , vm = s.vm
+                , removed = 0
+                , lastRemoved = 0
+                , vrIsTrailingZeros = s.vrIsTrailingZeros
+                , vmIsTrailingZeros = s.vmIsTrailingZeros
+                }
+
+        -- The lower end can go on losing zeros after the interval has closed,
+        -- because a zero it drops was never a digit of the answer.
+        afterZeros =
+            if afterInterval.vmIsTrailingZeros then
+                zerosLoop afterInterval
+
+            else
+                afterInterval
+
+        -- A tie -- exactly `....5000` -- rounds to even, so the five is not a
+        -- reason to go up.
+        lastRemoved =
+            if
+                afterZeros.vrIsTrailingZeros
+                    && afterZeros.lastRemoved == 5
+                    && remainderBy 2 afterZeros.vr == 0
+            then
+                4
+
+            else
+                afterZeros.lastRemoved
+
+        outside =
+            afterZeros.vr == afterZeros.vm
+                && (not s.acceptBounds || not afterZeros.vmIsTrailingZeros)
+    in
+    { mantissa =
+        afterZeros.vr
+            + (if outside || lastRemoved >= 5 then
+                1
+
+               else
+                0
+              )
+    , removed = afterZeros.removed
+    }
+
+
+exactLoop : Exact -> Exact
+exactLoop state =
+    let
+        vpDiv10 =
+            state.vp // 10
+
+        vmDiv10 =
+            state.vm // 10
+    in
+    if vpDiv10 <= vmDiv10 then
+        state
+
+    else
+        exactLoop
+            { vr = state.vr // 10
+            , vp = vpDiv10
+            , vm = vmDiv10
+            , removed = state.removed + 1
+            , lastRemoved = remainderBy 10 state.vr
+            , vrIsTrailingZeros = state.vrIsTrailingZeros && state.lastRemoved == 0
+            , vmIsTrailingZeros = state.vmIsTrailingZeros && remainderBy 10 state.vm == 0
+            }
+
+
+zerosLoop : Exact -> Exact
+zerosLoop state =
+    if remainderBy 10 state.vm /= 0 then
+        state
+
+    else
+        zerosLoop
+            { vr = state.vr // 10
+            , vp = state.vp // 10
+            , vm = state.vm // 10
+            , removed = state.removed + 1
+            , lastRemoved = remainderBy 10 state.vr
+            , vrIsTrailingZeros = state.vrIsTrailingZeros && state.lastRemoved == 0
+            , vmIsTrailingZeros = state.vmIsTrailingZeros
+            }
+
+
+-- 128-BIT ARITHMETIC
+--
+-- The whole of Ryu's difficulty is one 64x64 multiply whose top half matters,
+-- and `docs/m1b-ryu.md` §Y5 is the decision that this is written over `UInt64`
+-- rather than over the 24-bit limbs it measured: D2 landed first, so a `UInt64`
+-- is a type the language has and `Math.imul` is not the ceiling any more.
+
+
+{-| The 128-bit product of two 64-bit numbers, as its two halves.
+
+Four 32-bit products, which are exact because each is under 2^64. The middle
+column is where the carries meet: two half-products and the top of a third,
+which is under `3 * 2^32` and so fits with room.
+
+-}
+umul128 : UInt64 -> UInt64 -> { hi : UInt64, lo : UInt64 }
+umul128 a b =
+    let
+        aLo =
+            Bitwise.and a 4294967295
+
+        aHi =
+            Bitwise.shiftRightZfBy 32 a
+
+        bLo =
+            Bitwise.and b 4294967295
+
+        bHi =
+            Bitwise.shiftRightZfBy 32 b
+
+        p00 =
+            aLo * bLo
+
+        p01 =
+            aLo * bHi
+
+        p10 =
+            aHi * bLo
+
+        p11 =
+            aHi * bHi
+
+        mid =
+            Bitwise.shiftRightZfBy 32 p00
+                + Bitwise.and p01 4294967295
+                + Bitwise.and p10 4294967295
+    in
+    { lo =
+        Bitwise.or
+            (Bitwise.shiftLeftBy 32 mid)
+            (Bitwise.and p00 4294967295)
+    , hi =
+        p11
+            + Bitwise.shiftRightZfBy 32 p01
+            + Bitwise.shiftRightZfBy 32 p10
+            + Bitwise.shiftRightZfBy 32 mid
+    }
+
+
+{-| The 128-bit value `{ hi, lo }` shifted right by `dist`, which is between 1
+and 63, keeping the low 64 bits of the answer.
+-}
+shiftRight128 : UInt64 -> UInt64 -> Int -> UInt64
+shiftRight128 lo hi dist =
+    Bitwise.or
+        (Bitwise.shiftLeftBy (64 - dist) hi)
+        (Bitwise.shiftRightZfBy dist lo)
+
+
+{-| `m * mul >> j`, where `mul` is 128 bits and `j` is between 65 and 127.
+
+`m` is at most 55 bits, so the product is at most 183 bits and the shift takes
+the top of it. The low half of the low product is dropped without being
+computed -- it cannot reach the answer -- and the carry out of the middle
+column is the `+ 1` below.
+
+-}
+mulShift : UInt64 -> { hi : UInt64, lo : UInt64 } -> Int -> UInt64
+mulShift m mul j =
+    let
+        high =
+            umul128 m mul.hi
+
+        low =
+            umul128 m mul.lo
+
+        sum =
+            low.hi + high.lo
+
+        carried =
+            if sum < low.hi then
+                high.hi + 1
+
+            else
+                high.hi
+    in
+    shiftRight128 sum carried (j - 64)
+
+
+-- POWERS AND FACTORS
+
+
+{-| The number of bits in `5^e`, as `floor(e * log2 5) + 1`.
+
+The multiply-and-shift is the reference implementation's and is exact for every
+`e` from 0 to 3528, which is checked in `scripts/ryu-tables.py`'s own terms:
+the tables there are generated from `(5 ** e).bit_length()`, and the two agree
+over the whole range the tables cover.
+
+-}
+pow5bits : Int -> Int
+pow5bits e =
+    Bitwise.shiftRightBy 19 (e * 1217359) + 1
+
+
+{-| `floor(e * log10 2)`, exact for `e` in `0 .. 1650`.
+-}
+log10Pow2 : Int -> Int
+log10Pow2 e =
+    Bitwise.shiftRightBy 18 (e * 78913)
+
+
+{-| `floor(e * log10 5)`, exact for `e` in `0 .. 2620`.
+-}
+log10Pow5 : Int -> Int
+log10Pow5 e =
+    Bitwise.shiftRightBy 20 (e * 732923)
+
+
+{-| How many times 5 divides a number.
+
+Total at zero, where the division would never stop making progress: nothing
+here calls it with one, because `mv` is four times a mantissa and a zero
+mantissa is a zero `Float`, which `decimal` refuses.
+
+-}
+pow5Factor : UInt64 -> Int
+pow5Factor value =
+    pow5FactorHelp value 0
+
+
+pow5FactorHelp : UInt64 -> Int -> Int
+pow5FactorHelp value count =
+    if value == 0 || remainderBy 5 value /= 0 then
+        count
+
+    else
+        pow5FactorHelp (value // 5) (count + 1)
+
+
+isMultipleOfPowerOf5 : UInt64 -> Int -> Bool
+isMultipleOfPowerOf5 value p =
+    pow5Factor value >= p
+
+
+isMultipleOfPowerOf2 : UInt64 -> Int -> Bool
+isMultipleOfPowerOf2 value p =
+    Bitwise.and value (Bitwise.shiftLeftBy p 1 - 1) == 0
+
+
+{-| One table entry. The index is in range by construction -- a double's
+exponent cannot reach past the tables, which is what their lengths were chosen
+from -- so the default is unreachable rather than a fallback.
+-}
+at : Array UInt64 -> Int -> UInt64
+at table i =
+    Maybe.withDefault 0 (Array.get i table)
