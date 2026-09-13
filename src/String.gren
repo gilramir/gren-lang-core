@@ -114,6 +114,7 @@ Functions that operates on units instead of code points.
 -}
 
 import Array exposing (Array)
+import Array.Builder
 import Basics exposing (..)
 import Math exposing (floor, ceiling)
 import Bitwise
@@ -313,18 +314,20 @@ words string =
             else
                 { acc | current = pushLast c acc.current }
     in
-    closeWord (foldl step { done = [], current = "" } string)
+    foldl step { done = Array.Builder.empty 0, current = "" } string
+        |> closeWord
+        |> Array.Builder.toArray
 
 
 {-| Move a half-built word into the answer, unless there is no word there.
 -}
-closeWord : { done : Array String, current : String } -> Array String
+closeWord : { done : Array.Builder.Builder String, current : String } -> Array.Builder.Builder String
 closeWord acc =
     if acc.current == "" then
         acc.done
 
     else
-        Array.pushLast acc.current acc.done
+        Array.Builder.pushLast acc.current acc.done
 
 
 {-| Break a string into lines, splitting on newlines.
@@ -1033,7 +1036,8 @@ orZero digits =
 -}
 toArray : String -> Array Char
 toArray string =
-    foldl Array.pushLast [] string
+    foldl Array.Builder.pushLast (Array.Builder.empty 0) string
+        |> Array.Builder.toArray
 
 
 {-| Convert an array of characters into a String.
@@ -1227,7 +1231,8 @@ string holds and this says how many characters it shows.
 -}
 graphemes : String -> Array String
 graphemes string =
-    foldlGraphemes (\cluster acc -> Array.pushLast cluster acc) [] string
+    foldlGraphemes Array.Builder.pushLast (Array.Builder.empty 0) string
+        |> Array.Builder.toArray
 
 
 {-| How many grapheme clusters a string holds.

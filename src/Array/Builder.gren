@@ -16,7 +16,6 @@ in the `Array` module.
 import Array exposing (Array)
 import Basics exposing (Int, clamp)
 import Gren.Kernel.Array
-import Random
 
 
 {-| A `Builder` represents an `Array` under construction. The functionality
@@ -39,11 +38,10 @@ In other words: it's ok to pass `0`.
 -}
 empty : Int -> Builder a
 empty capacity =
-    let
-        clampedCapacity =
-            clamp 0 Random.maxInt capacity
-    in
-    Gren.Kernel.Array.emptyBuilder clampedCapacity
+    -- The ceiling is `Random.maxInt`, written out: importing `Random` for one
+    -- constant put `Task` and `Platform` above this module, and `String`, which
+    -- is below both, needs a linear way to build an array.
+    Gren.Kernel.Array.emptyBuilder (clamp 0 2147483647 capacity)
 
 
 {-| Creates a [Builder](#Builder) based on an existing `Array`.
