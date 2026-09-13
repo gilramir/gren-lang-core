@@ -23,7 +23,6 @@ import Test.Runner.Node exposing (Program, run)
 import Test.Set as Set
 import Test.String as String
 import Test.String.Parser as StringParser
-import Test.Regex as Regex
 
 
 main : Program
@@ -46,5 +45,4 @@ main =
             , StringParser.tests
             , Maybe.tests
             , Math.tests
-            , Regex.tests
             ]

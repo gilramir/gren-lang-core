@@ -58,7 +58,6 @@
             "Stream.Log"
         ],
         "Strings": [
-            "String.Regex",
             "String.Parser",
             "String.Parser.Advanced"
         ],
