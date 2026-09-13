@@ -11,21 +11,18 @@ module String exposing
     , toUpper, toLower, pad, padLeft, padRight, trim, trimLeft, trimRight
     , map, keepIf, foldl, foldr, any, all
     , graphemes, graphemeLength, foldlGraphemes
-    , unitLength, getUnit, foldlUnits, foldrUnits, sliceUnits
     )
 
 {-| A built-in representation for efficient string manipulation. When it comes to strings,
-there are three concepts worth knowing about:
+there are two concepts worth knowing about:
 
-* Code units: represents the smallest primitive value of a string. In Gren,
-code units are represented by a 16-bit value. This is enough to store the most common
-characters in western languages (Latin, Greek, Cyrilic), but not all unicode characters.
-* Code points: represents a unicode character. Code points can be represented by one
-unit, or a pair of units.
+* Code points: represents a unicode character, and is what a `Char` holds.
 * Graphemes: represents a single visual glyph, like certain emojis or characters with
-accents.
+accents, and can be made of several code points.
 
-Unless otherwise noted, all functions in this module deal with code points.
+How a string is stored is up to the platform, and nothing in this module depends on it.
+Unless otherwise noted, all functions in this module deal with code points: a length is a
+number of code points, and an index counts them.
 
 
 @docs String, isEmpty, count, reverse, repeat, replace
@@ -104,12 +101,6 @@ the graphemes is the same answer as reversing what this gives.
 [uax29]: https://www.unicode.org/reports/tr29/
 
 @docs graphemes, graphemeLength, foldlGraphemes
-
-## Char Units
-
-Functions that operates on units instead of code points.
-
-@docs unitLength, getUnit, foldlUnits, foldrUnits, sliceUnits
 
 -}
 
@@ -392,7 +383,7 @@ takeLast n string =
         ""
 
     else
-        slice -n (unitLength string) string
+        slice -n (count string) string
 
 
 {-| Drop the first _n_ characters.
@@ -406,7 +397,7 @@ dropFirst n string =
         string
 
     else
-        slice n (unitLength string) string
+        slice n (count string) string
 
 
 {-| Drop the last _n_ characters.
@@ -1295,68 +1286,6 @@ closeGrapheme fn acc =
     else
         fn acc.current acc.value
 
-
-
--- UNITS
-
-
-{-| Get the number of character units in a string. As strings are, essentially,
-arrays of character units, this is a constant time operation.
--}
-unitLength : String -> Int
-unitLength =
-    Gren.Kernel.String.unitLength
-
-
-{-| Retrieve the character unit at a given index, or `Nothing` if the index is out of bounds.
-A negative index uses the end of the string as the starting point.
-
-    getUnit 1 "abc" == Just 'b'
-    
-    getUnit 10 "abc" == Nothing
-    
-    getUnit -1 "abc" == Just 'c'
-
--}
-getUnit : Int -> String -> Maybe Char
-getUnit =
-    Gren.Kernel.String.getUnit
-
-
-{-| Reduce a string from the beginning. The given function will receive character units instead
-of a code point, meaning that the provided `Char` could possibly represent one half of a full
-character.
-
-    foldlUnits pushFirst "" "time" == "emit"
--}
-foldlUnits : (Char -> b -> b) -> b -> String -> b
-foldlUnits =
-    Gren.Kernel.String.foldlUnits
-
-
-{-| Reduce a string from the end. The given function will receive character units instead
-of a code point, meaning that the provided `Char` could possibly represent one half of a full
-character.
-
-    foldrUnits pushFirst "" "time" == "time"
--}
-foldrUnits : (Char -> b -> b) -> b -> String -> b
-foldrUnits =
-    Gren.Kernel.String.foldrUnits
-
-{-| Take a substring given a start and end index. Negative indexes
-are taken starting from the _end_ of the array. Indexes refers to character units,
-_not_ code points!
-
-    sliceUnits 1 -1 "snakes" == "nake"
-
-    sliceUnits 2 5 "snakes" == "ake"
-
-    sliceUnits 3 5 "hi 😎 there" == "😎"
--}
-sliceUnits : Int -> Int -> String -> String
-sliceUnits =
-    Gren.Kernel.String.sliceUnits
 
 
 -- A `String` is a JavaScript primitive, so `===` is what "the same" means at

@@ -200,7 +200,7 @@ var _String_any = F2(function (isGood, string) {
 // at each end, no scan. It can fail: a needle that begins with a lone trail
 // surrogate matches the back half of an astral character, one that ends with a
 // lone lead surrogate matches the front half, and a `String` can hold a lone
-// surrogate today (§T12.4, and `sliceUnits` cutting a pair). D160 says such a
+// surrogate (§T12.4; `Json.Decode.string` of a `\uDD1E` escape is one). D160 says such a
 // match is not a match — there is no codepoint index for it, and the promise
 // `firstIndexOf` makes is that slicing at what it answers returns the needle.
 // **Both** ends have to be checked; checking only the start was this step's
@@ -395,92 +395,3 @@ function _String_fromArray(chars) {
   return out;
 }
 
-// UNITS
-
-var _String_unitLength = function (str) {
-  return str.length;
-};
-
-// THE TWO INDEX FUNCTIONS THE UNIT MODEL STILL NEEDS
-//
-// `String.Parser.Advanced` threads a code-unit offset through every combinator
-// -- `sliceUnits` consumes it and `unitLength` produces it -- and two of its
-// call sites reach for `String.firstIndexOf` and `String.indices` to move that
-// offset along. Those answer codepoint indices as of D8's step 3, so adding one
-// to a unit offset is now a type error the compiler cannot see, and these are
-// the bodies those two call sites used to get.
-//
-// They are not exposed from `String`: the `*Units` family stays at five, and
-// `m1b-str.md` §T4's table -- which counted `unitLength`, `getUnit` and
-// `sliceUnits` and missed these two -- is corrected in §T15.3. They die with the
-// offset model, at step 6.
-
-var _String_indexOfUnits = F2(function (sub, str) {
-  var ret = str.indexOf(sub);
-
-  if (ret > -1) {
-    return __Maybe_Just(ret);
-  }
-
-  return __Maybe_Nothing;
-});
-
-var _String_indexesUnits = F2(function (sub, str) {
-  var subLen = sub.length;
-
-  if (subLen < 1) {
-    return [];
-  }
-
-  var i = 0;
-  var is = [];
-
-  while ((i = str.indexOf(sub, i)) > -1) {
-    is.push(i);
-    i = i + subLen;
-  }
-
-  return is;
-});
-
-// THE UNITS FAMILY YIELDS SOMETHING THAT IS NOT A `Char`
-//
-// A UTF-16 code unit can be half of a surrogate pair, and half a pair is not a
-// scalar value, so what these three hand the caller is a number in
-// `0 .. 0xFFFF` that C8 says is not a `Char`. That was true before a `Char` was
-// a number as well -- `String.gren`'s own docs say the value "could possibly
-// represent one half of a full code point" -- and D8 is what closes it: the
-// family leaves `core` for a `target = "js"` package (`m1b-str.md` §T4, step 6).
-// Until then this is the one place in `core` where the `Char` type is a lie, and
-// it is a smaller lie than it was: the number is the code unit, where before it
-// was a string holding an unpaired surrogate.
-
-var _String_getUnit = F2(function (index, str) {
-  var i = index < 0 ? str.length + index : index;
-
-  if (i < 0 || i >= str.length) {
-    return __Maybe_Nothing;
-  }
-
-  return __Maybe_Just(str.charCodeAt(i));
-});
-
-var _String_foldlUnits = F3(function (fn, state, str) {
-  for (let i = 0; i < str.length; i++) {
-    state = A2(fn, str.charCodeAt(i), state);
-  }
-
-  return state;
-});
-
-var _String_foldrUnits = F3(function (fn, state, str) {
-  for (let i = str.length - 1; i >= 0; i--) {
-    state = A2(fn, str.charCodeAt(i), state);
-  }
-
-  return state;
-});
-
-var _String_sliceUnits = F3(function (start, end, str) {
-  return str.slice(start, end);
-});

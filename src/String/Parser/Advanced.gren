@@ -56,8 +56,6 @@ you need to provide a `Problem` for certain scenarios.**
 
 
 import Basics exposing (..)
-import Bitwise
-import Gren.Kernel.String
 import String exposing (String)
 import Array exposing (Array)
 import Char exposing (Char)
@@ -107,8 +105,14 @@ type PStep payload problem value
   | Bad { pred : Bool, bag : Bag payload problem }
 
 
+{-| `offset` is a codepoint offset into `chars`, which is `src` materialised
+once by `run`. Reading the character at an offset and slicing between two are
+then both an `Array` operation, so the parser costs the same on a backend whose
+`String` has no code units to index (`docs/m1b-str.md` §T4, §T22).
+-}
 type alias State payload =
   { src : String
+  , chars : Array Char
   , offset : Int
   , row : Int
   , col : Int
@@ -125,7 +129,7 @@ end.
 -}
 run : Parser p x a -> p -> String -> Result (Array (DeadEnd p x)) a
 run (Parser parse) initialPayload src =
-  when parse { src = src, offset = 0, payload = initialPayload, row = 1, col = 1} is
+  when parse { src = src, chars = String.toArray src, offset = 0, payload = initialPayload, row = 1, col = 1} is
     Good { value } ->
       Ok value
 
@@ -456,13 +460,16 @@ keyword kwd expecting =
   let
     progress =
       not (String.isEmpty kwd)
+
+    kwdChars =
+      String.toArray kwd
   in
   Parser <| \s ->
     let
       { newOffset, newRow, newCol } =
-        isSubString kwd s.offset s.row s.col s.src
+        isSubString kwdChars s.offset s.row s.col s.chars
     in
-    if newOffset == -1 || 0 <= isSubChar (\c -> Char.isAlphaNum c || c == '_') newOffset s.src then
+    if newOffset == -1 || 0 <= isSubChar (\c -> Char.isAlphaNum c || c == '_') newOffset s.chars then
       Bad { pred = False, bag = (fromState s expecting) }
     else
       Good 
@@ -470,6 +477,7 @@ keyword kwd expecting =
         , value = {}
         , state =
           { src = s.src
+          , chars = s.chars
           , offset = newOffset
           , row = newRow
           , col = newCol
@@ -490,11 +498,14 @@ token str expecting =
   let
     progress =
       not (String.isEmpty str)
+
+    strChars =
+      String.toArray str
   in
   Parser <| \s ->
     let
       { newOffset, newRow, newCol } =
-        isSubString str s.offset s.row s.col s.src
+        isSubString strChars s.offset s.row s.col s.chars
     in
     if newOffset == -1 then
       Bad { pred = False, bag = (fromState s expecting) }
@@ -504,6 +515,7 @@ token str expecting =
         , value = {}
         , state =
           { src = s.src
+          , chars = s.chars
           , offset = newOffset
           , row = newRow
           , col = newCol
@@ -548,7 +560,7 @@ arises when the parser is not at the end of the input.
 end : x -> Parser c x {}
 end x =
   Parser <| \s ->
-    if String.unitLength s.src == s.offset then
+    if Array.length s.chars == s.offset then
       Good { pred = False, value = {}, state = s }
     else
       Bad { pred = False, bag = (fromState s x) }
@@ -575,7 +587,7 @@ mapChompedString func (Parser parse) =
         Bad { pred = p, bag = x }
 
       Good { pred = p, value = a, state = s1 } ->
-        Good { pred = p, value = (func (String.sliceUnits s0.offset s1.offset s0.src) a), state = s1 }
+        Good { pred = p, value = (func (sliceChars s0.offset s1.offset s0.chars) a), state = s1 }
 
 
 
@@ -589,7 +601,7 @@ chompIf : (Char -> Bool) -> x -> Parser c x {}
 chompIf isGood expecting =
   Parser <| \s ->
     let
-      newOffset = isSubChar isGood s.offset s.src
+      newOffset = isSubChar isGood s.offset s.chars
     in
     -- not found
     if newOffset == -1 then
@@ -602,6 +614,7 @@ chompIf isGood expecting =
         , value = {}
         , state =
           { src = s.src
+          , chars = s.chars
           , offset = s.offset + 1
           , row = s.row + 1
           , col = 1
@@ -616,6 +629,7 @@ chompIf isGood expecting =
         , value = {}
         , state =
           { src = s.src
+          , chars = s.chars
           , offset = newOffset
           , row = s.row
           , col = s.col + 1
@@ -646,7 +660,7 @@ chompWhile isGood =
 chompWhileHelp : (Char -> Bool) -> Int -> Int -> Int -> State c -> PStep c x {}
 chompWhileHelp isGood offset row col s0 =
   let
-    newOffset = isSubChar isGood offset s0.src
+    newOffset = isSubChar isGood offset s0.chars
   in
   -- no match
   if newOffset == -1 then
@@ -655,6 +669,7 @@ chompWhileHelp isGood offset row col s0 =
       , value = {}
       , state =
         { src = s0.src
+        , chars = s0.chars
         , offset = offset
         , row = row
         , col = col
@@ -681,10 +696,14 @@ what you need.
 -}
 chompUntil : String -> x -> Parser c x {}
 chompUntil str expecting =
+  let
+    strChars =
+      String.toArray str
+  in
   Parser <| \s ->
     let
       { newOffset, newRow, newCol } =
-        findSubString str s.offset s.row s.col s.src
+        findSubString strChars s.offset s.row s.col s.chars
     in
     if newOffset == -1 then
       Bad { pred = False, bag = fromState s expecting }
@@ -695,6 +714,7 @@ chompUntil str expecting =
         , value = {}
         , state =
           { src = s.src
+          , chars = s.chars
           , offset = newOffset
           , row = newRow
           , col = newCol
@@ -707,19 +727,24 @@ chompUntil str expecting =
 -}
 chompUntilEndOr : String -> Parser c x {}
 chompUntilEndOr str =
+  let
+    strChars =
+      String.toArray str
+  in
   Parser <| \s ->
     let
       { newOffset, newRow, newCol } =
-        findSubString str s.offset s.row s.col s.src
+        findSubString strChars s.offset s.row s.col s.chars
 
       adjustedOffset =
-        if newOffset < 0 then String.unitLength s.src else newOffset
+        if newOffset < 0 then Array.length s.chars else newOffset
     in
     Good
       { pred = (s.offset < adjustedOffset)
       , value = {}
       , state =
         { src = s.src
+        , chars = s.chars
         , offset = adjustedOffset
         , row = newRow
         , col = newCol
@@ -803,6 +828,7 @@ updatePayload updater (Parser parse) =
 setStatePayload : payload -> State payload -> State payload
 setStatePayload payload s =
   { src = s.src
+  , chars = s.chars
   , offset = s.offset
   , row = s.row
   , col = s.col
@@ -895,149 +921,132 @@ getSource =
 -- LOW-LEVEL HELPERS
 
 
-{-| When making a fast parser, you want to avoid allocation as much as
-possible. That means you never want to mess with the source string, only
-keep track of an offset into that string.
+{-| Is `smallChars` at `offset` in `bigChars`? This is how `token` and
+`keyword` read the source, and every offset in it is a codepoint offset:
 
-You use `isSubString` like this:
+    isSubString (String.toArray "let") offset row col (String.toArray "let x = 4 in x")
+        --==> { newOffset, newRow, newCol }
 
-    isSubString "let" offset row col "let x = 4 in x"
-        --==> ( newOffset, newRow, newCol )
+On failure, the `newOffset` is `-1`. On success, the `newOffset` is the new
+offset: with our `"let"` example, `offset + 3`.
 
-You are looking for `"let"` at a given `offset`. On failure, the
-`newOffset` is `-1`. On success, the `newOffset` is the new offset. With
-our `"let"` example, it would be `offset + 3`.
-
-You also provide the current `row` and `col` which do not align with
-`offset` in a clean way. For example, when you see a `\n` you are at
-`row = row + 1` and `col = 1`. Furthermore, some UTF16 characters are
-two words wide, so even if there are no newlines, `offset` and `col`
-may not be equal.
+You also provide the current `row` and `col`, which do not align with `offset`
+in a clean way: when you see a `\n` you are at `row = row + 1` and `col = 1`.
+Every other character moves `col` by one, whatever it would take to store.
 -}
-isSubString : String -> Int -> Int -> Int -> String -> { newOffset: Int, newRow: Int, newCol: Int }
-isSubString smallString offset row col bigString =
-  let
-    slice =
-      String.sliceUnits offset (offset + String.unitLength smallString) bigString
+isSubString : Array Char -> Int -> Int -> Int -> Array Char -> { newOffset: Int, newRow: Int, newCol: Int }
+isSubString smallChars offset row col bigChars =
+  isSubStringHelp smallChars 0 offset row col bigChars
 
-    newlineIndices =
-      -- Unit indices, because `sliceLength` below is a unit length and the two
-      -- are subtracted. `String.indices` answers codepoint indices as of D8's
-      -- step 3 (`docs/m1b-str.md` §T15), and this module's offset model is the
-      -- one thing in `core` that is still counted in units.
-      Gren.Kernel.String.indexesUnits "\n" smallString
 
-    sliceLength =
-      String.unitLength slice
-  in
-  { newOffset =
-    if smallString == slice then
-      offset + sliceLength
+isSubStringHelp : Array Char -> Int -> Int -> Int -> Int -> Array Char -> { newOffset: Int, newRow: Int, newCol: Int }
+isSubStringHelp smallChars index offset row col bigChars =
+  when Array.get index smallChars is
+    Nothing ->
+      { newOffset = offset, newRow = row, newCol = col }
 
-    else
-      -1
-  , newRow = row + Array.length newlineIndices
-  , newCol =
-    newlineIndices
-      |> Array.last
-      |> Maybe.map (\newlineIndex -> sliceLength - newlineIndex)
-      |> Maybe.withDefault (col + sliceLength)
-  }
+    Just small ->
+      when Array.get offset bigChars is
+        Just big ->
+          if small /= big then
+            { newOffset = -1, newRow = row, newCol = col }
+
+          else if small == '\n' then
+            isSubStringHelp smallChars (index + 1) (offset + 1) (row + 1) 1 bigChars
+
+          else
+            isSubStringHelp smallChars (index + 1) (offset + 1) row (col + 1) bigChars
+
+        Nothing ->
+          { newOffset = -1, newRow = row, newCol = col }
 
 
 {-| Again, when parsing, you want to allocate as little as possible.
 So this function lets you say:
 
-    isSubChar isSpace offset "this is the source string"
+    isSubChar isSpace offset (String.toArray "this is the source string")
         --==> newOffset
 
 The `(Char -> Bool)` argument is called a predicate.
 The `newOffset` value can be a few different things:
 
-  - `-1` means that the predicate failed
+  - `-1` means that the predicate failed, or that `offset` is the end
   - `-2` means the predicate succeeded with a `\n`
-  - otherwise you will get `offset + 1` or `offset + 2`
-    depending on whether the UTF16 character is one or two
-    words wide.
+  - otherwise you will get `offset + 1`
+
+The predicate is only ever handed a whole codepoint: there is no half of one
+in an `Array Char` to hand it (`gren-lang/core#138`).
 -}
-isSubChar : (Char -> Bool) -> Int -> String -> Int
-isSubChar pred offset str =
-  when String.getUnit offset str is
+isSubChar : (Char -> Bool) -> Int -> Array Char -> Int
+isSubChar pred offset chars =
+  when Array.get offset chars is
     Nothing ->
       -1
 
-    Just unit ->
-      if Bitwise.and (Char.toCode unit) 0xF800 == 0xD800 then
-        when String.popFirst (String.sliceUnits offset (offset + 2) str) is
-          Just { first = uniChar } ->
-            if pred uniChar then
-              offset + 2
-
-            else
-              -1
-
-          Nothing ->
-            -1
-
-      else
-        if pred unit then
-          if unit == '\n' then
-            -2
-
-          else
-            offset + 1
+    Just char ->
+      if pred char then
+        if char == '\n' then
+          -2
 
         else
-          -1
+          offset + 1
+
+      else
+        -1
 
 
 {-| Find a substring after a given offset.
 
-    findSubString "42" offset row col "Is 42 the answer?"
-        --==> (newOffset, newRow, newCol)
+    findSubString (String.toArray "42") offset row col (String.toArray "Is 42 the answer?")
+        --==> { newOffset, newRow, newCol }
 
-If `offset = 0` we would get `(3, 1, 4)`
-If `offset = 7` we would get `(-1, 1, 18)`
+If `offset = 0` we would get `{ newOffset = 3, newRow = 1, newCol = 4 }`.
+If `offset = 7` we would get `{ newOffset = -1, newRow = 1, newCol = 18 }`: the
+row and column are where the search stopped, which is the end.
 -}
-findSubString : String -> Int -> Int -> Int -> String -> { newOffset: Int, newRow: Int, newCol: Int }
-findSubString smallString offset row col bigString =
-  let
-    slice =
-      String.sliceUnits offset (String.unitLength bigString) bigString
+findSubString : Array Char -> Int -> Int -> Int -> Array Char -> { newOffset: Int, newRow: Int, newCol: Int }
+findSubString smallChars offset row col bigChars =
+  if isMatchAt smallChars 0 offset bigChars then
+    { newOffset = offset, newRow = row, newCol = col }
 
-    sliceLength =
-      String.unitLength slice
+  else
+    when Array.get offset bigChars is
+      Nothing ->
+        { newOffset = -1, newRow = row, newCol = col }
 
-    newlines =
-      -- Unit indices again, and for the same reason: `newOffset` below is
-      -- `offset + idx` with a unit `offset` (§T15.3).
-      Gren.Kernel.String.indexesUnits "\n" slice
-  in
-  when Gren.Kernel.String.indexOfUnits smallString slice is
-    Just idx ->
-      let
-        relevantNewlines =
-          Array.keepIf (\newlineIdx -> newlineIdx < idx) newlines
-      in
-      { newOffset = offset + idx
-      , newRow = row + Array.length relevantNewlines
-      , newCol =
-        relevantNewlines
-          |> Array.last
-          |> Maybe.map (\lastNewlineIdx -> idx - lastNewlineIdx)
-          |> Maybe.withDefault (col + idx)
-      }
+      Just char ->
+        if char == '\n' then
+          findSubString smallChars (offset + 1) (row + 1) 1 bigChars
 
+        else
+          findSubString smallChars (offset + 1) row (col + 1) bigChars
+
+
+isMatchAt : Array Char -> Int -> Int -> Array Char -> Bool
+isMatchAt smallChars index offset bigChars =
+  when Array.get index smallChars is
     Nothing ->
-      { newOffset = -1
-      , newRow = row + Array.length newlines
-      , newCol =
-        newlines
-          |> Array.last
-          |> Maybe.map (\lastNewlineIdx -> sliceLength - lastNewlineIdx - 1)
-          |> Maybe.withDefault (col + sliceLength)
-      }
+      True
 
+    Just small ->
+      when Array.get (offset + index) bigChars is
+        Just big ->
+          if small == big then
+            isMatchAt smallChars (index + 1) offset bigChars
+
+          else
+            False
+
+        Nothing ->
+          False
+
+
+{-| The characters from `from` up to but not including `to`, as a `String`.
+It costs what it cuts, not what comes before it.
+-}
+sliceChars : Int -> Int -> Array Char -> String
+sliceChars from to chars =
+  String.fromArray (Array.slice from to chars)
 
 
 -- VARIABLES
@@ -1056,7 +1065,7 @@ variable i =
   Parser <| \s ->
     let
       firstOffset =
-        isSubChar i.start s.offset s.src
+        isSubChar i.start s.offset s.chars
     in
     if firstOffset == -1 then
       Bad { pred = False, bag = fromState s i.expecting }
@@ -1064,34 +1073,35 @@ variable i =
       let
         s1 =
           if firstOffset == -2 then
-            varHelp i.inner (s.offset + 1) (s.row + 1) 1 s.src s.payload
+            varHelp i.inner (s.offset + 1) (s.row + 1) 1 s
           else
-            varHelp i.inner firstOffset s.row (s.col + 1) s.src s.payload
+            varHelp i.inner firstOffset s.row (s.col + 1) s
 
         name =
-          String.sliceUnits s.offset s1.offset s.src
+          sliceChars s.offset s1.offset s.chars
       in
       Good { pred = True, value = name, state = s1 }
 
 
-varHelp : (Char -> Bool) -> Int -> Int -> Int -> String -> payload -> State payload
-varHelp isGood offset row col src payload =
+varHelp : (Char -> Bool) -> Int -> Int -> Int -> State payload -> State payload
+varHelp isGood offset row col s0 =
   let
-    newOffset = isSubChar isGood offset src
+    newOffset = isSubChar isGood offset s0.chars
   in
   if newOffset == -1 then
-    { src = src
+    { src = s0.src
+    , chars = s0.chars
     , offset = offset
-    , payload = payload
+    , payload = s0.payload
     , row = row
     , col = col
     }
 
   else if newOffset == -2 then
-    varHelp isGood (offset + 1) (row + 1) 1 src payload
+    varHelp isGood (offset + 1) (row + 1) 1 s0
 
   else
-    varHelp isGood newOffset row (col + 1) src payload
+    varHelp isGood newOffset row (col + 1) s0
 
 
 

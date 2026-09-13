@@ -107,20 +107,6 @@ tests =
             , test "all true" <| \{} -> Expect.equal True (String.all Char.isDigit "123")
             , test "all false" <| \{} -> Expect.equal False (String.all Char.isDigit "1 2 3")
             ]
-        , describe "Unit operations"
-            [ test "length" <| \_ -> Expect.equal 3 (String.unitLength "abc")
-            , test "length (unicode)" <| \_ -> Expect.equal 2 (String.unitLength "😎")
-            , test "getUnit" <| \_ -> Expect.equal (Just 'y') (String.getUnit 1 "xyz")
-            , test "getUnit (fail)" <| \_ -> Expect.equal Nothing (String.getUnit 10 "xyz")
-            , test "getUnit (negative)" <| \_ -> Expect.equal (Just 'z') (String.getUnit -1 "xyz")
-            , test "foldlUnits" <| \_ -> Expect.equal "time" (String.foldlUnits String.pushFirst "" "emit")
-            , test "foldlUnits eq" <| \_ -> Expect.equal True <| String.foldlUnits (\unit soFar -> soFar || unit == '\n') False "\n"
-            , test "foldrUnits" <| \_ -> Expect.equal "emit" (String.foldrUnits String.pushFirst "" "emit")
-            , test "foldrUnits eq" <| \_ -> Expect.equal True <| String.foldrUnits (\unit soFar -> soFar || unit == '\n') False "\n"
-            , test "sliceUnits" <| \_ -> Expect.equal "second" (String.sliceUnits 6 1000 "first second")
-            , test "sliceUnits (negative end)" <| \_ -> Expect.equal "nake" (String.sliceUnits 1 -1 "snakes")
-            , test "sliceUnits (unicode)" <| \_ -> Expect.equal "😎" (String.sliceUnits 3 5 "hi 😎 there")
-            ]
         ]
 
 
