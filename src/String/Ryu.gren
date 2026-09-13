@@ -154,11 +154,6 @@ shortest ieeeMantissa ieeeExponent =
 
         -- The lower end is a whole step away except at a power of two, where
         -- the interval below is half as wide.
-        --
-        -- The annotation is load-bearing and not decoration: without it this
-        -- binding's type is `Num a => a`, and `docs/m1b-ryu.md` §Y13 is what
-        -- that produces.
-        mmShift : UInt64
         mmShift =
             if ieeeMantissa /= 0 || ieeeExponent <= 1 then
                 1
@@ -233,15 +228,6 @@ scaleUp mv mmShift acceptBounds e2 =
         mm =
             mv - 1 - mmShift
 
-        -- The annotation is load-bearing and not decoration, and for a
-        -- sharper reason than `mmShift`'s. Without it this binding generalises
-        -- over `lastRemoved = 0` -- the only field a literal reaches -- and
-        -- §Y13's defect lowers that literal at `Int`, so the field holds a
-        -- JavaScript `0` where every other `UInt64` holds a `0n`. Nothing
-        -- crashes: `exactLoop`'s `lastRemoved == 0` is `0 === 0n`, which is
-        -- merely *false*, and the tie-to-even rule in `removeExactly` never
-        -- fires. That is a wrong last digit at every exact tie (§Y15).
-        base : Scaled
         base =
             { vr = mulShift mv mul i
             , vp = mulShift (mv + 2) mul i
@@ -296,8 +282,6 @@ scaleDown mv mmShift acceptBounds e2 =
         mul =
             { lo = at Tables.pow5Lo i, hi = at Tables.pow5Hi i }
 
-        -- `scaleUp`'s annotation, for `scaleUp`'s reason (§Y13, §Y15).
-        base : Scaled
         base =
             { vr = mulShift mv mul j
             , vp = mulShift (mv + 2) mul j
@@ -584,8 +568,6 @@ shortest32 ieeeMantissa ieeeExponent =
         mv =
             4 * m2
 
-        -- `shortest`'s annotation, for `shortest`'s reason (§Y13).
-        mmShift : UInt64
         mmShift =
             if ieeeMantissa /= 0 || ieeeExponent <= 1 then
                 1
@@ -627,8 +609,6 @@ scaleUp32 mv mmShift acceptBounds e2 =
         mm =
             mv - 1 - mmShift
 
-        -- `scaleUp`'s annotation, for `scaleUp`'s reason (§Y13, §Y15).
-        base : Scaled
         base =
             { vr = mulShift32 mv mul i
             , vp = mulShift32 (mv + 2) mul i
@@ -682,8 +662,6 @@ scaleDown32 mv mmShift acceptBounds e2 =
         j =
             q - (pow5bits i - pow5Bitcount32)
 
-        -- `scaleUp`'s annotation, for `scaleUp`'s reason (§Y13, §Y15).
-        base : Scaled
         base =
             { vr = mulShift32 mv mul j
             , vp = mulShift32 (mv + 2) mul j
