@@ -264,6 +264,12 @@ design that makes all conversions explicit.
 everything else, so `negate x` and `0 - x` agree at every input including the
 minimum -- which is all `docs/arithmetic.md` A6 asks of it.
 
+`fromInt` is what an integer literal means where its type is a variable (D170).
+In `double : Num a => a -> a` saying `x + 1`, the `1` has no width of its own,
+so the compiler writes it as `fromInt 1` taken out of the instance the caller
+passed, and folds it back into a literal wherever specialization knows which
+instance that is. It is not exposed: a literal is how a program says it.
+
 -}
 class Num a where
     add : a -> a -> a
@@ -271,6 +277,7 @@ class Num a where
     mul : a -> a -> a
     negate : a -> a
     pow : a -> a -> a
+    fromInt : Int -> a
 
 
 
@@ -319,12 +326,10 @@ must not be two billion multiplications. It is one per bit of the exponent -- 31
 of them at an `Int` -- and every one wraps, so `2 ^ 32` is `0` at an `Int` and
 stays `0`.
 
-**The three constants are arguments, and that is D149 showing through.** A
-numeric literal takes its width from its type, and at a type variable there is
-no width to read -- so a `1` written in this body would be the JavaScript number
-`1` at every member, which is the value `Int` wants and a `BigInt` type error at
-`Int64`. Each instance passes its own instead, where the type is concrete and
-the literal is the value it says.
+**The literals are `fromInt`.** A `1` in a body over `a` has no width of its
+own, so it is taken out of the instance this was handed, and specialization
+folds it back into the literal at each member (D170). Until then each instance
+passed its own `0`, `1` and `2`, which was D149's hole showing through.
 
 **The division and the remainder are arguments too, and that is a
 measurement.** They could be `//` and `remainderBy`, which are total and would
@@ -338,59 +343,52 @@ and `two` as the only divisor they ever see.
 -}
 powIntegral :
     (Num a, Eq a, Ord a)
-    => a
-    -> a
-    -> a
-    -> (a -> a -> a)
+    => (a -> a -> a)
     -> (a -> a -> a)
     -> a
     -> a
     -> a
-powIntegral zero one two rawDiv rawRem base exponent =
-    if lt exponent zero then
+powIntegral rawDiv rawRem base exponent =
+    if lt exponent 0 then
         -- The true value is a fraction strictly between -1 and 1 at every base
         -- but 1 and -1, so it truncates to zero -- and `0 ^ -n` is zero by A3
         -- rather than by this branch, since the true value there is not finite.
-        if eq base one then
-            one
+        if eq base 1 then
+            1
 
-        else if eq base (negate one) then
-            if eq (rawRem exponent two) zero then
-                one
+        else if eq base -1 then
+            if eq (rawRem exponent 2) 0 then
+                1
 
             else
-                negate one
+                -1
 
         else
-            zero
+            0
 
     else
-        powIntegralLoop zero two rawDiv rawRem base exponent one
+        powIntegralLoop rawDiv rawRem base exponent 1
 
 
 powIntegralLoop :
     (Num a, Eq a)
-    => a
-    -> a
-    -> (a -> a -> a)
+    => (a -> a -> a)
     -> (a -> a -> a)
     -> a
     -> a
     -> a
     -> a
-powIntegralLoop zero two rawDiv rawRem base exponent acc =
-    if eq exponent zero then
+powIntegralLoop rawDiv rawRem base exponent acc =
+    if eq exponent 0 then
         acc
 
     else
         powIntegralLoop
-            zero
-            two
             rawDiv
             rawRem
             (mul base base)
-            (rawDiv exponent two)
-            (if eq (rawRem exponent two) zero then
+            (rawDiv exponent 2)
+            (if eq (rawRem exponent 2) 0 then
                 acc
 
              else
@@ -412,7 +410,10 @@ instance Num Int where
         negateInt a
 
     pow a b =
-        powIntegral 0 1 2 divInt remInt a b
+        powIntegral divInt remInt a b
+
+    fromInt a =
+        a
 
 
 @prim("f64_add")
@@ -431,6 +432,10 @@ mulFloat : Float -> Float -> Float
 negateFloat : Float -> Float
 
 
+@prim("i32_to_f64")
+intToFloat : Int -> Float
+
+
 instance Num Float where
     add a b =
         addFloat a b
@@ -446,6 +451,9 @@ instance Num Float where
 
     pow a b =
         powFloat a b
+
+    fromInt a =
+        intToFloat a
 
 
 {-| The types you can divide with `//`, take a remainder of, and ask for a
@@ -579,11 +587,15 @@ lawful `Eq` and `Ord` are written over exactly these.
 
     isInfinite (1 / 0) == True
 
+`fromFloat` is `Num`'s `fromInt` for a literal with a point in it: `x * 0.5` in
+a `Fractional a` body is `x * fromFloat 0.5` (D170).
+
 -}
 class Fractional a where
     fdiv : a -> a -> a
     isNaN : a -> Bool
     isInfinite : a -> Bool
+    fromFloat : Float -> a
 
 
 @prim("f64_div")
@@ -607,6 +619,9 @@ instance Fractional Float where
 
     isInfinite a =
         isInfiniteFloat a
+
+    fromFloat a =
+        a
 
 
 -- A9 keeps `pow` out of the primitive set: V8, glibc, musl and Erlang already
@@ -671,6 +686,10 @@ eqInt64 : Int64 -> Int64 -> Bool
 ltInt64 : Int64 -> Int64 -> Bool
 
 
+@prim("i32_to_i64")
+intToInt64 : Int -> Int64
+
+
 instance Num Int64 where
     add a b =
         addInt64 a b
@@ -685,7 +704,10 @@ instance Num Int64 where
         negateInt64 a
 
     pow a b =
-        powIntegral 0 1 2 divInt64 remInt64 a b
+        powIntegral divInt64 remInt64 a b
+
+    fromInt a =
+        intToInt64 a
 
 
 instance Integral Int64 where
@@ -781,6 +803,16 @@ eqUInt32 : UInt32 -> UInt32 -> Bool
 ltUInt32 : UInt32 -> UInt32 -> Bool
 
 
+-- `fromInt` at an unsigned type wraps, which is `UInt32.fromIntWrap` and A6's
+-- rule, rather than saturating the way `UInt32.fromInt` does. A negative literal
+-- under a type variable is the only way to reach it: at a known unsigned type
+-- D63 refuses one at compile time (D170).
+
+
+@prim("i32_as_u32")
+intAsUInt32 : Int -> UInt32
+
+
 instance Num UInt32 where
     add a b =
         addUInt32 a b
@@ -795,7 +827,10 @@ instance Num UInt32 where
         negateUInt32 a
 
     pow a b =
-        powIntegral 0 1 2 divUInt32 remUInt32 a b
+        powIntegral divUInt32 remUInt32 a b
+
+    fromInt a =
+        intAsUInt32 a
 
 
 instance Integral UInt32 where
@@ -864,6 +899,10 @@ eqUInt64 : UInt64 -> UInt64 -> Bool
 ltUInt64 : UInt64 -> UInt64 -> Bool
 
 
+@prim("i64_as_u64")
+int64AsUInt64 : Int64 -> UInt64
+
+
 instance Num UInt64 where
     add a b =
         addUInt64 a b
@@ -878,7 +917,10 @@ instance Num UInt64 where
         negateUInt64 a
 
     pow a b =
-        powIntegral 0 1 2 divUInt64 remUInt64 a b
+        powIntegral divUInt64 remUInt64 a b
+
+    fromInt a =
+        int64AsUInt64 (intToInt64 a)
 
 
 instance Integral UInt64 where
@@ -988,6 +1030,9 @@ instance Num Float32 where
     pow a b =
         narrowToFloat32 (powFloat (widenFloat32 a) (widenFloat32 b))
 
+    fromInt a =
+        narrowToFloat32 (intToFloat a)
+
 
 instance Fractional Float32 where
     fdiv a b =
@@ -998,6 +1043,9 @@ instance Fractional Float32 where
 
     isInfinite a =
         isInfiniteFloat32 a
+
+    fromFloat a =
+        narrowToFloat32 a
 
 
 

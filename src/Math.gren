@@ -54,7 +54,7 @@ changes no value, so the two directions are one operation and live together**
 
 -}
 
-import Basics exposing (Int, Float, UInt64, Num, Ord, Fractional, (==), (/), (*), (+), (-), (<), (>=))
+import Basics exposing (Int, Float, UInt64, Num, Ord, Fractional, (==), (/), (*), (+), (-), (<), (<=), (>=))
 import Gren.Kernel.Math
 
 
@@ -257,13 +257,24 @@ fromIntegralFloat x =
 
     abs 3.14 == 3.14
 
+    abs -0.0 == 0.0
+
+At an integer type it wraps like everything else, so `abs minInt` is `minInt`
+(`docs/arithmetic.md` A6). At a float it is IEEE's answer in every way a
+comparison can see, `-0.0` included; the one thing it does not do is clear the
+sign bit of a negative `NaN`, which only `Math.toBits` could show (D170).
+
 [abs]: https://en.wikipedia.org/wiki/Absolute_value
 
 -}
 abs : (Num a, Ord a) => a -> a
 abs n =
-    if n < 0 then
-        -n
+    -- `<=` and `0 - n` rather than `<` and `-n`, and each is for `-0.0`: it is
+    -- `<= 0`, and `0 - -0.0` is `0.0` where `negate -0.0` is `-0.0` again. At
+    -- every other input the two spellings agree. The literals are `fromInt`
+    -- through the witness, which is what lets this be written once (D170).
+    if n <= 0 then
+        0 - n
 
     else
         n
