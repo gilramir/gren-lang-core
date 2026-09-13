@@ -48,6 +48,7 @@ Set, remove, and query operations all take _O(log n)_ time.
 
 
 import Array exposing (Array)
+import Array.Builder
 import Basics exposing (..)
 import Inspect exposing (Inspect)
 import Maybe exposing (..)
@@ -722,7 +723,8 @@ partition isGood dict =
 -}
 keys : Dict k v -> Array k
 keys dict =
-    foldl (\key value keyArray -> Array.pushLast key keyArray) [] dict
+    foldl (\key _ builder -> Array.Builder.pushLast key builder) (Array.Builder.empty 0) dict
+        |> Array.Builder.toArray
 
 
 {-| Get all of the values in a dictionary, in the order of their keys.
@@ -732,7 +734,8 @@ keys dict =
 -}
 values : Dict k v -> Array v
 values dict =
-    foldl (\key value valueArray -> Array.pushLast value valueArray) [] dict
+    foldl (\_ value builder -> Array.Builder.pushLast value builder) (Array.Builder.empty 0) dict
+        |> Array.Builder.toArray
 
 
 {-| The most general way of combining two dictionaries. You provide three
@@ -781,9 +784,19 @@ merge leftStep bothStep rightStep leftDict rightDict initialResult =
                         }
 
         { array = leftovers, result = intermediateResult } =
-            foldl stepState { array = foldl (\key value array -> Array.pushLast { key = key, value = value } array) [] leftDict, result = initialResult } rightDict
+            foldl stepState { array = toKeyValues leftDict, result = initialResult } rightDict
     in
     Array.foldl (\{ key, value } result -> leftStep key value result) intermediateResult leftovers
+
+
+
+{-| The entries in key order, built through the transient: `Array.pushLast`
+copies, so a fold over it is quadratic (`docs/m1b-str.md` §T21.1, D163).
+-}
+toKeyValues : Dict k v -> Array { key : k, value : v }
+toKeyValues dict =
+    foldl (\key value builder -> Array.Builder.pushLast { key = key, value = value } builder) (Array.Builder.empty 0) dict
+        |> Array.Builder.toArray
 
 
 
@@ -826,9 +839,10 @@ instance (Inspect k, Inspect v) => Inspect (Dict k v) where
             [ Inspect.record
                 (foldl
                     (\key value entries ->
-                        Array.pushLast { name = inspect key, value = inspect value } entries
+                        Array.Builder.pushLast { name = inspect key, value = inspect value } entries
                     )
-                    []
+                    (Array.Builder.empty 0)
                     dict
+                    |> Array.Builder.toArray
                 )
             ]

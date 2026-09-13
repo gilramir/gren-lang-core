@@ -373,6 +373,13 @@ function _String_toInt(str) {
 // FLOAT CONVERSIONS
 
 function _String_toFloat(s) {
+  // `String.fromFloat` writes "NaN", and what it writes this has to read
+  // (`docs/representation.md` R5, `m1b-ryu.md` §Y4). The guard below is right
+  // to refuse every other string `+` turns into NaN, so this one is let through
+  // by name, before it.
+  if (s === "NaN") {
+    return __Maybe_Just(NaN);
+  }
   // check if it is a hex, octal, or binary number
   if (s.length === 0 || /[\sxbo]/.test(s)) {
     return __Maybe_Nothing;

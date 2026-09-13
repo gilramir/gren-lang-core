@@ -836,6 +836,10 @@ want to use [`Maybe.withDefault`](Maybe#withDefault) to handle bad data:
 
     Maybe.withDefault 0 (String.toFloat "cats") == 0
 
+It reads everything [`fromFloat`](#fromFloat) writes, `"NaN"`, `"Infinity"` and
+`"-Infinity"` included, so `toFloat (fromFloat x)` gives back `x` for every
+`Float` but the sign of `-0.0`.
+
 -}
 toFloat : String -> Maybe Float
 toFloat =
