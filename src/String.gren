@@ -10,6 +10,7 @@ module String exposing
     , toArray, fromArray
     , toUpper, toLower, pad, padLeft, padRight, trim, trimLeft, trimRight
     , map, keepIf, foldl, foldr, any, all
+    , graphemes, graphemeLength, foldlGraphemes
     , unitLength, getUnit, foldlUnits, foldrUnits, sliceUnits
     )
 
@@ -86,6 +87,24 @@ Cosmetic operations such as padding with extra characters or trimming whitespace
 
 @docs map, keepIf, foldl, foldr, any, all
 
+## Graphemes
+
+A grapheme cluster is what a reader calls a character and what a cursor moves
+over: `e` with a combining acute, a flag written as two regional indicators, a
+family emoji joined by zero-width joiners, a Hangul syllable spelled as three
+jamo. It is a sequence of code points, and the boundaries between clusters are
+[UAX #29][uax29]'s extended grapheme cluster boundaries at the Unicode version
+[Unicode.version](Unicode#version) names.
+
+There is no `foldrGraphemes`. Four of UAX #29's rules are about what came
+*before* the boundary being judged, so a right-to-left walk is a different
+algorithm rather than a mirror of the left-to-right one, and `foldr (::) []` of
+the graphemes is the same answer as reversing what this gives.
+
+[uax29]: https://www.unicode.org/reports/tr29/
+
+@docs graphemes, graphemeLength, foldlGraphemes
+
 ## Char Units
 
 Functions that operates on units instead of code points.
@@ -107,6 +126,7 @@ import Result exposing (Result)
 import String.Ryu as Ryu
 import UInt32
 import UInt64
+import Unicode.Grapheme
 import Unicode.Lookup
 
 
@@ -1185,6 +1205,91 @@ any =
 all : (Char -> Bool) -> String -> Bool
 all isGood str =
     not (any (not << isGood) str)
+
+
+-- GRAPHEMES
+
+
+{-| Break a string into its grapheme clusters — what a reader would call its
+characters.
+
+    graphemes "añb" == [ "a", "ñ", "b" ]
+
+    -- "ñ" written as n plus a combining tilde is still one grapheme
+    graphemes "an\u{0303}b" == [ "a", "n\u{0303}", "b" ]
+
+    -- a flag is two regional indicators, and one grapheme
+    graphemes "\u{1F1F3}\u{1F1F4}" == [ "\u{1F1F3}\u{1F1F4}" ]
+
+This is [count](#count)'s other answer: `count` says how many code points a
+string holds and this says how many characters it shows.
+
+-}
+graphemes : String -> Array String
+graphemes string =
+    foldlGraphemes (\cluster acc -> Array.pushLast cluster acc) [] string
+
+
+{-| How many grapheme clusters a string holds.
+
+    graphemeLength "an\u{0303}b" == 3
+
+    count "an\u{0303}b" == 4
+
+-}
+graphemeLength : String -> Int
+graphemeLength string =
+    foldlGraphemes (\_ n -> n + 1) 0 string
+
+
+{-| Reduce a string one grapheme cluster at a time, from the start.
+
+    foldlGraphemes (\g acc -> acc ++ "|" ++ g) "" "an\u{0303}b"
+        == "|a|n\u{0303}|b"
+
+-}
+foldlGraphemes : (String -> b -> b) -> b -> String -> b
+foldlGraphemes fn initial string =
+    let
+        step c acc =
+            let
+                answer =
+                    Unicode.Grapheme.step c acc.state
+            in
+            if answer.break then
+                { state = answer.state
+                , current = fromChar c
+                , value = closeGrapheme fn acc
+                }
+
+            else
+                { state = answer.state
+                , current = pushLast c acc.current
+                , value = acc.value
+                }
+    in
+    closeGrapheme fn
+        (foldl step
+            { state = Unicode.Grapheme.start
+            , current = ""
+            , value = initial
+            }
+            string
+        )
+
+
+{-| Hand the cluster built so far to the fold, unless there is none — which
+happens exactly once, before the first character, and is why the empty string
+folds to what it started with.
+-}
+closeGrapheme : (String -> b -> b) -> { state : a, current : String, value : b } -> b
+closeGrapheme fn acc =
+    if acc.current == "" then
+        acc.value
+
+    else
+        fn acc.current acc.value
+
 
 
 -- UNITS

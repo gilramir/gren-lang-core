@@ -1,5 +1,6 @@
 module Unicode.Lookup exposing
-    ( isNonPrintable
+    ( graphemeClass
+    , isNonPrintable
     , isWhitespace
     , lowerDelta
     , lowerExpansion
@@ -7,7 +8,7 @@ module Unicode.Lookup exposing
     , upperExpansion
     )
 
-{-| Reading `Unicode.Tables`: four questions, one binary search.
+{-| Reading `Unicode.Tables`: five questions, one binary search.
 
 `docs/unicode.md` U2 says that every Unicode-dependent operation in `core` is
 answered from a pinned version rather than from the host, and that the
@@ -29,6 +30,7 @@ nothing else, because a Unicode-aware predicate family belongs to the
 
 @docs isWhitespace, isNonPrintable
 @docs upperDelta, upperExpansion, lowerDelta, lowerExpansion
+@docs graphemeClass
 
 -}
 
@@ -97,7 +99,7 @@ upperDelta c =
         asciiDelta code Tables.upperAscii
 
     else
-        delta code Tables.upperRuns
+        runValue code Tables.upperRuns
 
 
 {-| The uppercase of a codepoint that has no single-codepoint one:
@@ -130,7 +132,7 @@ lowerDelta c =
         asciiDelta code Tables.lowerAscii
 
     else
-        delta code Tables.lowerRuns
+        runValue code Tables.lowerRuns
 
 
 {-| `lowerExpansion 'İ'` is `Just [ 'i', '\u{0307}' ]`, and it is the only
@@ -153,6 +155,59 @@ lowerExpansion c =
 
     else
         expansion code Tables.lowerMultiFrom Tables.lowerMultiTo
+
+
+
+{-| What UAX #29 needs to know about this codepoint, packed into one `Int`:
+its `Grapheme_Cluster_Break` class, whether it is `Extended_Pictographic`, and
+its `Indic_Conjunct_Break` value. `Unicode.Tables.graphemeClasses` says what the
+bits are and `Unicode.Grapheme` is what reads them.
+
+One table and one search for three properties, because a segmenter asks all
+three of nearly every character it walks and three tables would be three
+searches (§T19).
+
+ASCII is three classes and a default — `CR`, `LF`, the other C0 controls and
+U+007F, and `Other` for every printable character — so it is answered without
+searching. No ASCII codepoint is `Extended_Pictographic` (U+00A9 is the lowest)
+or has an `InCB` value, and `scripts/unicode-tables.py` refuses to generate a
+table where any of that has stopped being true.
+
+The Hangul syllables are answered without searching for a different reason:
+they are arithmetic. `LV` is a syllable with no final consonant, which is every
+28th codepoint of the block, and `LVT` is the other 27 — 11,172 codepoints that
+the database writes out one at a time and that are half of the table if they are
+stored (D162).
+
+-}
+graphemeClass : Char -> Int
+graphemeClass c =
+    let
+        code =
+            Char.toCode c
+    in
+    if code < 128 then
+        if code == 0x0D then
+            Tables.graphemeClasses.cr
+
+        else if code == 0x0A then
+            Tables.graphemeClasses.lf
+
+        else if asciiBit code Tables.graphemeControlAscii then
+            Tables.graphemeClasses.control
+
+        else
+            Tables.graphemeClasses.other
+
+    else if code >= Tables.graphemeHangul.lo && code <= Tables.graphemeHangul.hi then
+        if modBy Tables.graphemeHangul.step (code - Tables.graphemeHangul.lo) == 0 then
+            Tables.graphemeClasses.hangulLv
+
+        else
+            Tables.graphemeClasses.hangulLvt
+
+    else
+        runValue code Tables.graphemeRanges
 
 
 
@@ -213,9 +268,13 @@ inRanges code table =
     halve code table 2 0 (Array.length table // 2 - 1) >= 0
 
 
-{-| The delta of the `[lo, hi, delta]` run holding `code`, or `0`. -}
-delta : Int -> Array Int -> Int
-delta code table =
+{-| The third element of the `[lo, hi, value]` run holding `code`, or `0` — a
+case-mapping distance in the two case tables and a packed class in the grapheme
+one. Zero is the right answer for a codepoint no run holds in all three: it maps
+to itself, and it is `Other` with no properties.
+-}
+runValue : Int -> Array Int -> Int
+runValue code table =
     let
         run =
             halve code table 3 0 (Array.length table // 3 - 1)
