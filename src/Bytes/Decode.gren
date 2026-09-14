@@ -1,19 +1,19 @@
 module Bytes.Decode exposing
-  ( Decoder, decode
+  ( Decoder, decode, decodeWithReason
   , signedInt8, signedInt16, signedInt32
   , unsignedInt8, unsignedInt16, unsignedInt32
   , float32, float64
   , string
   , bytes
   , map, map2, map3, map4, map5
-  , andThen, succeed, fail
+  , andThen, succeed, fail, failWith
   , Step(..), loop
   )
 
 
 {-| Functions for creating things from a sequence of bytes.
 
-@docs Decoder, decode
+@docs Decoder, decode, decodeWithReason
 
 ## Integers
 @docs signedInt8, signedInt16, signedInt32, unsignedInt8, unsignedInt16, unsignedInt32
@@ -31,7 +31,7 @@ module Bytes.Decode exposing
 @docs map, map2, map3, map4, map5
 
 ## And Then
-@docs andThen, succeed, fail
+@docs andThen, succeed, fail, failWith
 
 ## Loop
 @docs Step, loop
@@ -43,6 +43,7 @@ import Basics exposing (..)
 import Bytes exposing (Bytes, Endianness(..))
 import Inspect
 import Maybe exposing (Maybe(..))
+import Result exposing (Result(..))
 import String exposing (String)
 
 
@@ -70,6 +71,30 @@ show a case where there are not enough bytes.
 decode : Decoder a -> Bytes -> Maybe a
 decode (Decoder decoder) bs =
   Gren.Kernel.Bytes.decode decoder bs
+
+
+{-| Like [`decode`](#decode), but a failure says where and why.
+
+    -- decodeWithReason (unsignedInt16 BE) <0007> == Ok 7
+    -- decodeWithReason (unsignedInt32 BE) <0700> == Err { offset = 2, reason = "the input ended" }
+
+The `offset` is a byte offset into the input. A [`failWith`](#failWith) gives
+the offset it was reached at and its own reason. Running out of input gives the
+input's length and `"the input ended"`: where the input ended, not where the
+read that ran off it began, so that a decode that succeeds pays for no bounds
+check. [`fail`](#fail) is `failWith "Bytes.Decode.fail"`, [`string`](#string)
+on bytes that are not UTF-8 is `"not UTF-8"` at the string's first byte, and
+[`bytes`](#bytes) of a negative length is `"a negative length"`.
+
+A decoder nested deep enough to exhaust JavaScript's stack gives offset `0` and
+`"the stack was exhausted"`, because where it ran out is not known
+(`m1b-protobuf.md` §Q14.2).
+
+This and `failWith` are the fork's, and not in `gren-lang/core` (D187).
+-}
+decodeWithReason : Decoder a -> Bytes -> Result { offset : Int, reason : String } a
+decodeWithReason (Decoder decoder) bs =
+  Gren.Kernel.Bytes.decodeWithReason decoder bs
 
 
 
@@ -182,16 +207,20 @@ leeway to read the length as a [Base 128 Varint][pb] for ProtoBuf, a
 -}
 string : Int -> Decoder String
 string n =
-  bytes n
-    |> andThen 
-      (\bits ->
-        when Bytes.toString bits is
-          Just str ->
-            succeed str
+  let
+    (Decoder readBytes) = bytes n
+  in
+  Decoder <|
+    \bites offset ->
+      let
+        read = readBytes bites offset
+      in
+      when Bytes.toString read.value is
+        Just str ->
+          { offset = read.offset, value = str }
 
-          Nothing ->
-            fail
-      )
+        Nothing ->
+          Gren.Kernel.Bytes.decodeFailure "not UTF-8" bites offset
 
 
 
@@ -385,7 +414,27 @@ working with meters do that, and otherwise something went wrong!
 -}
 fail : Decoder a
 fail =
-  Decoder Gren.Kernel.Bytes.decodeFailure
+  failWith "Bytes.Decode.fail"
+
+
+{-| A decoder that always fails, with a reason.
+[`decodeWithReason`](#decodeWithReason) gives the reason back with the offset
+the decoder had reached, and [`decode`](#decode) gives `Nothing`, as it does for
+`fail`.
+
+    pickDecoder : Int -> Decode.Decoder Distance
+    pickDecoder tag =
+      when tag is
+        0 -> Decode.map Yards (Decode.float32 BE)
+        1 -> Decode.map Meters (Decode.float32 BE)
+        _ -> Decode.failWith ("no distance has tag " ++ String.fromInt tag)
+
+The offset is where the decoder is when it fails, so here it is just after the
+tag byte.
+-}
+failWith : String -> Decoder a
+failWith reason =
+  Decoder (Gren.Kernel.Bytes.decodeFailure reason)
 
 
 

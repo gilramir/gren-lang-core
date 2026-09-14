@@ -3,6 +3,7 @@
 import Bytes.Encode as Encode exposing (getLength, write)
 import Gren.Kernel.Scheduler exposing (binding, succeed)
 import Maybe exposing (Just, Nothing)
+import Result exposing (Ok, Err)
 
 */
 
@@ -157,13 +158,42 @@ var _Bytes_decode = F2(function (decoder, bytes) {
   try {
     return __Maybe_Just(A2(decoder, bytes, 0).__$value);
   } catch (e) {
-    if (e instanceof RangeError || e === _Bytes_decodeFailed) {
+    if (e instanceof RangeError || e instanceof _Bytes_DecodeFailure) {
       return __Maybe_Nothing;
     } else {
       throw e;
     }
   }
 });
+
+// `Bytes.Decode.decodeWithReason` (D187). A `failWith` carries its own offset
+// and reason. A read past the end is a `RangeError` from `DataView`, or from
+// `_Bytes_read_bytes`, and answers the input's length: the offset is where the
+// input ended, not where the read that ran off it began, so that no read pays
+// for a bounds check. V8 reports an exhausted stack as a `RangeError` too, and
+// that is not the input ending (`m1b-protobuf.md` §Q14.2), so it says so. Where
+// the stack ran out is not known, and the offset is 0.
+var _Bytes_decodeWithReason = F2(function (decoder, bytes) {
+  try {
+    return __Result_Ok(A2(decoder, bytes, 0).__$value);
+  } catch (e) {
+    if (e instanceof _Bytes_DecodeFailure) {
+      return __Result_Err({ __$offset: e.offset, __$reason: e.reason });
+    } else if (e instanceof RangeError) {
+      return __Result_Err(
+        _Bytes_isStackOverflow(e)
+          ? { __$offset: 0, __$reason: "the stack was exhausted" }
+          : { __$offset: bytes.byteLength, __$reason: "the input ended" },
+      );
+    } else {
+      throw e;
+    }
+  }
+});
+
+function _Bytes_isStackOverflow(e) {
+  return /call stack/i.test(e.message);
+}
 
 var _Bytes_read_i8 = F2(function (bytes, offset) {
   return { __$offset: offset + 1, __$value: bytes.getInt8(offset) };
@@ -193,7 +223,10 @@ var _Bytes_read_f64 = F3(function (isLE, bytes, offset) {
 var _Bytes_read_bytes = F3(function (len, bytes, offset) {
   // The `DataView` constructor checks only against the whole `ArrayBuffer`, so
   // without this a slice could be read past its own end into its parent's bytes.
-  if (len < 0 || offset + len > bytes.byteLength) {
+  if (len < 0) {
+    throw new _Bytes_DecodeFailure(offset, "a negative length");
+  }
+  if (offset + len > bytes.byteLength) {
     throw new RangeError("Bytes.Decode.bytes: past the end of the input");
   }
   return {
@@ -202,11 +235,15 @@ var _Bytes_read_bytes = F3(function (len, bytes, offset) {
   };
 });
 
-// `Bytes.Decode.fail`. `_Bytes_decode` answers `Nothing` for this and for a
+// `Bytes.Decode.failWith`. `_Bytes_decode` answers `Nothing` for this and for a
 // `RangeError` (reading past the end), and rethrows anything else, which is what
-// core#47 asked for. It threw a bare `0` before, which `_Bytes_decode` rethrew.
-var _Bytes_decodeFailed = {};
+// core#47 asked for; `_Bytes_decodeWithReason` answers the offset and reason.
+// `fail` threw a bare `0` before D179, which `_Bytes_decode` rethrew.
+function _Bytes_DecodeFailure(offset, reason) {
+  this.offset = offset;
+  this.reason = reason;
+}
 
-var _Bytes_decodeFailure = F2(function () {
-  throw _Bytes_decodeFailed;
+var _Bytes_decodeFailure = F3(function (reason, bytes, offset) {
+  throw new _Bytes_DecodeFailure(offset, reason);
 });
