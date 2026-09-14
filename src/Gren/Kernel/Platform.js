@@ -42,7 +42,7 @@ function _Platform_initialize(
       __Debug_crash(2 /**__DEBUG/, "Expected DataView as flags" /**/);
     }
 
-    flags = new DataView(rawFlags.buffer.slice());
+    flags = _Platform_copyBytes(rawFlags);
   } else {
     var result = A2(
       __Json_run,
@@ -328,6 +328,15 @@ function _Platform_insert(isCmd, newEffect, effects) {
 
 // PORTS
 
+// A `Bytes` is a DataView, which is a window onto a buffer that may be larger
+// than it: a `Bytes.Decode.bytes` slice, or a Node `Buffer` out of the shared
+// pool. A port copies the window, not the buffer under it.
+function _Platform_copyBytes(view) {
+  return new DataView(
+    view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength),
+  );
+}
+
 function _Platform_checkPortName(name) {
   if (_Platform_effectManagers[name]) {
     __Debug_crash(3, name);
@@ -370,7 +379,7 @@ function _Platform_setupOutgoingPort(name, isBytes) {
         var currentSubs = subs;
         var rawValue = converter(cmdArray[idx]);
         var value = isBytes
-          ? new DataView(rawValue.buffer.slice())
+          ? _Platform_copyBytes(rawValue)
           : __Json_unwrap(rawValue);
         for (var subIdx = 0; subIdx < currentSubs.length; subIdx++) {
           currentSubs[subIdx](value);
@@ -446,7 +455,7 @@ function _Platform_setupIncomingPort(name, sendToApp, isBytes) {
         __Debug_crash(4, name, "Expected DataView");
       }
 
-      value = new DataView(incomingValue.buffer.slice());
+      value = _Platform_copyBytes(incomingValue);
     } else {
       var result = A2(__Json_run, converter, __Json_wrap(incomingValue));
 
@@ -480,7 +489,7 @@ function _Platform_taskPort(
   return function (input) {
     var encodedInput = inputConverter
       ? inputIsBytes
-        ? new DataView(input.buffer.slice())
+        ? _Platform_copyBytes(input)
         : __Json_unwrap(inputConverter(input))
       : null;
 
@@ -512,7 +521,7 @@ function _Platform_taskPort(
               __Debug_crash(4, name, "Expected DataView");
             }
 
-            checkedValue = new DataView(value.buffer.slice());
+            checkedValue = _Platform_copyBytes(value);
           } else {
             var result = A2(__Json_run, converter, __Json_wrap(value));
 
