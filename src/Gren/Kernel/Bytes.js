@@ -14,6 +14,30 @@ function _Bytes_length(bytes) {
   return bytes.byteLength;
 }
 
+// Content, not identity: two views of different buffers, or of one buffer at
+// different offsets, are equal when their bytes are.
+var _Bytes_eq = F2(function (a, b) {
+  var len = a.byteLength;
+  if (len !== b.byteLength) {
+    return false;
+  }
+  for (var i = 0; i < len; i++) {
+    if (a.getUint8(i) !== b.getUint8(i)) {
+      return false;
+    }
+  }
+  return true;
+});
+
+function _Bytes_toArray(bytes) {
+  var len = bytes.byteLength;
+  var result = new Array(len);
+  for (var i = 0; i < len; i++) {
+    result[i] = bytes.getUint8(i);
+  }
+  return result;
+}
+
 var _Bytes_getHostEndianness = F2(function (le, be) {
   return __Scheduler_binding(function (callback) {
     callback(

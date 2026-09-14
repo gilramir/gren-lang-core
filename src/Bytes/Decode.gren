@@ -115,9 +115,14 @@ unsignedInt16 endianness =
   Decoder (Gren.Kernel.Bytes.read_u16 (endianness == LE))
 
 
-{-| Decode four bytes into an integer from `0` to `4294967295`.
+{-| Decode four bytes into a `UInt32`.
+
+A `UInt32` rather than an `Int`, because an `Int` is 32 bits and signed (D2):
+until 2026-09-13 this answered an `Int` holding `4294967295`, which printed as
+that, compared unequal to `-1`, and became `-1` the moment it was added to
+anything (`m1b-protobuf.md` §Q13).
 -}
-unsignedInt32 : Endianness -> Decoder Int
+unsignedInt32 : Endianness -> Decoder UInt32
 unsignedInt32 endianness =
   Decoder (Gren.Kernel.Bytes.read_u32 (endianness == LE))
 

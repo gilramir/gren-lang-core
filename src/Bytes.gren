@@ -32,7 +32,7 @@ module Bytes exposing
 
 import Array exposing (Array)
 import Basics exposing (..)
-import Inspect
+import Inspect exposing (Inspect)
 import Maybe exposing (Maybe)
 import String exposing (String)
 import Task exposing (Task)
@@ -83,6 +83,33 @@ binary                                 hexidecimal
 Anyway, the point is that `Bytes` is a sequence of bytes!
 -}
 type Bytes = Bytes
+
+
+-- Two `Bytes` are equal when they hold the same bytes. A `Bytes` is a view, so
+-- a slice out of `Bytes.Decode.bytes` and a fresh copy of the same bytes are
+-- different objects with the same contents, and they compare equal. Without
+-- this instance no record holding a `Bytes` had `Eq` at all, which is every
+-- message `geng protobuf` generates (`m1b-protobuf.md` §Q13).
+
+
+instance Eq Bytes where
+    eq =
+        Gren.Kernel.Bytes.eq
+
+
+-- `representation.md` R5: `Bytes [106, 97, 122, 122]`, the bytes in order as
+-- `Int`s, which is `Set`'s shape. Decimal rather than hex because `inspect` on
+-- an `Array Int` is decimal, and one rendering of a byte is less to remember.
+
+
+instance Inspect Bytes where
+    inspect bytes =
+        Inspect.ctor "Bytes" [ inspect (toArray bytes) ]
+
+
+toArray : Bytes -> Array Int
+toArray =
+    Gren.Kernel.Bytes.toArray
 
 
 {-| The sequence with exactly 0 bytes.

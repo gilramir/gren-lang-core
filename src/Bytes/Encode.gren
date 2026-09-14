@@ -47,7 +47,7 @@ type Encoder
   | I32 (WithEndian Int)
   | U8 Int
   | U16 (WithEndian Int)
-  | U32 (WithEndian Int)
+  | U32 (WithEndian UInt32)
   | F32 (WithEndian Float)
   | F64 (WithEndian Float)
   | Seq { width : Int, items : Array Encoder }
@@ -139,9 +139,13 @@ unsignedInt16 e n =
   U16 { endian = e, number = n }
 
 
-{-| Encode integers from `0` to `4294967295` in four bytes.
+{-| Encode a `UInt32` in four bytes.
+
+It takes a `UInt32` rather than an `Int` because an `Int` is 32 bits and signed
+(D2), so half of the range this writes is not an `Int` at all. A bit pattern
+that is already in an `Int` is `UInt32.fromIntWrap` away.
 -}
-unsignedInt32 : Endianness -> Int -> Encoder
+unsignedInt32 : Endianness -> UInt32 -> Encoder
 unsignedInt32 e n =
   U32 { endian = e, number = n }
 
