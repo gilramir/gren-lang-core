@@ -55,7 +55,10 @@ function _Bytes_fromString(str) {
 }
 
 function _Bytes_toString(bytes) {
-  var decoder = new TextDecoder("utf-8", { fatal: true });
+  // `ignoreBOM` keeps a leading U+FEFF: without it the decoder drops one as a
+  // byte-order mark, and a string that starts with the character does not
+  // survive `fromString` and back.
+  var decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
   try {
     return __Maybe_Just(decoder.decode(bytes));
