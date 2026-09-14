@@ -49,14 +49,15 @@ function _Bytes_flatten(arrayOfBytes) {
   var offset = 0;
   var result = new Uint8Array(requiredSize);
 
+  // A `Bytes` is a view, and a slice out of `Bytes.Decode.bytes` shares its
+  // parent's buffer at a non-zero `byteOffset` (core#137).
   for (var i = 0; i < arrayOfBytes.length; i++) {
-    var currentBytes = new Uint8Array(arrayOfBytes[i].buffer);
-    var currentByteLength = arrayOfBytes[i].byteLength;
-
-    for (var j = 0; j < currentByteLength; j++) {
-      result[offset] = currentBytes[j];
-      offset++;
-    }
+    var current = arrayOfBytes[i];
+    result.set(
+      new Uint8Array(current.buffer, current.byteOffset, current.byteLength),
+      offset,
+    );
+    offset += current.byteLength;
   }
 
   return new DataView(result.buffer);
@@ -129,7 +130,7 @@ var _Bytes_decode = F2(function (decoder, bytes) {
   try {
     return __Maybe_Just(A2(decoder, bytes, 0).__$value);
   } catch (e) {
-    if (e instanceof RangeError) {
+    if (e instanceof RangeError || e === _Bytes_decodeFailed) {
       return __Maybe_Nothing;
     } else {
       throw e;
@@ -163,12 +164,22 @@ var _Bytes_read_f64 = F3(function (isLE, bytes, offset) {
 });
 
 var _Bytes_read_bytes = F3(function (len, bytes, offset) {
+  // The `DataView` constructor checks only against the whole `ArrayBuffer`, so
+  // without this a slice could be read past its own end into its parent's bytes.
+  if (len < 0 || offset + len > bytes.byteLength) {
+    throw new RangeError("Bytes.Decode.bytes: past the end of the input");
+  }
   return {
     __$offset: offset + len,
     __$value: new DataView(bytes.buffer, bytes.byteOffset + offset, len),
   };
 });
 
+// `Bytes.Decode.fail`. `_Bytes_decode` answers `Nothing` for this and for a
+// `RangeError` (reading past the end), and rethrows anything else, which is what
+// core#47 asked for. It threw a bare `0` before, which `_Bytes_decode` rethrew.
+var _Bytes_decodeFailed = {};
+
 var _Bytes_decodeFailure = F2(function () {
-  throw 0;
+  throw _Bytes_decodeFailed;
 });
