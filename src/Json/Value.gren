@@ -1035,11 +1035,54 @@ describe s end i =
 
 describeChar : Int -> String
 describeChar c =
-    if intLt c 0x20 || c == 0x7F || (intGe c 0x80 && intLe c 0xA0) || c == 0x2028 || c == 0x2029 || c == 0xFEFF then
+    if invisible c then
         "U+" ++ hexWidth 4 c
 
     else
         "'" ++ codepoint c ++ "'"
+
+
+{-| A character a message names by its number rather than showing between
+quotes: general category `Cc`, `Cf`, `Zs`, `Zl` or `Zp` in Unicode 17.0.0
+(`unicode.md` U3), other than the space itself, which reads as `' '`. Each
+either shows as nothing or looks like a space, so between quotes it would say
+nothing (`m1b-json.md` §O14).
+-}
+invisible : Int -> Bool
+invisible c =
+    if intLt c 0x7F then
+        intLt c 0x20
+
+    else if intLt c 0x2000 then
+        intLe c 0xA0
+            || c == 0xAD
+            || (intGe c 0x0600 && intLe c 0x0605)
+            || c == 0x061C
+            || c == 0x06DD
+            || c == 0x070F
+            || c == 0x0890
+            || c == 0x0891
+            || c == 0x08E2
+            || c == 0x1680
+            || c == 0x180E
+
+    else if intLt c 0x3001 then
+        intLe c 0x200F
+            || (intGe c 0x2028 && intLe c 0x202F)
+            || (intGe c 0x205F && intLe c 0x2064)
+            || (intGe c 0x2066 && intLe c 0x206F)
+            || c == 0x3000
+
+    else
+        c == 0xFEFF
+            || (intGe c 0xFFF9 && intLe c 0xFFFB)
+            || c == 0x000110BD
+            || c == 0x000110CD
+            || (intGe c 0x00013430 && intLe c 0x0001343F)
+            || (intGe c 0x0001BCA0 && intLe c 0x0001BCA3)
+            || (intGe c 0x0001D173 && intLe c 0x0001D17A)
+            || c == 0x000E0001
+            || (intGe c 0x000E0020 && intLe c 0x000E007F)
 
 
 hexWidth : Int -> Int -> String
