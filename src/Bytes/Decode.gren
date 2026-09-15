@@ -54,7 +54,101 @@ import String exposing (String)
 {-| Describes how to turn a sequence of bytes into a nice Gren value.
 -}
 type Decoder a =
-  Decoder (Bytes -> Int -> {offset : Int, value : a})
+  Decoder (Bytes -> Int -> Res a)
+
+
+-- A step answers its failure rather than throwing it, since Geng has no
+-- exceptions (`m1b-bytes-prim.md` D229). It is not exposed, so the API is the
+-- kernel's. A read checks its bounds first, which `bytes_get_u8`'s
+-- precondition asks for, over `i32_lt` and `i32_add` rather than `<` and `+`,
+-- which reach `Ord Int`'s `compare` (§BY4).
+
+
+type Res a
+  = Good { offset : Int, value : a }
+  | Bad { offset : Int, reason : String }
+
+
+@prim("i32_lt")
+lt : Int -> Int -> Bool
+
+
+@prim("i32_add")
+add : Int -> Int -> Int
+
+
+@prim("i32_shl")
+shl : Int -> Int -> Int
+
+
+@prim("i32_shr")
+shr : Int -> Int -> Int
+
+
+@prim("i32_or")
+bor : Int -> Int -> Int
+
+
+@prim("i32_as_u32")
+asU32 : Int -> UInt32
+
+
+@prim("u32_to_u64")
+u32ToU64 : UInt32 -> UInt64
+
+
+@prim("u64_shl")
+shl64 : UInt64 -> Int -> UInt64
+
+
+@prim("u64_or")
+or64 : UInt64 -> UInt64 -> UInt64
+
+
+@prim("f32_from_bits")
+f32FromBits : UInt32 -> Float32
+
+
+@prim("f32_to_f64")
+f32ToF64 : Float32 -> Float
+
+
+@prim("f64_from_bits")
+f64FromBits : UInt64 -> Float
+
+
+byte : Bytes -> Int -> Int
+byte =
+  primGetU8
+
+
+ended : Bytes -> Res a
+ended bites =
+  Bad { offset = primLength bites, reason = "the input ended" }
+
+
+word32 : Bool -> Bytes -> Int -> Int
+word32 isLE bites o =
+  if isLE then
+    bor (bor (bor (byte bites o) (shl (byte bites (add o 1)) 8)) (shl (byte bites (add o 2)) 16)) (shl (byte bites (add o 3)) 24)
+  else
+    bor (bor (bor (shl (byte bites o) 24) (shl (byte bites (add o 1)) 16)) (shl (byte bites (add o 2)) 8)) (byte bites (add o 3))
+
+
+word16 : Bool -> Bytes -> Int -> Int
+word16 isLE bites o =
+  if isLE then
+    bor (byte bites o) (shl (byte bites (add o 1)) 8)
+  else
+    bor (shl (byte bites o) 8) (byte bites (add o 1))
+
+
+sized : Int -> (Bytes -> Int -> a) -> Bytes -> Int -> Res a
+sized width read bites offset =
+  if lt (primLength bites) (add offset width) then
+    ended bites
+  else
+    Good { offset = add offset width, value = read bites offset }
 
 
 {-| Turn a sequence of bytes into a nice Gren value.
@@ -70,7 +164,17 @@ show a case where there are not enough bytes.
 -}
 decode : Decoder a -> Bytes -> Maybe a
 decode (Decoder decoder) bs =
-  Gren.Kernel.Bytes.decode decoder bs
+  guard
+    (\input ->
+      when decoder input 0 is
+        Good g ->
+          Just g.value
+
+        Bad _ ->
+          Nothing
+    )
+    bs
+    Nothing
 
 
 {-| Like [`decode`](#decode), but a failure says where and why.
@@ -81,8 +185,8 @@ decode (Decoder decoder) bs =
 The `offset` is a byte offset into the input. A [`failWith`](#failWith) gives
 the offset it was reached at and its own reason. Running out of input gives the
 input's length and `"the input ended"`: where the input ended, not where the
-read that ran off it began, so that a decode that succeeds pays for no bounds
-check. [`fail`](#fail) is `failWith "Bytes.Decode.fail"`, [`string`](#string)
+read that ran off it began, which is what the Haskell reader of Core and
+`Geng.Core.Wire` say too (D230). [`fail`](#fail) is `failWith "Bytes.Decode.fail"`, [`string`](#string)
 on bytes that are not UTF-8 is `"not UTF-8"` at the string's first byte, and
 [`bytes`](#bytes) of a negative length is `"a negative length"`.
 
@@ -94,7 +198,29 @@ This and `failWith` are the fork's, and not in `gren-lang/core` (D187).
 -}
 decodeWithReason : Decoder a -> Bytes -> Result { offset : Int, reason : String } a
 decodeWithReason (Decoder decoder) bs =
-  Gren.Kernel.Bytes.decodeWithReason decoder bs
+  guard
+    (\input ->
+      when decoder input 0 is
+        Good g ->
+          Ok g.value
+
+        Bad e ->
+          Err e
+    )
+    bs
+    (Err { offset = 0, reason = "the stack was exhausted" })
+
+
+{-| Run a decode, and answer the third argument if it exhausts the stack
+(`m1b-bytes-prim.md` D231). A decoder is recursive, and on JavaScript a deep
+enough one throws a `RangeError` that Geng cannot catch, where the kernel
+answered `Err` (§BY2.3). The JavaScript catches it once per decode, not per
+read. A backend with no row runs the body, and has its own stack.
+-}
+@externPure(js, "Bytes", "guard")
+guard : (x -> r) -> x -> r -> r
+guard run input _ =
+  run input
 
 
 
@@ -105,21 +231,21 @@ decodeWithReason (Decoder decoder) bs =
 -}
 signedInt8 : Decoder Int
 signedInt8 =
-  Decoder Gren.Kernel.Bytes.read_i8
+  Decoder (sized 1 (\b o -> shr (shl (byte b o) 24) 24))
 
 
 {-| Decode two bytes into an integer from `-32768` to `32767`.
 -}
 signedInt16 : Endianness -> Decoder Int
 signedInt16 endianness =
-  Decoder (Gren.Kernel.Bytes.read_i16 (endianness == LE))
+  Decoder (sized 2 (\b o -> shr (shl (word16 (endianness == LE) b o) 16) 16))
 
 
 {-| Decode four bytes into an integer from `-2147483648` to `2147483647`.
 -}
 signedInt32 : Endianness -> Decoder Int
 signedInt32 endianness =
-  Decoder (Gren.Kernel.Bytes.read_i32 (endianness == LE))
+  Decoder (sized 4 (word32 (endianness == LE)))
 
 
 
@@ -130,14 +256,20 @@ signedInt32 endianness =
 -}
 unsignedInt8 : Decoder Int
 unsignedInt8 =
-  Decoder Gren.Kernel.Bytes.read_u8
+  Decoder
+    (\bites offset ->
+      if lt offset (primLength bites) then
+        Good { offset = add offset 1, value = byte bites offset }
+      else
+        ended bites
+    )
 
 
 {-| Decode two bytes into an integer from `0` to `65535`.
 -}
 unsignedInt16 : Endianness -> Decoder Int
 unsignedInt16 endianness =
-  Decoder (Gren.Kernel.Bytes.read_u16 (endianness == LE))
+  Decoder (sized 2 (word16 (endianness == LE)))
 
 
 {-| Decode four bytes into a `UInt32`.
@@ -149,7 +281,7 @@ anything (`m1b-protobuf.md` §Q13).
 -}
 unsignedInt32 : Endianness -> Decoder UInt32
 unsignedInt32 endianness =
-  Decoder (Gren.Kernel.Bytes.read_u32 (endianness == LE))
+  Decoder (sized 4 (\b o -> asU32 (word32 (endianness == LE) b o)))
 
 
 
@@ -160,14 +292,26 @@ unsignedInt32 endianness =
 -}
 float32 : Endianness -> Decoder Float
 float32 endianness =
-  Decoder (Gren.Kernel.Bytes.read_f32 (endianness == LE))
+  Decoder (sized 4 (\b o -> f32ToF64 (f32FromBits (asU32 (word32 (endianness == LE) b o)))))
 
 
 {-| Decode eight bytes into a floating point number.
 -}
 float64 : Endianness -> Decoder Float
 float64 endianness =
-  Decoder (Gren.Kernel.Bytes.read_f64 (endianness == LE))
+  Decoder (sized 8 (float64At (endianness == LE)))
+
+
+float64At : Bool -> Bytes -> Int -> Float
+float64At isLE b o =
+  let
+    first = u32ToU64 (asU32 (word32 isLE b o))
+    second = u32ToU64 (asU32 (word32 isLE b (add o 4)))
+  in
+  if isLE then
+    f64FromBits (or64 (shl64 second 32) first)
+  else
+    f64FromBits (or64 (shl64 first 32) second)
 
 
 
@@ -178,7 +322,16 @@ float64 endianness =
 -}
 bytes : Int -> Decoder Bytes
 bytes n =
-  Decoder (Gren.Kernel.Bytes.read_bytes n)
+  Decoder <|
+    \bites offset ->
+      if lt n 0 then
+        Bad { offset = offset, reason = "a negative length" }
+
+      else if lt (primLength bites) (add offset n) then
+        ended bites
+
+      else
+        Good { offset = add offset n, value = primSlice bites offset (add offset n) }
 
 
 
@@ -212,15 +365,17 @@ string n =
   in
   Decoder <|
     \bites offset ->
-      let
-        read = readBytes bites offset
-      in
-      when Bytes.toString read.value is
-        Just str ->
-          { offset = read.offset, value = str }
+      when readBytes bites offset is
+        Good read ->
+          when Bytes.toString read.value is
+            Just str ->
+              Good { offset = read.offset, value = str }
 
-        Nothing ->
-          Gren.Kernel.Bytes.decodeFailure "not UTF-8" bites offset
+            Nothing ->
+              Bad { offset = offset, reason = "not UTF-8" }
+
+        Bad e ->
+          Bad e
 
 
 
@@ -243,10 +398,12 @@ map : (a -> b) -> Decoder a -> Decoder b
 map func (Decoder decodeA) =
   Decoder <|
     \bites offset ->
-      let
-        a = decodeA bites offset
-      in
-      { offset = a.offset, value = func a.value }
+      when decodeA bites offset is
+        Good a ->
+          Good { offset = a.offset, value = func a.value }
+
+        Bad e ->
+          Bad e
 
 
 {-| Combine two decoders.
@@ -273,11 +430,17 @@ map2 : (a -> b -> result) -> Decoder a -> Decoder b -> Decoder result
 map2 func (Decoder decodeA) (Decoder decodeB) =
   Decoder <|
     \bites offset ->
-      let
-        a = decodeA bites offset
-        b = decodeB bites a.offset
-      in
-      { offset = b.offset, value = func a.value b.value }
+      when decodeA bites offset is
+        Bad x ->
+          Bad x
+
+        Good a ->
+          when decodeB bites a.offset is
+            Bad x ->
+              Bad x
+
+            Good b ->
+              Good { offset = b.offset, value = func a.value b.value }
 
 
 {-| Combine three decoders.
@@ -286,12 +449,22 @@ map3 : (a -> b -> c -> result) -> Decoder a -> Decoder b -> Decoder c -> Decoder
 map3 func (Decoder decodeA) (Decoder decodeB) (Decoder decodeC) =
   Decoder <|
     \bites offset ->
-      let
-        a = decodeA bites offset
-        b = decodeB bites a.offset
-        c = decodeC bites b.offset
-      in
-      { offset = c.offset, value = func a.value b.value c.value }
+      when decodeA bites offset is
+        Bad x ->
+          Bad x
+
+        Good a ->
+          when decodeB bites a.offset is
+            Bad x ->
+              Bad x
+
+            Good b ->
+              when decodeC bites b.offset is
+                Bad x ->
+                  Bad x
+
+                Good c ->
+                  Good { offset = c.offset, value = func a.value b.value c.value }
 
 
 {-| Combine four decoders.
@@ -300,13 +473,27 @@ map4 : (a -> b -> c -> d -> result) -> Decoder a -> Decoder b -> Decoder c -> De
 map4 func (Decoder decodeA) (Decoder decodeB) (Decoder decodeC) (Decoder decodeD) =
   Decoder <|
     \bites offset ->
-      let
-        a = decodeA bites offset
-        b = decodeB bites a.offset
-        c = decodeC bites b.offset
-        d = decodeD bites c.offset
-      in
-      { offset = d.offset, value = func a.value b.value c.value d.value }
+      when decodeA bites offset is
+        Bad x ->
+          Bad x
+
+        Good a ->
+          when decodeB bites a.offset is
+            Bad x ->
+              Bad x
+
+            Good b ->
+              when decodeC bites b.offset is
+                Bad x ->
+                  Bad x
+
+                Good c ->
+                  when decodeD bites c.offset is
+                    Bad x ->
+                      Bad x
+
+                    Good d ->
+                      Good { offset = d.offset, value = func a.value b.value c.value d.value }
 
 
 {-| Combine five decoders. If you need to combine more things, it is possible
@@ -316,14 +503,32 @@ map5 : (a -> b -> c -> d -> e -> result) -> Decoder a -> Decoder b -> Decoder c 
 map5 func (Decoder decodeA) (Decoder decodeB) (Decoder decodeC) (Decoder decodeD) (Decoder decodeE) =
   Decoder <|
     \bites offset ->
-      let
-        a = decodeA bites offset
-        b = decodeB bites a.offset
-        c = decodeC bites b.offset
-        d = decodeD bites c.offset
-        e = decodeE bites d.offset
-      in
-      { offset = e.offset, value = func a.value b.value c.value d.value e.value }
+      when decodeA bites offset is
+        Bad x ->
+          Bad x
+
+        Good a ->
+          when decodeB bites a.offset is
+            Bad x ->
+              Bad x
+
+            Good b ->
+              when decodeC bites b.offset is
+                Bad x ->
+                  Bad x
+
+                Good c ->
+                  when decodeD bites c.offset is
+                    Bad x ->
+                      Bad x
+
+                    Good d ->
+                      when decodeE bites d.offset is
+                        Bad x ->
+                          Bad x
+
+                        Good e ->
+                          Good { offset = e.offset, value = func a.value b.value c.value d.value e.value }
 
 
 
@@ -349,11 +554,15 @@ andThen : (a -> Decoder b) -> Decoder a -> Decoder b
 andThen callback (Decoder decodeA) =
   Decoder <|
     \bites offset ->
-      let
-        new = decodeA bites offset
-        (Decoder decodeB) = callback new.value
-      in
-      decodeB bites new.offset
+      when decodeA bites offset is
+        Good new ->
+          let
+            (Decoder decodeB) = callback new.value
+          in
+          decodeB bites new.offset
+
+        Bad e ->
+          Bad e
 
 
 {-| A decoder that always succeeds with a certain value. Maybe we are making
@@ -378,7 +587,7 @@ decoding the value and put it in a `Just`.
 -}
 succeed : a -> Decoder a
 succeed a =
-  Decoder (\_ offset -> { offset = offset, value = a })
+  Decoder (\_ offset -> Good { offset = offset, value = a })
 
 
 {-| A decoder that always fails. This can be useful when using `andThen` to
@@ -434,7 +643,7 @@ tag byte.
 -}
 failWith : String -> Decoder a
 failWith reason =
-  Decoder (Gren.Kernel.Bytes.decodeFailure reason)
+  Decoder (\_ offset -> Bad { offset = offset, reason = reason })
 
 
 
@@ -487,15 +696,31 @@ loop state callback =
   Decoder (loopHelp state callback)
 
 
-loopHelp : state -> (state -> Decoder (Step state a)) -> Bytes -> Int -> { offset : Int, value : a }
+loopHelp : state -> (state -> Decoder (Step state a)) -> Bytes -> Int -> Res a
 loopHelp state callback bites offset =
   let
     (Decoder decoder) = callback state
-    new = decoder bites offset
   in
-  when new.value is
-    Loop newState ->
-      loopHelp newState callback bites new.offset
+  when decoder bites offset is
+    Good new ->
+      when new.value is
+        Loop newState ->
+          loopHelp newState callback bites new.offset
 
-    Done result ->
-      { offset = new.offset, value = result }
+        Done result ->
+          Good { offset = new.offset, value = result }
+
+    Bad e ->
+      Bad e
+
+
+@prim("bytes_get_u8")
+primGetU8 : Bytes -> Int -> Int
+
+
+@prim("bytes_length")
+primLength : Bytes -> Int
+
+
+@prim("bytes_slice")
+primSlice : Bytes -> Int -> Int -> Bytes

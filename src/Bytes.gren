@@ -36,7 +36,7 @@ import Inspect exposing (Inspect)
 import Maybe exposing (Maybe)
 import String exposing (String)
 import Task exposing (Task)
-import Gren.Kernel.Bytes
+import Bytes.Transient exposing (Transient)
 
 
 -- BYTES
@@ -94,7 +94,7 @@ type Bytes = Bytes
 
 instance Eq Bytes where
     eq =
-        Gren.Kernel.Bytes.eq
+        primEq
 
 
 -- `representation.md` R5: `Bytes [106, 97, 122, 122]`, the bytes in order as
@@ -108,15 +108,15 @@ instance Inspect Bytes where
 
 
 toArray : Bytes -> Array Int
-toArray =
-    Gren.Kernel.Bytes.toArray
+toArray bytes =
+    Array.initialize (primLength bytes) 0 (primGetU8 bytes)
 
 
 {-| The sequence with exactly 0 bytes.
 -}
 empty : Bytes
 empty =
-  Gren.Kernel.Bytes.empty
+  primToBytes (Bytes.Transient.new 0)
 
 
 {-| Check if the given byte sequence has 0 bytes in it.
@@ -135,7 +135,7 @@ how many bytes there are!
 -}
 length : Bytes -> Int
 length =
-  Gren.Kernel.Bytes.length
+  primLength
 
 
 
@@ -194,7 +194,15 @@ type Endianness = LE | BE
 -}
 getHostEndianness : Task x Endianness
 getHostEndianness =
-  Gren.Kernel.Bytes.getHostEndianness LE BE
+  hostEndianness LE BE
+
+
+-- D234: the one name here that asks the host something, so an extern with no
+-- Geng body. A constructor does not cross (D192), so the two answers go in.
+
+
+@extern(js, "Bytes", "hostEndianness")
+hostEndianness : endianness -> endianness -> Task x endianness
 
 
 -- STRINGS
@@ -229,8 +237,17 @@ toString bytes =
 {-| Flatten all `Bytes` in an `Array` into a single `Bytes`.
 -}
 flatten : Array Bytes -> Bytes
-flatten =
-  Gren.Kernel.Bytes.flatten
+flatten arrayOfBytes =
+  let
+    total =
+      Array.foldl (\b sum -> sum + length b) 0 arrayOfBytes
+  in
+  Array.foldl
+    (\b acc -> { t = primSetBytes acc.t acc.offset b, offset = acc.offset + length b })
+    { t = Bytes.Transient.new total, offset = 0 }
+    arrayOfBytes
+    |> .t
+    |> primToBytes
 
 
 -- PRIMITIVES
@@ -252,3 +269,28 @@ primUtf8Valid : Bytes -> Bool
 
 @prim("str_from_utf8")
 primFromUtf8 : Bytes -> String
+
+
+-- `docs/m1b-bytes-prim.md` D233's group. Equality is content, not identity: a
+-- slice out of `Bytes.Decode.bytes` shares its parent's storage and compares
+-- equal to a fresh copy.
+
+
+@prim("bt_set_bytes")
+primSetBytes : Transient -> Int -> Bytes -> Transient
+
+
+@prim("bt_to_bytes")
+primToBytes : Transient -> Bytes
+
+
+@prim("bytes_eq")
+primEq : Bytes -> Bytes -> Bool
+
+
+@prim("bytes_length")
+primLength : Bytes -> Int
+
+
+@prim("bytes_get_u8")
+primGetU8 : Bytes -> Int -> Int

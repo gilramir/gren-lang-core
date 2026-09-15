@@ -27,6 +27,7 @@ module Bytes.Encode exposing
 
 import Array exposing (Array)
 import Basics exposing (..)
+import Bytes.Transient exposing (Transient)
 import Bytes exposing (Bytes, Endianness(..))
 import Maybe exposing (Maybe(..))
 import String exposing (String)
@@ -96,8 +97,8 @@ people to serialize? And when some have Japanese and Norwegian names? Having
 this intermediate `Encoder` can help reduce allocation quite a lot!
 -}
 encode : Encoder -> Bytes
-encode =
-  Gren.Kernel.Bytes.encode
+encode encoder =
+  primToBytes (write encoder (Bytes.Transient.new (getLength encoder)) 0)
 
 
 
@@ -224,29 +225,97 @@ sequence builders =
 -- WRITE
 
 
-write : Encoder -> Bytes -> Int -> Int
+-- The transient is threaded linearly, and each write's offset is worked out
+-- from the widths before it rather than returned by the write. The byte order
+-- is Geng over one byte at a time (`m1b-bytes-prim.md` D232).
+
+
+set : Transient -> Int -> Int -> Transient
+set =
+  Bytes.Transient.setU8
+
+
+@prim("i32_and")
+band : Int -> Int -> Int
+
+
+@prim("i32_ushr")
+ushr : Int -> Int -> Int
+
+
+@prim("u32_as_i32")
+u32AsI32 : UInt32 -> Int
+
+
+@prim("u64_to_u32")
+u64ToU32 : UInt64 -> UInt32
+
+
+@prim("u64_ushr")
+ushr64 : UInt64 -> Int -> UInt64
+
+
+@prim("f64_bits")
+f64Bits : Float -> UInt64
+
+
+@prim("f64_to_f32")
+f64ToF32 : Float -> Float32
+
+
+@prim("f32_bits")
+f32Bits : Float32 -> UInt32
+
+
+setWord16 : Bool -> Transient -> Int -> Int -> Transient
+setWord16 isLE t o n =
+  if isLE then
+    set (set t o (band n 255)) (o + 1) (band (ushr n 8) 255)
+  else
+    set (set t o (band (ushr n 8) 255)) (o + 1) (band n 255)
+
+
+setWord32 : Bool -> Transient -> Int -> Int -> Transient
+setWord32 isLE t o n =
+  if isLE then
+    set (set (set (set t o (band n 255)) (o + 1) (band (ushr n 8) 255)) (o + 2) (band (ushr n 16) 255)) (o + 3) (ushr n 24)
+  else
+    set (set (set (set t o (ushr n 24)) (o + 1) (band (ushr n 16) 255)) (o + 2) (band (ushr n 8) 255)) (o + 3) (band n 255)
+
+
+write : Encoder -> Transient -> Int -> Transient
 write builder mb offset =
   when builder is
-    I8    n -> Gren.Kernel.Bytes.write_i8  mb offset n
-    I16 { endian = e, number = n } -> Gren.Kernel.Bytes.write_i16 mb offset n (e == LE)
-    I32 { endian = e, number = n } -> Gren.Kernel.Bytes.write_i32 mb offset n (e == LE)
-    U8    n -> Gren.Kernel.Bytes.write_u8  mb offset n
-    U16 { endian = e, number = n } -> Gren.Kernel.Bytes.write_u16 mb offset n (e == LE)
-    U32 { endian = e, number = n } -> Gren.Kernel.Bytes.write_u32 mb offset n (e == LE)
-    F32 { endian = e, number = n } -> Gren.Kernel.Bytes.write_f32 mb offset n (e == LE)
-    F64 { endian = e, number = n } -> Gren.Kernel.Bytes.write_f64 mb offset n (e == LE)
+    I8    n -> set mb offset (band n 255)
+    I16 { endian = e, number = n } -> setWord16 (e == LE) mb offset n
+    I32 { endian = e, number = n } -> setWord32 (e == LE) mb offset n
+    U8    n -> set mb offset (band n 255)
+    U16 { endian = e, number = n } -> setWord16 (e == LE) mb offset n
+    U32 { endian = e, number = n } -> setWord32 (e == LE) mb offset (u32AsI32 n)
+    F32 { endian = e, number = n } -> setWord32 (e == LE) mb offset (u32AsI32 (f32Bits (f64ToF32 n)))
+    F64 { endian = e, number = n } ->
+      let
+        bits = f64Bits n
+        high = u32AsI32 (u64ToU32 (ushr64 bits 32))
+        low = u32AsI32 (u64ToU32 bits)
+      in
+      if e == LE then
+        setWord32 True (setWord32 True mb offset low) (offset + 4) high
+      else
+        setWord32 False (setWord32 False mb offset high) (offset + 4) low
     Seq { items = bs } -> writeSequence bs mb offset
-    Bytes bs -> Gren.Kernel.Bytes.write_bytes mb offset bs
+    Bytes bs -> primSetBytes mb offset bs
 
 
-writeSequence : Array Encoder -> Bytes -> Int -> Int
+writeSequence : Array Encoder -> Transient -> Int -> Transient
 writeSequence builders mb offset =
   Array.foldl
-    (\builder currentOffset ->
-      write builder mb currentOffset
+    (\builder acc ->
+      { t = write builder acc.t acc.offset, offset = acc.offset + getLength builder }
     )
-    offset
+    { t = mb, offset = offset }
     builders
+    |> .t
 
 
 -- LENGTHS
@@ -264,7 +333,7 @@ getLength builder =
     F32 _ -> 4
     F64 _ -> 8
     Seq { width = w } -> w
-    Bytes bs -> Gren.Kernel.Bytes.length bs
+    Bytes bs -> primLength bs
 
 
 getLengths : Int -> Array Encoder -> Int
@@ -275,3 +344,15 @@ getLengths length builders =
     )
     length
     builders
+
+
+@prim("bt_set_bytes")
+primSetBytes : Transient -> Int -> Bytes -> Transient
+
+
+@prim("bt_to_bytes")
+primToBytes : Transient -> Bytes
+
+
+@prim("bytes_length")
+primLength : Bytes -> Int

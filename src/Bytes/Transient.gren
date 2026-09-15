@@ -1,0 +1,33 @@
+module Bytes.Transient exposing
+    ( Transient
+    , new
+    , setU8
+    )
+
+{-| The bytes transient `Bytes.Encode.encode` and `Bytes.flatten` write into,
+which `core` does not expose (`m1b-bytes-prim.md` D233, after D221's
+`Json.Value`).
+
+A transient is used linearly: each `bt_` primitive answers the transient it was
+given, and nothing reads one after passing it on. Nothing checks that, as nothing
+checks it for the array builder.
+
+`bt_to_bytes` and `bt_set_bytes` are not here, because they mention `Bytes`,
+which `Bytes` declares and which imports this module. `Bytes` and
+`Bytes.Encode` each declare them where they use them (§BY12.2).
+
+-}
+
+import Basics exposing (Int)
+
+
+type Transient
+    = Transient
+
+
+@prim("bt_new")
+new : Int -> Transient
+
+
+@prim("bt_set_u8")
+setU8 : Transient -> Int -> Int -> Transient
