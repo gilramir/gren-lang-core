@@ -15,6 +15,10 @@ reach `Value`'s constructors: `Json.Encode.Value` and `Json.Decode.Value` are
 aliases of the type, and only `Json.Encode` builds one and `Json.Decode` takes
 one apart.
 
+On JavaScript, `parse` first asks `parseWith`, an extern with a Geng body
+whose implementation is `JSON.parse` and a walk (D222–D227), and falls back to
+the Geng parser where that gives the text back.
+
 Neither the parser nor the encoder recurses once per level of nesting (D216).
 Each is one self-recursive function over a stack it keeps itself, which the
 backend compiles to a loop, so a value nests as deep as memory allows.
@@ -309,9 +313,48 @@ primPrev : String -> Int -> Int
 
 {-| Read one JSON value from the whole of a string, RFC 8259's grammar. A
 failure names its reason and the offset it was found at.
+
+On JavaScript `parseWith` answers first (D215, D222), and this parser runs only
+where it gives the text back. Everywhere else `parseWith` is its body, which
+always does.
 -}
 parse : String -> Result { offset : Int, reason : String } Value
 parse s =
+    when parseWith Null Bool Number Str Arr object Just Nothing s is
+        Just v ->
+            Ok v
+
+        Nothing ->
+            parseGeng s
+
+
+{-| JavaScript's fast path (`m1b-json.md` §O16, D222–D227): `JSON.parse`, and a
+walk building the tree through these builders, in `src/Ext/Json.js`. It gives
+the text back, as `notFound`, where `JSON.parse`'s answer is not this module's:
+a failure, an object whose first key is an array index, and a walk past the
+stack (D224). The builders' parameters are type variables, so the boundary
+checks none of them, and the implementation makes every string well formed
+itself (D223).
+
+The body is what every backend without a `js` row compiles, and what
+`GENG_EXTERN_BODIES=1` compiles on JavaScript: the fast path is never taken.
+-}
+@externPure(js, "Json", "parseWith")
+parseWith : v -> (b -> v) -> (f -> v) -> (s -> v) -> (a -> v) -> (ks -> vs -> v) -> (v -> r) -> r -> String -> r
+parseWith _ _ _ _ _ _ _ notFound _ =
+    notFound
+
+
+object : Array String -> Array Value -> Value
+object keys values =
+    Obj (Array.map2 (\key value -> { key = key, value = value }) keys values)
+
+
+{-| The Geng parser, which is `parse` on every backend but JavaScript and
+JavaScript's answer wherever its fast path gives up.
+-}
+parseGeng : String -> Result { offset : Int, reason : String } Value
+parseGeng s =
     let
         end =
             primEnd s
