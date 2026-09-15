@@ -4,13 +4,17 @@
 // parser builds, and nothing here names a constructor (D192).
 //
 // It answers what the Geng parser answers on every input, and gives the text
-// back to it, by returning `notFound`, on exactly three things (D224):
+// back to it, by returning `notFound`, on exactly four things (D224, D228):
 //
 //   - `JSON.parse` fails. The message is the Geng parser's (D217).
 //   - An object's first key is an array index. JavaScript orders an object's
 //     own keys with every array index first, ascending, and the rest in
 //     creation order, so the first key is the only one to look at: if it is not
 //     an index, none is. Source order is D213's.
+//   - Two of an object's keys are the same once made well formed, as
+//     `{"\ud800":1,"\udc00":2}` is. The Geng parser keeps the last value in
+//     the source at the first position, and `JSON.parse` has already kept a
+//     last value for each of the two keys apart, so which came last is lost.
 //   - The walk runs out of stack, somewhere past 1,000 levels.
 //
 // What `JSON.parse` already does as §O7 says, it is left to do: a duplicate key
@@ -63,13 +67,20 @@ function parseWith(nul, bool, number, string, array, object, found, notFound, te
     }
     var keys = [];
     var values = [];
+    var madeWellFormed = false;
     for (var key in v) {
       if (keys.length === 0 && _Json_isIndex(key)) return _Json_GAVE_UP;
       var value = walk(v[key]);
       if (value === _Json_GAVE_UP) return _Json_GAVE_UP;
-      keys.push(_Json_wellFormed(key));
+      if (key.isWellFormed()) {
+        keys.push(key);
+      } else {
+        keys.push(key.toWellFormed());
+        madeWellFormed = true;
+      }
       values.push(value);
     }
+    if (madeWellFormed && new Set(keys).size !== keys.length) return _Json_GAVE_UP;
     return object(keys, values);
   }
 
