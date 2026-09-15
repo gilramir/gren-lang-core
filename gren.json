@@ -29,7 +29,8 @@
             "Platform.Cmd",
             "Platform.Sub",
             "Process",
-            "Task"
+            "Task",
+            "Extern"
         ],
         "Error Handling": [
             "Maybe",

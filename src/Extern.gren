@@ -1,0 +1,25 @@
+module Extern exposing (Handle)
+
+{-| What an `@extern` hands back when the value is the host's own business.
+
+@docs Handle
+-}
+
+import Basics exposing (Never)
+
+
+{-| A value that belongs to the host: a file descriptor, a database connection,
+a socket. Geng code cannot look inside one or build one; it can only keep it
+and give it back to the externs that made it.
+
+A package names its handles by wrapping this, so that a database connection and
+a socket are different types:
+
+    type Database
+        = Database Handle
+
+On JavaScript a `Handle` is any value the implementation returned, and it
+crosses the boundary unchanged in both directions (`ffi.md` F3, D199).
+-}
+type Handle
+    = Handle Never
