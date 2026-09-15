@@ -53,6 +53,7 @@ import Array exposing (Array)
 import Array.Builder as Builder exposing (Builder)
 import Dict exposing (Dict)
 import Char
+import Inspect
 import String exposing (String)
 import Math
 import Maybe exposing (Maybe(..))

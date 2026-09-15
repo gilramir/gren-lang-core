@@ -26,6 +26,7 @@ import Array.Builder as Builder exposing (Builder)
 import Basics exposing (..)
 import Char exposing (Char)
 import Dict exposing (Dict)
+import Inspect exposing (Inspect)
 import Math
 import Maybe exposing (Maybe(..))
 import Result exposing (Result(..))
@@ -43,6 +44,32 @@ type Value
     | Str String
     | Arr (Array Value)
     | Obj (Array { key : String, value : Value })
+
+
+-- `m1b-json.md` §O13, D218. Two values are equal when they are the same tree:
+-- the same constructors, `Float`'s `==` at a number (so a NaN equals a NaN and
+-- `-0` equals `0`, A2), and an object's members compared in order, so the same
+-- members in another order are a different value. That is what a derived
+-- instance would answer. It is written instead because nothing derives for
+-- `Obj`'s `Array` of records (`classes.md` §2.1), and it walks a stack of its
+-- own for D216's reason: a value the parser read without a limit compares
+-- without one.
+
+
+instance Eq Value where
+    eq a b =
+        equal (Compare { left = a, right = b, rest = Equal })
+
+
+-- R5 pins `inspect` and says nothing of a type it has no row for. A JSON value's
+-- readable form is its compact text, which is one line, round-trips through
+-- `Json.Decode`, and has no space outside a string, so `Inspect.arg` never
+-- parenthesizes it.
+
+
+instance Inspect Value where
+    inspect v =
+        encode 0 v
 
 
 @prim("str_end")
@@ -1425,3 +1452,121 @@ toArray built acc =
 
         Bottom ->
             Builder.toArray acc
+
+
+
+-- EQUALITY
+
+
+type Pending
+    = Equal
+    | Compare { left : Value, right : Value, rest : Pending }
+    | Elements { lefts : Array Value, rights : Array Value, at : Int, rest : Pending }
+    | Members { lefts : Array { key : String, value : Value }, rights : Array { key : String, value : Value }, at : Int, rest : Pending }
+
+
+equal : Pending -> Bool
+equal pending =
+    when pending is
+        Equal ->
+            True
+
+        Compare { left, right, rest } ->
+            when left is
+                Null ->
+                    when right is
+                        Null ->
+                            equal rest
+
+                        _ ->
+                            False
+
+                Bool a ->
+                    when right is
+                        Bool b ->
+                            if a == b then
+                                equal rest
+
+                            else
+                                False
+
+                        _ ->
+                            False
+
+                Number a ->
+                    when right is
+                        Number b ->
+                            if a == b then
+                                equal rest
+
+                            else
+                                False
+
+                        _ ->
+                            False
+
+                Str a ->
+                    when right is
+                        Str b ->
+                            if primEq a b then
+                                equal rest
+
+                            else
+                                False
+
+                        _ ->
+                            False
+
+                Arr a ->
+                    when right is
+                        Arr b ->
+                            if Array.length a == Array.length b then
+                                equal (Elements { lefts = a, rights = b, at = 0, rest = rest })
+
+                            else
+                                False
+
+                        _ ->
+                            False
+
+                Obj a ->
+                    when right is
+                        Obj b ->
+                            if Array.length a == Array.length b then
+                                equal (Members { lefts = a, rights = b, at = 0, rest = rest })
+
+                            else
+                                False
+
+                        _ ->
+                            False
+
+        Elements { lefts, rights, at, rest } ->
+            when Array.get at lefts is
+                Just l ->
+                    when Array.get at rights is
+                        Just r ->
+                            equal (Compare { left = l, right = r, rest = Elements { lefts = lefts, rights = rights, at = at + 1, rest = rest } })
+
+                        Nothing ->
+                            False
+
+                Nothing ->
+                    equal rest
+
+        Members { lefts, rights, at, rest } ->
+            when Array.get at lefts is
+                Just l ->
+                    when Array.get at rights is
+                        Just r ->
+                            if primEq l.key r.key then
+                                equal (Compare { left = l.value, right = r.value, rest = Members { lefts = lefts, rights = rights, at = at + 1, rest = rest } })
+
+                            else
+                                False
+
+                        Nothing ->
+                            False
+
+                Nothing ->
+                    equal rest
