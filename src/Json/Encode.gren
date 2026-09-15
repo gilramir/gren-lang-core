@@ -32,17 +32,19 @@ import Array exposing (Array)
 import Dict exposing (Dict)
 import Set exposing (Set)
 import String exposing (String)
-import Gren.Kernel.Json
+import Json.Value
 
 
 
 -- ENCODE
 
 
-{-| Represents a JavaScript value.
+{-| A JSON value: `null`, a boolean, a number, a string, an array or an object.
+An object's members keep the order they were read or given in, and no key
+appears in one twice.
 -}
-type Value
-    = Value
+type alias Value =
+    Json.Value.Value
 
 
 {-| Convert a `Value` into a prettified string. The first argument specifies
@@ -72,7 +74,7 @@ the amount of indentation in the resulting string.
 -}
 encode : Int -> Value -> String
 encode =
-    Gren.Kernel.Json.encode
+    Json.Value.encode
 
 
 
@@ -91,7 +93,7 @@ encode =
 -}
 string : String -> Value
 string =
-    Gren.Kernel.Json.wrap
+    Json.Value.Str
 
 
 {-| Turn an `Int` into a JSON number.
@@ -105,8 +107,8 @@ string =
 
 -}
 int : Int -> Value
-int =
-    Gren.Kernel.Json.wrap
+int n =
+    Json.Value.Number (toFloat n)
 
 
 {-| Turn a `Float` into a JSON number.
@@ -131,7 +133,7 @@ both as `null`.
 -}
 float : Float -> Value
 float =
-    Gren.Kernel.Json.wrap
+    Json.Value.Number
 
 
 {-| Turn a `Bool` into a JSON boolean.
@@ -145,7 +147,7 @@ float =
 -}
 bool : Bool -> Value
 bool =
-    Gren.Kernel.Json.wrap
+    Json.Value.Bool
 
 
 
@@ -162,7 +164,7 @@ bool =
 -}
 null : Value
 null =
-    Gren.Kernel.Json.encodeNull
+    Json.Value.Null
 
 
 
@@ -181,16 +183,14 @@ null =
 -}
 array : (a -> Value) -> Array a -> Value
 array func entries =
-    Gren.Kernel.Json.wrap
-        (Array.foldl (Gren.Kernel.Json.addEntry func) (Gren.Kernel.Json.emptyArray {}) entries)
+    Json.Value.Arr (Array.map func entries)
 
 
 {-| Turn an `Set` into a JSON array.
 -}
 set : (a -> Value) -> Set a -> Value
 set func entries =
-    Gren.Kernel.Json.wrap
-        (Set.foldl (Gren.Kernel.Json.addEntry func) (Gren.Kernel.Json.emptyArray {}) entries)
+    Json.Value.Arr (Array.map func (Set.toArray entries))
 
 
 
@@ -210,15 +210,13 @@ set func entries =
 
     -- Encode.encode 0 tom == """{"name":"Tom","age":42}"""
 
+The members keep the order they are given in. A key given more than once keeps
+its last value, at its first position.
+
 -}
 object : Array { key : String, value : Value } -> Value
 object pairs =
-    Gren.Kernel.Json.wrap
-        (Array.foldl
-            (\{ key, value } obj -> Gren.Kernel.Json.addField key value obj)
-            (Gren.Kernel.Json.emptyObject {})
-            pairs
-        )
+    Json.Value.Obj (Json.Value.members pairs)
 
 
 {-| Turn a `Dict` into a JSON object.
@@ -236,9 +234,9 @@ object pairs =
 -}
 dict : (k -> String) -> (v -> Value) -> Dict k v -> Value
 dict toKey toValue dictionary =
-    Gren.Kernel.Json.wrap
-        (Dict.foldl
-            (\key value obj -> Gren.Kernel.Json.addField (toKey key) (toValue value) obj)
-            (Gren.Kernel.Json.emptyObject {})
-            dictionary
-        )
+    Dict.foldl
+        (\key value pairs -> Array.pushLast { key = toKey key, value = toValue value } pairs)
+        []
+        dictionary
+        |> Json.Value.members
+        |> Json.Value.Obj

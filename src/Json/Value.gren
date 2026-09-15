@@ -1,0 +1,1427 @@
+module Json.Value exposing
+    ( Value(..)
+    , parse
+    , position
+    , encode
+    , members
+    , foldHost
+    )
+
+{-| What a JSON value is, and the text it is read from and written to
+(`m1b-json.md` §O10, D212–D217).
+
+This module is not in `gren.json`'s `exposed-modules`, so a program cannot
+reach `Value`'s constructors: `Json.Encode.Value` and `Json.Decode.Value` are
+aliases of the type, and only `Json.Encode` builds one and `Json.Decode` takes
+one apart.
+
+Neither the parser nor the encoder recurses once per level of nesting (D216).
+Each is one self-recursive function over a stack it keeps itself, which the
+backend compiles to a loop, so a value nests as deep as memory allows.
+
+-}
+
+import Array exposing (Array)
+import Array.Builder as Builder exposing (Builder)
+import Basics exposing (..)
+import Char exposing (Char)
+import Dict exposing (Dict)
+import Math
+import Maybe exposing (Maybe(..))
+import Result exposing (Result(..))
+import String exposing (String)
+import String.Ryu as Ryu
+
+
+{-| A JSON value. An object's members are in source order, or the order
+`Json.Encode.object` was given, and no key appears twice (D213).
+-}
+type Value
+    = Null
+    | Bool Bool
+    | Number Float
+    | Str String
+    | Arr (Array Value)
+    | Obj (Array { key : String, value : Value })
+
+
+@prim("str_end")
+primEnd : String -> Int
+
+
+@prim("str_slice")
+primSlice : String -> Int -> Int -> String
+
+
+@prim("str_char_at")
+primCharAt : String -> Int -> Char
+
+
+@prim("str_next")
+primNext : String -> Int -> Int
+
+
+@prim("str_append")
+primAppend : String -> String -> String
+
+
+@prim("str_eq")
+primEq : String -> String -> Bool
+
+
+@prim("str_find")
+primFind : String -> String -> Int -> Int
+
+
+@prim("str_offset_to_index")
+primOffsetToIndex : String -> Int -> Int
+
+
+@prim("f64_from_decimal")
+primFromDecimal : String -> Float
+
+
+@prim("i32_lt")
+primLt : Int -> Int -> Bool
+
+
+{-| `Int` comparisons, over `i32_lt` rather than `Ord Int`'s `compare`, which is
+a kernel call that answers an `Order` (`m1b-json.md` §O12.3).
+-}
+intLt : Int -> Int -> Bool
+intLt a b =
+    primLt a b
+
+
+intGt : Int -> Int -> Bool
+intGt a b =
+    primLt b a
+
+
+intLe : Int -> Int -> Bool
+intLe a b =
+    if primLt b a then
+        False
+
+    else
+        True
+
+
+intGe : Int -> Int -> Bool
+intGe a b =
+    if primLt a b then
+        False
+
+    else
+        True
+
+
+
+-- MEMBERS
+
+
+{-| An object's members with each duplicate key's last value kept at that key's
+first position, which is what `JSON.parse` and Python's `json` do (D213).
+Most objects have no duplicate, and are handed back as they are.
+-}
+members : Array { key : String, value : a } -> Array { key : String, value : a }
+members pairs =
+    let
+        count =
+            Array.length pairs
+    in
+    if intLt count 2 then
+        pairs
+
+    else if intLe count 8 then
+        if hasDuplicate pairs count 1 then
+            dedupe pairs
+
+        else
+            pairs
+
+    else
+        dedupe pairs
+
+
+{-| Whether any key from `j` on appears before it: a quadratic look, for the
+small objects most JSON is made of.
+-}
+hasDuplicate : Array { key : String, value : a } -> Int -> Int -> Bool
+hasDuplicate pairs count j =
+    if intGe j count then
+        False
+
+    else
+        when Array.get j pairs is
+            Just pair ->
+                if seenBefore pairs pair.key 0 j then
+                    True
+
+                else
+                    hasDuplicate pairs count (j + 1)
+
+            Nothing ->
+                False
+
+
+seenBefore : Array { key : String, value : a } -> String -> Int -> Int -> Bool
+seenBefore pairs key i j =
+    if intGe i j then
+        False
+
+    else
+        when Array.get i pairs is
+            Just pair ->
+                if primEq pair.key key then
+                    True
+
+                else
+                    seenBefore pairs key (i + 1) j
+
+            Nothing ->
+                False
+
+
+dedupe : Array { key : String, value : a } -> Array { key : String, value : a }
+dedupe pairs =
+    let
+        last =
+            Array.foldl (\pair d -> Dict.set pair.key pair.value d) Dict.empty pairs
+    in
+    if Dict.count last == Array.length pairs then
+        pairs
+
+    else
+        (Array.foldl
+            (\pair acc ->
+                -- A key leaves `left` when its first position is reached, so
+                -- a later duplicate finds nothing and is skipped.
+                when Dict.get pair.key acc.left is
+                    Just v ->
+                        { left = Dict.remove pair.key acc.left
+                        , out = Builder.pushLast { key = pair.key, value = v } acc.out
+                        }
+
+                    Nothing ->
+                        acc
+            )
+            { left = last, out = Builder.empty (Dict.count last) }
+            pairs
+        ).out
+            |> Builder.toArray
+
+
+
+-- PARSE
+
+
+{-| The containers around the one being read, innermost first. The container
+being read is in `run`'s own arguments, so that reading one of its elements
+allocates no frame: a frame is made when a container opens.
+-}
+type Stack
+    = Top
+    | Frame
+        { kind : Int
+        , elements : Builder Value
+        , pairs : Builder { key : String, value : Value }
+        , key : String
+        , hashes : Int
+        , clash : Bool
+        , below : Stack
+        }
+
+
+type Scanned
+    = Scanned { str : String, next : Int }
+    | ScanFailed { offset : Int, reason : String }
+
+
+{-| What `run` is filling: nothing yet, an array or an object. -}
+atTop : Int
+atTop =
+    0
+
+
+inArray : Int
+inArray =
+    1
+
+
+inObject : Int
+inObject =
+    2
+
+
+noElements : Builder Value
+noElements =
+    Builder.empty 0
+
+
+noPairs : Builder { key : String, value : Value }
+noPairs =
+    Builder.empty 0
+
+
+@prim("i32_and")
+primAnd : Int -> Int -> Int
+
+
+@prim("i32_or")
+primOr : Int -> Int -> Int
+
+
+@prim("i32_shl")
+primShl : Int -> Int -> Int
+
+
+@prim("str_prev")
+primPrev : String -> Int -> Int
+
+
+{-| Read one JSON value from the whole of a string, RFC 8259's grammar. A
+failure names its reason and the offset it was found at.
+-}
+parse : String -> Result { offset : Int, reason : String } Value
+parse s =
+    let
+        end =
+            primEnd s
+    in
+    run s end (skipWs s end 0) Top atTop noElements noPairs "" 0 False False Null
+
+
+codeAt : String -> Int -> Int
+codeAt s i =
+    Char.toCode (primCharAt s i)
+
+
+skipWs : String -> Int -> Int -> Int
+skipWs s end i =
+    if intLt i end then
+        let
+            c =
+                codeAt s i
+        in
+        if c == 0x20 || c == 0x0A || c == 0x0D || c == 0x09 then
+            skipWs s end (i + 1)
+
+        else
+            i
+
+    else
+        i
+
+
+{-| The whole parser, as one function calling only itself, which the backend
+compiles to a loop (D216).
+
+With `have` false, `i` is where a value starts. With `have` true, `v` is a value
+just read and `i` is the offset after it. `kind` says what `v` goes into: an
+array's `elements`, or an object's `pairs` under `key`. `hashes` has a bit set
+for each key the object already has, chosen by the key's length and its first
+and last characters, and `clash` says two keys have set the same bit, so that
+only then is the object looked at for a duplicate (D213).
+-}
+run :
+    String
+    -> Int
+    -> Int
+    -> Stack
+    -> Int
+    -> Builder Value
+    -> Builder { key : String, value : Value }
+    -> String
+    -> Int
+    -> Bool
+    -> Bool
+    -> Value
+    -> Result { offset : Int, reason : String } Value
+run s end i stack kind elements pairs key hashes clash have v =
+    if have then
+        let
+            j =
+                skipWs s end i
+        in
+        if kind == inArray then
+            let
+                more =
+                    Builder.pushLast v elements
+            in
+            if intGe j end then
+                Err { offset = j, reason = "Unexpected end of input in an array" }
+
+            else
+                let
+                    c =
+                        codeAt s j
+                in
+                if c == 0x2C then
+                    run s end (skipWs s end (j + 1)) stack inArray more noPairs "" 0 False False Null
+
+                else if c == 0x5D then
+                    let
+                        done =
+                            Arr (Builder.toArray more)
+                    in
+                    when stack is
+                        Frame f ->
+                            run s end (j + 1) f.below f.kind f.elements f.pairs f.key f.hashes f.clash True done
+
+                        Top ->
+                            run s end (j + 1) Top atTop noElements noPairs "" 0 False True done
+
+                else
+                    Err { offset = j, reason = "Expected ',' or ']' after an array element, but found " ++ describe s end j }
+
+        else if kind == inObject then
+            let
+                more =
+                    Builder.pushLast { key = key, value = v } pairs
+            in
+            if intGe j end then
+                Err { offset = j, reason = "Unexpected end of input in an object" }
+
+            else
+                let
+                    c =
+                        codeAt s j
+                in
+                if c == 0x2C then
+                    let
+                        k =
+                            skipWs s end (j + 1)
+
+                        closing =
+                            if intLt k end && codeAt s k == 0x22 then
+                                stringEnd s end (k + 1)
+
+                            else
+                                -1
+
+                        newKey =
+                            if intGe closing 0 then
+                                primSlice s (k + 1) closing
+
+                            else
+                                escapedKey s end k closing
+
+                        colon =
+                            if intGe closing 0 then
+                                skipWs s end (closing + 1)
+
+                            else
+                                afterEscapedKey s end k closing
+                    in
+                    if intGe colon end || codeAt s colon /= 0x3A then
+                        Err (keyProblem s end k)
+
+                    else
+                        let
+                            bit =
+                                keyBit newKey
+                        in
+                        run s end (skipWs s end (colon + 1)) stack inObject noElements more newKey (primOr hashes bit) (clash || primAnd hashes bit /= 0) False Null
+
+                else if c == 0x7D then
+                    let
+                        finished =
+                            Builder.toArray more
+
+                        done =
+                            Obj
+                                (if clash then
+                                    members finished
+
+                                 else
+                                    finished
+                                )
+                    in
+                    when stack is
+                        Frame f ->
+                            run s end (j + 1) f.below f.kind f.elements f.pairs f.key f.hashes f.clash True done
+
+                        Top ->
+                            run s end (j + 1) Top atTop noElements noPairs "" 0 False True done
+
+                else
+                    Err { offset = j, reason = "Expected ',' or '}' after an object member, but found " ++ describe s end j }
+
+        else if j == end then
+            Ok v
+
+        else
+            Err { offset = j, reason = "Unexpected " ++ describe s end j ++ " after the JSON value" }
+
+    else if intGe i end then
+        Err { offset = i, reason = "Unexpected end of input where a value was expected" }
+
+    else
+        let
+            c =
+                codeAt s i
+        in
+        if c == 0x22 then
+            let
+                closing =
+                    stringEnd s end (i + 1)
+            in
+            if intGe closing 0 then
+                run s end (closing + 1) stack kind elements pairs key hashes clash True (Str (primSlice s (i + 1) closing))
+
+            else
+                when stringAt s end i closing is
+                    Scanned { str, next } ->
+                        run s end next stack kind elements pairs key hashes clash True (Str str)
+
+                    ScanFailed problem ->
+                        Err problem
+
+        else if c == 0x2D || (intGe c 0x30 && intLe c 0x39) then
+            let
+                stop =
+                    scanNumber s end i
+            in
+            if intLt stop 0 then
+                Err (numberProblem s end i)
+
+            else
+                run s end stop stack kind elements pairs key hashes clash True (Number (primFromDecimal (primSlice s i stop)))
+
+        else if c == 0x7B then
+            let
+                k =
+                    skipWs s end (i + 1)
+            in
+            if intLt k end && codeAt s k == 0x7D then
+                run s end (k + 1) stack kind elements pairs key hashes clash True (Obj [])
+
+            else
+                let
+                    closing =
+                        if intLt k end && codeAt s k == 0x22 then
+                            stringEnd s end (k + 1)
+
+                        else
+                            -1
+
+                    newKey =
+                        if intGe closing 0 then
+                            primSlice s (k + 1) closing
+
+                        else
+                            escapedKey s end k closing
+
+                    colon =
+                        if intGe closing 0 then
+                            skipWs s end (closing + 1)
+
+                        else
+                            afterEscapedKey s end k closing
+                in
+                if intGe colon end || codeAt s colon /= 0x3A then
+                    Err (keyProblem s end k)
+
+                else
+                    let
+                        outer =
+                            Frame
+                                { kind = kind
+                                , elements = elements
+                                , pairs = pairs
+                                , key = key
+                                , hashes = hashes
+                                , clash = clash
+                                , below = stack
+                                }
+                    in
+                    run s end (skipWs s end (colon + 1)) outer inObject noElements (Builder.empty 0) newKey (keyBit newKey) False False Null
+
+        else if c == 0x5B then
+            let
+                k =
+                    skipWs s end (i + 1)
+            in
+            if intLt k end && codeAt s k == 0x5D then
+                run s end (k + 1) stack kind elements pairs key hashes clash True (Arr [])
+
+            else
+                let
+                    outer =
+                        Frame
+                            { kind = kind
+                            , elements = elements
+                            , pairs = pairs
+                            , key = key
+                            , hashes = hashes
+                            , clash = clash
+                            , below = stack
+                            }
+                in
+                run s end k outer inArray (Builder.empty 0) noPairs "" 0 False False Null
+
+        else if c == 0x74 && word s end i "true" then
+            run s end (i + 4) stack kind elements pairs key hashes clash True (Bool True)
+
+        else if c == 0x66 && word s end i "false" then
+            run s end (i + 5) stack kind elements pairs key hashes clash True (Bool False)
+
+        else if c == 0x6E && word s end i "null" then
+            run s end (i + 4) stack kind elements pairs key hashes clash True Null
+
+        else if c == 0x74 then
+            Err { offset = i, reason = "Expected 'true'" }
+
+        else if c == 0x66 then
+            Err { offset = i, reason = "Expected 'false'" }
+
+        else if c == 0x6E then
+            Err { offset = i, reason = "Expected 'null'" }
+
+        else
+            Err { offset = i, reason = "Expected a JSON value, but found " ++ describe s end i }
+
+
+word : String -> Int -> Int -> String -> Bool
+word s end i w =
+    let
+        stop =
+            i + primEnd w
+    in
+    intLe stop end && primEq (primSlice s i stop) w
+
+
+{-| One bit of 32 for a key, from its length and its first and last characters. -}
+keyBit : String -> Int
+keyBit k =
+    let
+        n =
+            primEnd k
+    in
+    if n == 0 then
+        1
+
+    else
+        primShl 1 (primAnd (n * 7 + codeAt k 0 + 3 * codeAt k (primPrev k n)) 31)
+
+
+{-| Where a string whose opening quote was just passed ends, checking it and
+building nothing: the offset of its closing quote. A string with an escape has
+to be decoded, and the answer is then `-2 - offset` of its first backslash, from
+where `scan` goes on. -1 says the text is not a string, and `stringProblem`
+says why.
+-}
+stringEnd : String -> Int -> Int -> Int
+stringEnd s end i =
+    if intGe i end then
+        -1
+
+    else
+        let
+            c =
+                codeAt s i
+        in
+        if c == 0x22 then
+            i
+
+        else if c == 0x5C then
+            -2 - i
+
+        else if intLt c 0x20 then
+            -1
+
+        else
+            stringEnd s end (primNext s i)
+
+
+{-| The string whose opening quote is at `open` and the offset after its closing
+quote, given what `stringEnd` said, or a problem.
+-}
+stringAt : String -> Int -> Int -> Int -> Scanned
+stringAt s end open closing =
+    if intGe closing 0 then
+        Scanned { str = primSlice s (open + 1) closing, next = closing + 1 }
+
+    else if closing == -1 then
+        ScanFailed (stringProblem s end open)
+
+    else
+        let
+            backslash =
+                -2 - closing
+        in
+        scan s end (primSlice s (open + 1) backslash) backslash backslash
+
+
+{-| A key with an escape, which is rare enough to be read twice. -}
+escapedKey : String -> Int -> Int -> Int -> String
+escapedKey s end k closing =
+    when stringAt s end k closing is
+        Scanned { str } ->
+            str
+
+        ScanFailed _ ->
+            ""
+
+
+afterEscapedKey : String -> Int -> Int -> Int -> Int
+afterEscapedKey s end k closing =
+    when stringAt s end k closing is
+        Scanned { next } ->
+            skipWs s end next
+
+        ScanFailed _ ->
+            end
+
+
+stringProblem : String -> Int -> Int -> { offset : Int, reason : String }
+stringProblem s end open =
+    when scan s end "" (open + 1) (open + 1) is
+        ScanFailed problem ->
+            problem
+
+        Scanned _ ->
+            { offset = open, reason = "Unterminated string" }
+
+
+keyProblem : String -> Int -> Int -> { offset : Int, reason : String }
+keyProblem s end k =
+    when readKey s end k is
+        ScanFailed problem ->
+            problem
+
+        Scanned _ ->
+            { offset = k, reason = "Expected ':' after an object key" }
+
+
+{-| A key, the `:` after it and the whitespace after that. -}
+readKey : String -> Int -> Int -> Scanned
+readKey s end i =
+    if intLt i end && codeAt s i == 0x22 then
+        when scan s end "" (i + 1) (i + 1) is
+            Scanned { str, next } ->
+                let
+                    colon =
+                        skipWs s end next
+                in
+                if intLt colon end && codeAt s colon == 0x3A then
+                    Scanned { str = str, next = skipWs s end (colon + 1) }
+
+                else if intGe colon end then
+                    ScanFailed { offset = colon, reason = "Unexpected end of input in an object" }
+
+                else
+                    ScanFailed { offset = colon, reason = "Expected ':' after an object key, but found " ++ describe s end colon }
+
+            failed ->
+                failed
+
+    else if intGe i end then
+        ScanFailed { offset = i, reason = "Unexpected end of input in an object" }
+
+    else
+        ScanFailed { offset = i, reason = "Expected a double-quoted object key, but found " ++ describe s end i }
+
+
+{-| The rest of a string after its opening quote. `acc` is what has been read
+up to `start`, the beginning of the run since the last escape, so a string with
+no escape is one slice.
+-}
+scan : String -> Int -> String -> Int -> Int -> Scanned
+scan s end acc start i =
+    if intGe i end then
+        ScanFailed { offset = i, reason = "Unterminated string" }
+
+    else
+        let
+            c =
+                codeAt s i
+        in
+        if c == 0x22 then
+            Scanned { str = primAppend acc (primSlice s start i), next = i + 1 }
+
+        else if c == 0x5C then
+            if intGe (i + 1) (end) then
+                ScanFailed { offset = i + 1, reason = "Unterminated string" }
+
+            else
+                let
+                    before =
+                        primAppend acc (primSlice s start i)
+
+                    e =
+                        codeAt s (i + 1)
+                in
+                if e == 0x75 then
+                    let
+                        u =
+                            hex4 s end (i + 2)
+                    in
+                    if intLt u 0 then
+                        ScanFailed { offset = i, reason = "Expected four hexadecimal digits after \\u" }
+
+                    else if intGe u 0xD800 && intLe u 0xDBFF then
+                        let
+                            low =
+                                if intLt (i + 7) (end) && codeAt s (i + 6) == 0x5C && codeAt s (i + 7) == 0x75 then
+                                    hex4 s end (i + 8)
+
+                                else
+                                    -1
+                        in
+                        if intGe low 0xDC00 && intLe low 0xDFFF then
+                            scan s end (primAppend before (codepoint (0x10000 + (u - 0xD800) * 0x0400 + (low - 0xDC00)))) (i + 12) (i + 12)
+
+                        else
+                            -- D209: half a surrogate pair is not a character.
+                            scan s end (primAppend before "\u{FFFD}") (i + 6) (i + 6)
+
+                    else if intGe u 0xDC00 && intLe u 0xDFFF then
+                        scan s end (primAppend before "\u{FFFD}") (i + 6) (i + 6)
+
+                    else
+                        scan s end (primAppend before (codepoint u)) (i + 6) (i + 6)
+
+                else
+                    let
+                        piece =
+                            if e == 0x22 then
+                                "\""
+
+                            else if e == 0x5C then
+                                "\\"
+
+                            else if e == 0x2F then
+                                "/"
+
+                            else if e == 0x6E then
+                                "\n"
+
+                            else if e == 0x74 then
+                                "\t"
+
+                            else if e == 0x72 then
+                                "\u{000D}"
+
+                            else if e == 0x62 then
+                                "\u{0008}"
+
+                            else if e == 0x66 then
+                                "\u{000C}"
+
+                            else
+                                ""
+                    in
+                    if primEnd piece == 0 then
+                        ScanFailed { offset = i, reason = "Unknown escape, a backslash followed by " ++ describeChar e }
+
+                    else
+                        scan s end (primAppend before piece) (i + 2) (i + 2)
+
+        else if intLt c 0x20 then
+            ScanFailed { offset = i, reason = "Unescaped control character " ++ describeChar c ++ " in a string" }
+
+        else
+            scan s end acc start (primNext s i)
+
+
+codepoint : Int -> String
+codepoint cp =
+    when Char.fromCode cp is
+        Just ch ->
+            String.fromChar ch
+
+        Nothing ->
+            "\u{FFFD}"
+
+
+{-| Four hexadecimal digits as a number, or -1. -}
+hex4 : String -> Int -> Int -> Int
+hex4 s end i =
+    if intGt (i + 4) (end) then
+        -1
+
+    else
+        let
+            a =
+                hexDigit (codeAt s i)
+
+            b =
+                hexDigit (codeAt s (i + 1))
+
+            c =
+                hexDigit (codeAt s (i + 2))
+
+            d =
+                hexDigit (codeAt s (i + 3))
+        in
+        if intLt a 0 || intLt b 0 || intLt c 0 || intLt d 0 then
+            -1
+
+        else
+            ((a * 16 + b) * 16 + c) * 16 + d
+
+
+hexDigit : Int -> Int
+hexDigit c =
+    if intGe c 0x30 && intLe c 0x39 then
+        c - 0x30
+
+    else if intGe c 0x61 && intLe c 0x66 then
+        c - 0x57
+
+    else if intGe c 0x41 && intLe c 0x46 then
+        c - 0x37
+
+    else
+        -1
+
+
+{-| The offset after a number starting at `i`, or -1 if the text there is not
+one. `numberProblem` says why, and runs only on a failure.
+-}
+scanNumber : String -> Int -> Int -> Int
+scanNumber s end i =
+    let
+        afterSign =
+            if codeAt s i == 0x2D then
+                i + 1
+
+            else
+                i
+
+        afterInt =
+            if intLt afterSign end && codeAt s afterSign == 0x30 then
+                afterSign + 1
+
+            else
+                digits s end afterSign
+    in
+    if afterInt == afterSign then
+        -1
+
+    else
+        let
+            afterFrac =
+                if intLt afterInt end && codeAt s afterInt == 0x2E then
+                    digits s end (afterInt + 1)
+
+                else
+                    afterInt
+        in
+        if afterFrac == afterInt + 1 then
+            -1
+
+        else if intLt afterFrac end && (codeAt s afterFrac == 0x65 || codeAt s afterFrac == 0x45) then
+            let
+                j =
+                    if intLt (afterFrac + 1) (end) && (codeAt s (afterFrac + 1) == 0x2B || codeAt s (afterFrac + 1) == 0x2D) then
+                        afterFrac + 2
+
+                    else
+                        afterFrac + 1
+
+                k =
+                    digits s end j
+            in
+            if k == j then
+                -1
+
+            else
+                k
+
+        else
+            afterFrac
+
+
+numberProblem : String -> Int -> Int -> { offset : Int, reason : String }
+numberProblem s end i =
+    let
+        afterSign =
+            if codeAt s i == 0x2D then
+                i + 1
+
+            else
+                i
+
+        afterInt =
+            if intLt afterSign end && codeAt s afterSign == 0x30 then
+                afterSign + 1
+
+            else
+                digits s end afterSign
+    in
+    if afterInt == afterSign then
+        { offset = afterSign, reason = "Expected a digit after '-', but found " ++ describe s end afterSign }
+
+    else
+        let
+            afterFrac =
+                if intLt afterInt end && codeAt s afterInt == 0x2E then
+                    digits s end (afterInt + 1)
+
+                else
+                    afterInt
+        in
+        if afterFrac == afterInt + 1 then
+            { offset = afterFrac, reason = "Expected a digit after '.', but found " ++ describe s end afterFrac }
+
+        else
+            let
+                j =
+                    if intLt (afterFrac + 1) (end) && (codeAt s (afterFrac + 1) == 0x2B || codeAt s (afterFrac + 1) == 0x2D) then
+                        afterFrac + 2
+
+                    else
+                        afterFrac + 1
+            in
+            { offset = j, reason = "Expected a digit in the exponent, but found " ++ describe s end j }
+
+
+digits : String -> Int -> Int -> Int
+digits s end i =
+    if intLt i end then
+        let
+            c =
+                codeAt s i
+        in
+        if intGe c 0x30 && intLe c 0x39 then
+            digits s end (i + 1)
+
+        else
+            i
+
+    else
+        i
+
+
+{-| The character at an offset, as a parse error names it. -}
+describe : String -> Int -> Int -> String
+describe s end i =
+    if intGe i end then
+        "the end of the input"
+
+    else
+        describeChar (codeAt s i)
+
+
+describeChar : Int -> String
+describeChar c =
+    if intLt c 0x20 || c == 0x7F || (intGe c 0x80 && intLe c 0xA0) || c == 0x2028 || c == 0x2029 || c == 0xFEFF then
+        "U+" ++ hexWidth 4 c
+
+    else
+        "'" ++ codepoint c ++ "'"
+
+
+hexWidth : Int -> Int -> String
+hexWidth width n =
+    let
+        text =
+            hexString n ""
+    in
+    String.repeat (width - primEnd text) "0" ++ text
+
+
+hexString : Int -> String -> String
+hexString n acc =
+    let
+        digit =
+            primSlice "0123456789ABCDEF" (n - (n // 16) * 16) (n - (n // 16) * 16 + 1)
+    in
+    if intLt n 16 then
+        primAppend digit acc
+
+    else
+        hexString (n // 16) (primAppend digit acc)
+
+
+{-| Where an offset is, as a line and a column, each counting from one. A line
+ends at a line feed, and a column counts codepoints (D217).
+-}
+position : String -> Int -> { line : Int, column : Int }
+position s offset =
+    positionHelp s offset 1 0
+
+
+positionHelp : String -> Int -> Int -> Int -> { line : Int, column : Int }
+positionHelp s offset line lineStart =
+    let
+        lf =
+            primFind s "\n" lineStart
+    in
+    if intGe lf 0 && intLt lf offset then
+        positionHelp s offset (line + 1) (lf + 1)
+
+    else
+        { line = line
+        , column = primOffsetToIndex s offset - primOffsetToIndex s lineStart + 1
+        }
+
+
+
+-- ENCODE
+
+
+type Work
+    = Finished
+    | Emit { value : Value, depth : Int, rest : Work }
+    | Write { text : String, rest : Work }
+
+
+{-| JSON text for a value. `indent` is how many spaces each level is indented
+by, at most 10; below 1, the text is on one line. This is `JSON.stringify`'s
+layout, and a float is written as its `Number::toString` would be (D214).
+-}
+encode : Int -> Value -> String
+encode indent v =
+    let
+        gap =
+            String.repeat (clamp 0 10 indent) " "
+    in
+    encodeLoop gap "" (Emit { value = v, depth = 0, rest = Finished })
+
+
+encodeLoop : String -> String -> Work -> String
+encodeLoop gap acc work =
+    when work is
+        Finished ->
+            acc
+
+        Write { text, rest } ->
+            encodeLoop gap (primAppend acc text) rest
+
+        Emit { value, depth, rest } ->
+            when value is
+                Null ->
+                    encodeLoop gap (primAppend acc "null") rest
+
+                Bool b ->
+                    encodeLoop gap
+                        (primAppend acc
+                            (if b then
+                                "true"
+
+                             else
+                                "false"
+                            )
+                        )
+                        rest
+
+                Number f ->
+                    encodeLoop gap (primAppend acc (number f)) rest
+
+                Str str ->
+                    encodeLoop gap (escapeString str acc) rest
+
+                Arr items ->
+                    when Array.popFirst items is
+                        Nothing ->
+                            encodeLoop gap (primAppend acc "[]") rest
+
+                        Just { first, rest = others } ->
+                            let
+                                inner =
+                                    lineBreak gap (depth + 1)
+
+                                close =
+                                    Write { text = primAppend (lineBreak gap depth) "]", rest = rest }
+
+                                queuedItems =
+                                    Array.foldr
+                                        (\item w -> Write { text = primAppend "," inner, rest = Emit { value = item, depth = depth + 1, rest = w } })
+                                        close
+                                        others
+                            in
+                            encodeLoop gap (primAppend (primAppend acc "[") inner) (Emit { value = first, depth = depth + 1, rest = queuedItems })
+
+                Obj pairs ->
+                    when Array.popFirst pairs is
+                        Nothing ->
+                            encodeLoop gap (primAppend acc "{}") rest
+
+                        Just { first, rest = others } ->
+                            let
+                                inner =
+                                    lineBreak gap (depth + 1)
+
+                                colon =
+                                    if primEnd gap == 0 then
+                                        ":"
+
+                                    else
+                                        ": "
+
+                                close =
+                                    Write { text = primAppend (lineBreak gap depth) "}", rest = rest }
+
+                                queuedPairs =
+                                    Array.foldr
+                                        (\pair w ->
+                                            Write
+                                                { text = primAppend (escapeString pair.key (primAppend "," inner)) colon
+                                                , rest = Emit { value = pair.value, depth = depth + 1, rest = w }
+                                                }
+                                        )
+                                        close
+                                        others
+                            in
+                            encodeLoop gap
+                                (primAppend (escapeString first.key (primAppend (primAppend acc "{") inner)) colon)
+                                (Emit { value = first.value, depth = depth + 1, rest = queuedPairs })
+
+
+lineBreak : String -> Int -> String
+lineBreak gap depth =
+    if primEnd gap == 0 then
+        ""
+
+    else
+        primAppend "\n" (String.repeat depth gap)
+
+
+escapeString : String -> String -> String
+escapeString str acc =
+    primAppend (escapeRun str (primEnd str) (primAppend acc "\"") 0 0) "\""
+
+
+escapeRun : String -> Int -> String -> Int -> Int -> String
+escapeRun str end acc start i =
+    if intGe i end then
+        primAppend acc (primSlice str start i)
+
+    else
+        let
+            c =
+                codeAt str i
+        in
+        if c == 0x22 || c == 0x5C || intLt c 0x20 then
+            escapeRun str end (primAppend (primAppend acc (primSlice str start i)) (escapeChar c)) (i + 1) (i + 1)
+
+        else
+            escapeRun str end acc start (primNext str i)
+
+
+escapeChar : Int -> String
+escapeChar c =
+    if c == 0x22 then
+        "\\\""
+
+    else if c == 0x5C then
+        "\\\\"
+
+    else if c == 0x0A then
+        "\\n"
+
+    else if c == 0x0D then
+        "\\r"
+
+    else if c == 0x09 then
+        "\\t"
+
+    else if c == 0x08 then
+        "\\b"
+
+    else if c == 0x0C then
+        "\\f"
+
+    else
+        primAppend "\\u00" (primAppend (hexChar (c // 16)) (hexChar (c - (c // 16) * 16)))
+
+
+hexChar : Int -> String
+hexChar n =
+    primSlice "0123456789abcdef" n (n + 1)
+
+
+{-| ECMAScript's `Number::toString` layout over Ryu's digits, which is what
+`JSON.stringify` writes: `100`, `1.5`, `1e+21`, `1e-7`. `NaN` and the
+infinities are `null`, and `-0` is `0`.
+-}
+number : Float -> String
+number f =
+    if isNaN f || isInfinite f then
+        "null"
+
+    else if f == 0 then
+        "0"
+
+    else if Math.abs f < 2147483648 && f == toFloat (Math.truncate f) then
+        String.fromInt (Math.truncate f)
+
+    else
+        let
+            sign =
+                if f < 0 then
+                    "-"
+
+                else
+                    ""
+
+            { mantissa, exponent } =
+                Ryu.decimal (Math.abs f)
+
+            ds =
+                String.fromUInt64 mantissa
+
+            k =
+                primEnd ds
+
+            n =
+                exponent + k
+        in
+        if k <= n && n <= 21 then
+            sign ++ ds ++ String.repeat (n - k) "0"
+
+        else if 0 < n && n <= 21 then
+            sign ++ primSlice ds 0 n ++ "." ++ primSlice ds n k
+
+        else if -6 < n && n <= 0 then
+            sign ++ "0." ++ String.repeat (0 - n) "0" ++ ds
+
+        else
+            let
+                expo =
+                    if n - 1 < 0 then
+                        "-" ++ String.fromInt (1 - n)
+
+                    else
+                        "+" ++ String.fromInt (n - 1)
+            in
+            if k == 1 then
+                sign ++ ds ++ "e" ++ expo
+
+            else
+                sign ++ primSlice ds 0 1 ++ "." ++ primSlice ds 1 k ++ "e" ++ expo
+
+
+
+-- THE HOST
+
+
+type Visit h
+    = Visited
+    | Visit { value : Value, rest : Visit h }
+    | BuildArray { count : Int, rest : Visit h }
+    | BuildObject { keys : Array String, rest : Visit h }
+
+
+type Built h
+    = Bottom
+    | Built { top : h, below : Built h }
+
+
+{-| A value rebuilt bottom up by one builder per constructor. It is how kernel
+JavaScript, which cannot read a constructor, turns a `Value` into its own
+objects (`m1b-json.md` §O3, D220), and like the encoder it keeps its own stack.
+-}
+foldHost :
+    { null : h
+    , bool : Bool -> h
+    , number : Float -> h
+    , string : String -> h
+    , array : Array h -> h
+    , object : Array { key : String, value : h } -> h
+    }
+    -> Value
+    -> h
+foldHost builders v =
+    foldLoop builders (Visit { value = v, rest = Visited }) Bottom
+
+
+foldLoop :
+    { null : h
+    , bool : Bool -> h
+    , number : Float -> h
+    , string : String -> h
+    , array : Array h -> h
+    , object : Array { key : String, value : h } -> h
+    }
+    -> Visit h
+    -> Built h
+    -> h
+foldLoop builders work built =
+    when work is
+        Visited ->
+            when built is
+                Built { top } ->
+                    top
+
+                Bottom ->
+                    builders.null
+
+        Visit { value, rest } ->
+            when value is
+                Null ->
+                    foldLoop builders rest (Built { top = builders.null, below = built })
+
+                Bool b ->
+                    foldLoop builders rest (Built { top = builders.bool b, below = built })
+
+                Number f ->
+                    foldLoop builders rest (Built { top = builders.number f, below = built })
+
+                Str str ->
+                    foldLoop builders rest (Built { top = builders.string str, below = built })
+
+                Arr items ->
+                    foldLoop builders
+                        (Array.foldr (\item w -> Visit { value = item, rest = w }) (BuildArray { count = Array.length items, rest = rest }) items)
+                        built
+
+                Obj pairs ->
+                    foldLoop builders
+                        (Array.foldr (\pair w -> Visit { value = pair.value, rest = w }) (BuildObject { keys = Array.map .key pairs, rest = rest }) pairs)
+                        built
+
+        BuildArray { count, rest } ->
+            let
+                taken =
+                    take count built Bottom
+            in
+            foldLoop builders rest (Built { top = builders.array (toArray taken.values (Builder.empty count)), below = taken.left })
+
+        BuildObject { keys, rest } ->
+            let
+                count =
+                    Array.length keys
+
+                taken =
+                    take count built Bottom
+
+                values =
+                    toArray taken.values (Builder.empty count)
+            in
+            foldLoop builders
+                rest
+                (Built
+                    { top = builders.object (Array.map2 (\key value -> { key = key, value = value }) keys values)
+                    , below = taken.left
+                    }
+                )
+
+
+{-| The top `count` built values, first-built on top. -}
+take : Int -> Built h -> Built h -> { values : Built h, left : Built h }
+take count built acc =
+    if intLe count 0 then
+        { values = acc, left = built }
+
+    else
+        when built is
+            Built { top, below } ->
+                take (count - 1) below (Built { top = top, below = acc })
+
+            Bottom ->
+                { values = acc, left = built }
+
+
+toArray : Built h -> Builder h -> Array h
+toArray built acc =
+    when built is
+        Built { top, below } ->
+            toArray below (Builder.pushLast top acc)
+
+        Bottom ->
+            Builder.toArray acc

@@ -50,13 +50,15 @@ JSON decoders][guide] to get a feel for how this library works!
 
 import Basics exposing (..)
 import Array exposing (Array)
+import Array.Builder as Builder exposing (Builder)
 import Dict exposing (Dict)
 import Char
 import String exposing (String)
+import Math
 import Maybe exposing (Maybe(..))
 import Result exposing (Result(..))
-import Gren.Kernel.Json
 import Json.Encode
+import Json.Value
 
 
 
@@ -71,7 +73,7 @@ introduction!
 
 -}
 type Decoder a
-    = Decoder
+    = Decoder (Json.Value.Value -> Result Error a)
 
 
 {-| Decode a JSON string into an Gren `String`.
@@ -85,7 +87,15 @@ type Decoder a
 -}
 string : Decoder String
 string =
-    Gren.Kernel.Json.decodeString
+    Decoder
+        (\v ->
+            when v is
+                Json.Value.Str s ->
+                    Ok s
+
+                _ ->
+                    expecting "a STRING" v
+        )
 
 
 {-| Decode a JSON boolean into an Gren `Bool`.
@@ -99,7 +109,15 @@ string =
 -}
 bool : Decoder Bool
 bool =
-    Gren.Kernel.Json.decodeBool
+    Decoder
+        (\v ->
+            when v is
+                Json.Value.Bool b ->
+                    Ok b
+
+                _ ->
+                    expecting "a BOOL" v
+        )
 
 
 {-| Decode a JSON number into an Gren `Int`.
@@ -109,11 +127,27 @@ bool =
     decodeString int "3.14"              == Err ...
     decodeString int "\"hello\""         == Err ...
     decodeString int "{ \"hello\": 42 }" == Err ...
+    decodeString int "2147483648"        == Err ...
+
+A number is an `Int` only if it is a whole number from `-2147483648` to
+`2147483647`.
 
 -}
 int : Decoder Int
 int =
-    Gren.Kernel.Json.decodeInt
+    Decoder
+        (\v ->
+            when v is
+                Json.Value.Number f ->
+                    if isNaN f || f < -2147483648 || f > 2147483647 || f /= toFloat (Math.truncate f) then
+                        expecting "an INT" v
+
+                    else
+                        Ok (Math.truncate f)
+
+                _ ->
+                    expecting "an INT" v
+        )
 
 
 {-| Decode a JSON number into an Gren `Float`.
@@ -127,7 +161,15 @@ int =
 -}
 float : Decoder Float
 float =
-    Gren.Kernel.Json.decodeFloat
+    Decoder
+        (\v ->
+            when v is
+                Json.Value.Number f ->
+                    Ok f
+
+                _ ->
+                    expecting "a FLOAT" v
+        )
 
 
 
@@ -158,8 +200,35 @@ nullable decoder =
 
 -}
 array : Decoder a -> Decoder (Array a)
-array =
-    Gren.Kernel.Json.decodeArray
+array (Decoder run) =
+    Decoder
+        (\v ->
+            when v is
+                Json.Value.Arr items ->
+                    arrayHelp run items 0 (Array.length items) (Builder.empty (Array.length items))
+
+                _ ->
+                    expecting "an ARRAY" v
+        )
+
+
+arrayHelp : (Json.Value.Value -> Result Error a) -> Array Value -> Int -> Int -> Builder a -> Result Error (Array a)
+arrayHelp run items i count acc =
+    if i >= count then
+        Ok (Builder.toArray acc)
+
+    else
+        when Array.get i items is
+            Just item ->
+                when run item is
+                    Ok x ->
+                        arrayHelp run items (i + 1) count (Builder.pushLast x acc)
+
+                    Err e ->
+                        Err (Index { index = i, error = e })
+
+            Nothing ->
+                Ok (Builder.toArray acc)
 
 
 {-| Decode a JSON object into an Gren `Dict`.
@@ -231,8 +300,35 @@ dict decoder =
 
 -}
 keyValuePairs : Decoder a -> Decoder (Array { key : String, value : a })
-keyValuePairs =
-    Gren.Kernel.Json.decodeKeyValuePairs
+keyValuePairs (Decoder run) =
+    Decoder
+        (\v ->
+            when v is
+                Json.Value.Obj pairs ->
+                    pairsHelp run pairs 0 (Array.length pairs) (Builder.empty (Array.length pairs))
+
+                _ ->
+                    expecting "an OBJECT" v
+        )
+
+
+pairsHelp : (Json.Value.Value -> Result Error a) -> Array { key : String, value : Value } -> Int -> Int -> Builder { key : String, value : a } -> Result Error (Array { key : String, value : a })
+pairsHelp run pairs i count acc =
+    if i >= count then
+        Ok (Builder.toArray acc)
+
+    else
+        when Array.get i pairs is
+            Just pair ->
+                when run pair.value is
+                    Ok x ->
+                        pairsHelp run pairs (i + 1) count (Builder.pushLast { key = pair.key, value = x } acc)
+
+                    Err e ->
+                        Err (Field { name = pair.key, error = e })
+
+            Nothing ->
+                Ok (Builder.toArray acc)
 
 
 {-| Decode a JSON array that has one or more elements. This comes up if you
@@ -292,8 +388,26 @@ Check out [`map2`](#map2) to see how to decode multiple fields!
 
 -}
 field : String -> Decoder a -> Decoder a
-field =
-    Gren.Kernel.Json.decodeField
+field name (Decoder run) =
+    Decoder
+        (\v ->
+            when v is
+                Json.Value.Obj pairs ->
+                    when Array.findFirst (\pair -> pair.key == name) pairs is
+                        Just found ->
+                            when run found.value.value is
+                                Ok x ->
+                                    Ok x
+
+                                Err e ->
+                                    Err (Field { name = name, error = e })
+
+                        Nothing ->
+                            expecting ("an OBJECT with a field named `" ++ name ++ "`") v
+
+                _ ->
+                    expecting ("an OBJECT with a field named `" ++ name ++ "`") v
+        )
 
 
 {-| Decode a nested JSON object, requiring certain fields.
@@ -324,8 +438,31 @@ at fields decoder =
 
 -}
 index : Int -> Decoder a -> Decoder a
-index =
-    Gren.Kernel.Json.decodeIndex
+index i (Decoder run) =
+    Decoder
+        (\v ->
+            when v is
+                Json.Value.Arr items ->
+                    if i < 0 then
+                        -- `Array.get` counts a negative index from the end.
+                        expecting ("an index of 0 or more. Need index " ++ String.fromInt i ++ ", which no array has") v
+
+                    else
+                        when Array.get i items is
+                            Just item ->
+                                when run item is
+                                    Ok x ->
+                                        Ok x
+
+                                    Err e ->
+                                        Err (Index { index = i, error = e })
+
+                            Nothing ->
+                                expecting ("a LONGER array. Need index " ++ String.fromInt i ++ " but only see " ++ String.fromInt (Array.length items) ++ " entries") v
+
+                _ ->
+                    expecting "an ARRAY" v
+        )
 
 
 
@@ -382,8 +519,27 @@ even more particular if you wanted.
 
 -}
 oneOf : Array (Decoder a) -> Decoder a
-oneOf =
-    Gren.Kernel.Json.oneOf
+oneOf decoders =
+    Decoder (\v -> oneOfHelp decoders v 0 (Array.length decoders) [])
+
+
+oneOfHelp : Array (Decoder a) -> Value -> Int -> Int -> Array Error -> Result Error a
+oneOfHelp decoders v i count errors =
+    if i >= count then
+        Err (OneOf errors)
+
+    else
+        when Array.get i decoders is
+            Just (Decoder run) ->
+                when run v is
+                    Ok x ->
+                        Ok x
+
+                    Err e ->
+                        oneOfHelp decoders v (i + 1) count (Array.pushLast e errors)
+
+            Nothing ->
+                Err (OneOf errors)
 
 
 
@@ -409,8 +565,16 @@ It is often helpful to use `map` with `oneOf`, like when defining `nullable`:
 
 -}
 map : (a -> value) -> Decoder a -> Decoder value
-map =
-    Gren.Kernel.Json.map1
+map f (Decoder run) =
+    Decoder
+        (\v ->
+            when run v is
+                Ok x ->
+                    Ok (f x)
+
+                Err e ->
+                    Err e
+        )
 
 
 {-| Try two decoders and then combine the result. We can use this to decode
@@ -439,8 +603,21 @@ constructor.
 
 -}
 map2 : (a -> b -> value) -> Decoder a -> Decoder b -> Decoder value
-map2 =
-    Gren.Kernel.Json.map2
+map2 f (Decoder runA) (Decoder runB) =
+    Decoder
+        (\v ->
+            when runA v is
+                Err e ->
+                    Err e
+
+                Ok a ->
+                    when runB v is
+                        Err e ->
+                            Err e
+
+                        Ok b ->
+                            Ok (f a b)
+        )
 
 
 {-| Try three decoders and then combine the result. We can use this to decode
@@ -472,38 +649,38 @@ Like `map2` it tries each decoder in order and then give the results to the
 
 -}
 map3 : (a -> b -> c -> value) -> Decoder a -> Decoder b -> Decoder c -> Decoder value
-map3 =
-    Gren.Kernel.Json.map3
+map3 f da db dc =
+    andMap dc (map2 f da db)
 
 
 {-| -}
 map4 : (a -> b -> c -> d -> value) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder value
-map4 =
-    Gren.Kernel.Json.map4
+map4 f da db dc dd =
+    andMap dd (map3 f da db dc)
 
 
 {-| -}
 map5 : (a -> b -> c -> d -> e -> value) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder e -> Decoder value
-map5 =
-    Gren.Kernel.Json.map5
+map5 f da db dc dd de =
+    andMap de (map4 f da db dc dd)
 
 
 {-| -}
 map6 : (a -> b -> c -> d -> e -> f -> value) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder e -> Decoder f -> Decoder value
-map6 =
-    Gren.Kernel.Json.map6
+map6 f da db dc dd de df =
+    andMap df (map5 f da db dc dd de)
 
 
 {-| -}
 map7 : (a -> b -> c -> d -> e -> f -> g -> value) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder e -> Decoder f -> Decoder g -> Decoder value
-map7 =
-    Gren.Kernel.Json.map7
+map7 f da db dc dd de df dg =
+    andMap dg (map6 f da db dc dd de df)
 
 
 {-| -}
 map8 : (a -> b -> c -> d -> e -> f -> g -> h -> value) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder e -> Decoder f -> Decoder g -> Decoder h -> Decoder value
-map8 =
-    Gren.Kernel.Json.map8
+map8 f da db dc dd de df dg dh =
+    andMap dh (map7 f da db dc dd de df dg)
 
 
 
@@ -519,19 +696,39 @@ fails for some reason.
 
 -}
 decodeString : Decoder a -> String -> Result Error a
-decodeString =
-    Gren.Kernel.Json.runOnString
+decodeString (Decoder run) text =
+    when Json.Value.parse text is
+        Ok v ->
+            run v
+
+        Err problem ->
+            let
+                place =
+                    Json.Value.position text problem.offset
+            in
+            Err
+                (Failure
+                    { message =
+                        "This is not valid JSON! "
+                            ++ problem.reason
+                            ++ " at line "
+                            ++ String.fromInt place.line
+                            ++ ", column "
+                            ++ String.fromInt place.column
+                    , value = Json.Value.Str text
+                    }
+                )
 
 
 {-| Run a `Decoder` on some JSON `Value`. You can send these JSON values
 through ports, so that is probably the main time you would use this function.
 -}
 decodeValue : Decoder a -> Value -> Result Error a
-decodeValue =
-    Gren.Kernel.Json.run
+decodeValue (Decoder run) v =
+    run v
 
 
-{-| Represents a JavaScript value.
+{-| A JSON value, the same type as `Json.Encode.Value`.
 -}
 type alias Value =
     Json.Encode.Value
@@ -591,14 +788,14 @@ errorToStringHelp error context =
                     else
                         "['" ++ f ++ "']"
             in
-            errorToStringHelp err ([ fieldName ] ++ context)
+            errorToStringHelp err (context ++ [ fieldName ])
 
         Index { index = i, error = err } ->
             let
                 indexName =
                     "[" ++ String.fromInt i ++ "]"
             in
-            errorToStringHelp err ([ indexName ] ++ context)
+            errorToStringHelp err (context ++ [ indexName ])
 
         OneOf errors ->
             when errors is
@@ -667,8 +864,8 @@ This is handy when used with `oneOf` or `andThen`.
 
 -}
 succeed : a -> Decoder a
-succeed =
-    Gren.Kernel.Json.succeed
+succeed x =
+    Decoder (\_ -> Ok x)
 
 
 {-| Ignore the JSON and make the decoder fail. This is handy when used with
@@ -679,8 +876,8 @@ See the [`andThen`](#andThen) docs for an example.
 
 -}
 fail : String -> Decoder a
-fail =
-    Gren.Kernel.Json.fail
+fail message =
+    Decoder (\v -> Err (Failure { message = message, value = v }))
 
 
 {-| Create decoders that depend on previous results. If you are creating
@@ -712,8 +909,18 @@ versioned data, you might do something like this:
 
 -}
 andThen : (a -> Decoder b) -> Decoder a -> Decoder b
-andThen =
-    Gren.Kernel.Json.andThen
+andThen callback (Decoder run) =
+    Decoder
+        (\v ->
+            when run v is
+                Ok x ->
+                    when callback x is
+                        Decoder next ->
+                            next v
+
+                Err e ->
+                    Err e
+        )
 
 
 {-| Use andMap to incrementally decode a JSON object. Each andMap
@@ -791,7 +998,7 @@ about its structure.
 -}
 value : Decoder Value
 value =
-    Gren.Kernel.Json.decodeValue
+    Decoder Ok
 
 
 {-| Decode a `null` value into some Gren value.
@@ -805,5 +1012,18 @@ So if you ever see a `null`, this will return whatever value you specified.
 
 -}
 null : a -> Decoder a
-null =
-    Gren.Kernel.Json.decodeNull
+null x =
+    Decoder
+        (\v ->
+            when v is
+                Json.Value.Null ->
+                    Ok x
+
+                _ ->
+                    expecting "null" v
+        )
+
+
+expecting : String -> Value -> Result Error a
+expecting what v =
+    Err (Failure { message = "Expecting " ++ what, value = v })

@@ -1,12 +1,119 @@
 /*
 
 import Gren.Kernel.Debug exposing (crash)
-import Gren.Kernel.Json exposing (run, wrap, unwrap, errorToString)
+import Json.Decode as Decode exposing (decodeValue, errorToString)
+import Json.Value as Value exposing (Null, Bool, Number, Str, Arr, Obj, foldHost)
 import Gren.Kernel.Scheduler exposing (andThen, binding, rawSend, rawSpawn, receive, send, succeed, fail)
 import Array exposing (pushLast)
 import Result exposing (isOk)
 
 */
+
+// JSON AT THE BOUNDARY
+
+// A JavaScript value becomes a Json.Value.Value by what JSON.stringify would
+// keep of it (m1b-json.md §O10, D220): `toJSON` is called, a boxed primitive is
+// its primitive, a number that is not finite is null, `undefined`, a function
+// and a symbol are null in an array and absent from an object, and `undefined`
+// at the top is null. A string's lone surrogates become U+FFFD, since a String
+// holds none (D209). A BigInt is refused, as JSON.stringify refuses it.
+
+function _Platform_jsonFromHost(value) {
+  var json = _Platform_jsonFromHostOrSkip(value, "");
+  return json === undefined ? __Value_Null : json;
+}
+
+function _Platform_jsonFromHostOrSkip(value, key) {
+  if (
+    value !== null &&
+    (typeof value === "object" || typeof value === "bigint") &&
+    typeof value.toJSON === "function"
+  ) {
+    value = value.toJSON(key);
+  }
+
+  if (
+    value instanceof Number ||
+    value instanceof String ||
+    value instanceof Boolean
+  ) {
+    value = value.valueOf();
+  }
+
+  switch (typeof value) {
+    case "boolean":
+      return __Value_Bool(value);
+    case "number":
+      return isFinite(value) ? __Value_Number(value) : __Value_Null;
+    case "string":
+      return __Value_Str(value.isWellFormed() ? value : value.toWellFormed());
+    case "bigint":
+      throw new TypeError("Do not know how to serialize a BigInt");
+    case "undefined":
+    case "function":
+    case "symbol":
+      return undefined;
+  }
+
+  if (value === null) {
+    return __Value_Null;
+  }
+
+  if (Array.isArray(value)) {
+    var items = new Array(value.length);
+    for (var i = 0; i < value.length; i++) {
+      var item = _Platform_jsonFromHostOrSkip(value[i], String(i));
+      items[i] = item === undefined ? __Value_Null : item;
+    }
+    return __Value_Arr(items);
+  }
+
+  var members = [];
+  var keys = Object.keys(value);
+  for (var k = 0; k < keys.length; k++) {
+    var member = _Platform_jsonFromHostOrSkip(value[keys[k]], keys[k]);
+    if (member !== undefined) {
+      members.push({ __$key: keys[k], __$value: member });
+    }
+  }
+  return __Value_Obj(members);
+}
+
+// A Json.Value.Value becomes plain JavaScript: null, a boolean, a number, a
+// string, an array or an object. A member is defined rather than assigned, so
+// that a key named `__proto__` is a member like any other.
+
+var _Platform_jsonBuilders = {
+  __$null: null,
+  __$bool: function (b) {
+    return b;
+  },
+  __$number: function (n) {
+    return n;
+  },
+  __$string: function (s) {
+    return s;
+  },
+  __$array: function (items) {
+    return items;
+  },
+  __$object: function (members) {
+    var object = {};
+    for (var i = 0; i < members.length; i++) {
+      Object.defineProperty(object, members[i].__$key, {
+        value: members[i].__$value,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
+    }
+    return object;
+  },
+};
+
+function _Platform_jsonToHost(value) {
+  return A2(__Value_foldHost, _Platform_jsonBuilders, value);
+}
 
 // PROGRAMS
 
@@ -44,13 +151,13 @@ function _Platform_initialize(
     flags = _Platform_copyBytes(rawFlags);
   } else {
     var result = A2(
-      __Json_run,
+      __Decode_decodeValue,
       flagDecoder,
-      __Json_wrap(args ? args["flags"] : undefined),
+      _Platform_jsonFromHost(args ? args["flags"] : undefined),
     );
 
     __Result_isOk(result) ||
-      __Debug_crash(2 /**__DEBUG/, __Json_errorToString(result.a) /**/);
+      __Debug_crash(2 /**__DEBUG/, __Decode_errorToString(result.a) /**/);
 
     flags = result.a;
   }
@@ -388,7 +495,7 @@ function _Platform_setupOutgoingPort(name, isBytes) {
         var rawValue = converter(cmdArray[idx]);
         var value = isBytes
           ? _Platform_copyBytes(rawValue)
-          : __Json_unwrap(rawValue);
+          : _Platform_jsonToHost(rawValue);
         for (var subIdx = 0; subIdx < currentSubs.length; subIdx++) {
           currentSubs[subIdx](value);
         }
@@ -465,7 +572,7 @@ function _Platform_setupIncomingPort(name, sendToApp, isBytes) {
 
       value = _Platform_copyBytes(incomingValue);
     } else {
-      var result = A2(__Json_run, converter, __Json_wrap(incomingValue));
+      var result = A2(__Decode_decodeValue, converter, _Platform_jsonFromHost(incomingValue));
 
       __Result_isOk(result) || __Debug_crash(4, name, result.a);
 
@@ -498,7 +605,7 @@ function _Platform_taskPort(
     var encodedInput = inputConverter
       ? inputIsBytes
         ? _Platform_copyBytes(input)
-        : __Json_unwrap(inputConverter(input))
+        : _Platform_jsonToHost(inputConverter(input))
       : null;
 
     return __Scheduler_binding(function (callback) {
@@ -531,7 +638,7 @@ function _Platform_taskPort(
 
             checkedValue = _Platform_copyBytes(value);
           } else {
-            var result = A2(__Json_run, converter, __Json_wrap(value));
+            var result = A2(__Decode_decodeValue, converter, _Platform_jsonFromHost(value));
 
             __Result_isOk(result) || __Debug_crash(4, name, value);
 
@@ -552,7 +659,7 @@ function _Platform_taskPort(
             err = newErr;
           }
 
-          callback(__Scheduler_fail(__Json_wrap(err)));
+          callback(__Scheduler_fail(_Platform_jsonFromHost(err)));
         },
       );
     });
