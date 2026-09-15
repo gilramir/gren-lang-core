@@ -110,8 +110,6 @@ import Basics exposing (..)
 import Math exposing (floor, ceiling)
 import Bitwise
 import Char exposing (Char)
-import Gren.Kernel.String
-import Gren.Kernel.Utils
 import Int64
 import Maybe exposing (Maybe(..))
 import Result exposing (Result)
@@ -182,8 +180,8 @@ isEmpty string =
 
 -}
 count : String -> Int
-count string =
-    foldl (\_ num -> num + 1) 0 string
+count =
+    primLength
 
 
 {-| Reverse a string.
@@ -204,8 +202,22 @@ reverse str =
 
 -}
 repeat : Int -> String -> String
-repeat =
-    Gren.Kernel.String.repeat
+repeat n chunk =
+    repeatHelp n chunk ""
+
+
+{-| Doubling, so that `repeat n` is O(log n) appends rather than n.
+-}
+repeatHelp : Int -> String -> String -> String
+repeatHelp n chunk acc =
+    if n <= 0 then
+        acc
+
+    else
+        repeatHelp
+            (Bitwise.shiftRightZfBy 1 n)
+            (primAppend chunk chunk)
+            (if Bitwise.and n 1 == 1 then primAppend acc chunk else acc)
 
 
 {-| Replace all occurrences of some substring.
@@ -235,7 +247,7 @@ to do this.
 -}
 prepend : String -> String -> String
 prepend =
-    Gren.Kernel.String.append
+    primAppend
 
 
 {-| Append one string onto another. This is the same operation as [prepend](prepend),
@@ -262,8 +274,29 @@ you will get an array containing the original string.
 
 -}
 split : String -> String -> Array String
-split =
-    Gren.Kernel.String.split
+split sep string =
+    if primEq sep "" then
+        -- A codepoint each. JavaScript's `split("")` cut an astral character
+        -- into its two surrogates, which a `String` cannot hold (D209).
+        foldl (\c acc -> Array.Builder.pushLast (fromChar c) acc) (Array.Builder.empty 0) string
+            |> Array.Builder.toArray
+
+    else
+        splitHelp sep (primEnd sep) string (Offset 0) (Array.Builder.empty 0)
+
+
+splitHelp : String -> Int -> String -> Offset -> Array.Builder.Builder String -> Array String
+splitHelp sep sepEnd string (Offset start) acc =
+    let
+        found =
+            primFind string sep start
+    in
+    if found < 0 then
+        Array.Builder.pushLast (primSlice string start (primEnd string)) acc
+            |> Array.Builder.toArray
+
+    else
+        splitHelp sep sepEnd string (Offset (found + sepEnd)) (Array.Builder.pushLast (primSlice string start found) acc)
 
 
 {-| Put many strings together with a given separator.
@@ -276,8 +309,13 @@ split =
 
 -}
 join : String -> Array String -> String
-join =
-    Gren.Kernel.String.join
+join sep strings =
+    when Array.popFirst strings is
+        Nothing ->
+            ""
+
+        Just { first, rest } ->
+            Array.foldl (\string acc -> primAppend (primAppend acc sep) string) first rest
 
 
 {-| Break a string into words, splitting on chunks of whitespace.
@@ -324,8 +362,11 @@ closeWord acc =
 
 -}
 lines : String -> Array String
-lines =
-    Gren.Kernel.String.lines
+lines string =
+    string
+        |> replace "\u{000D}\n" "\n"
+        |> replace "\u{000D}" "\n"
+        |> split "\n"
 
 
 
@@ -345,8 +386,51 @@ are taken starting from the _end_ of the array.
 
 -}
 slice : Int -> Int -> String -> String
-slice =
-    Gren.Kernel.String.slice
+slice start end string =
+    let
+        length =
+            primLength string
+
+        clampIndex i =
+            if i < 0 then
+                max 0 (length + i)
+
+            else
+                min length i
+
+        from =
+            clampIndex start
+
+        to =
+            clampIndex end
+    in
+    if to <= from then
+        ""
+
+    else if length == primEnd string then
+        -- Every codepoint is one offset wide, so an index is an offset.
+        primSlice string from to
+
+    else
+        let
+            fromOffset =
+                offsetAfter string (Offset 0) from
+
+            toOffset =
+                offsetAfter string fromOffset (to - from)
+        in
+        primSlice string (offsetValue fromOffset) (offsetValue toOffset)
+
+
+{-| The offset `n` codepoints after the given one.
+-}
+offsetAfter : String -> Offset -> Int -> Offset
+offsetAfter string (Offset o) n =
+    if n <= 0 then
+        Offset o
+
+    else
+        offsetAfter string (Offset (primNext string o)) (n - 1)
 
 
 {-| Make a new string using the first _n_ characters. If _n_ is larger than
@@ -380,7 +464,7 @@ takeLast n string =
         ""
 
     else
-        slice -n (count string) string
+        slice -n (primLength string) string
 
 
 {-| Drop the first _n_ characters.
@@ -394,7 +478,7 @@ dropFirst n string =
         string
 
     else
-        slice n (count string) string
+        slice n (primLength string) string
 
 
 {-| Drop the last _n_ characters.
@@ -425,8 +509,8 @@ dropLast n string =
 
 -}
 contains : String -> String -> Bool
-contains =
-    Gren.Kernel.String.contains
+contains sub string =
+    primFind string sub 0 >= 0
 
 
 {-| See if the second string starts with the first one.
@@ -437,8 +521,8 @@ contains =
 
 -}
 startsWith : String -> String -> Bool
-startsWith =
-    Gren.Kernel.String.startsWith
+startsWith sub string =
+    primEnd sub <= primEnd string && primFind string sub 0 == 0
 
 
 {-| See if the second string ends with the first one.
@@ -449,8 +533,12 @@ startsWith =
 
 -}
 endsWith : String -> String -> Bool
-endsWith =
-    Gren.Kernel.String.endsWith
+endsWith sub string =
+    let
+        at =
+            primEnd string - primEnd sub
+    in
+    at >= 0 && primFindLast string sub at == at
 
 
 {-| Find the index of the first string within the second one, if it's there.
@@ -473,8 +561,16 @@ one:
 
 -}
 firstIndexOf : String -> String -> Maybe Int
-firstIndexOf =
-    Gren.Kernel.String.indexOf
+firstIndexOf sub string =
+    let
+        found =
+            primFind string sub 0
+    in
+    if found < 0 then
+        Nothing
+
+    else
+        Just (primOffsetToIndex string found)
 
 
 {-| Find the last index of the first string within the second one, if it's there.
@@ -487,8 +583,16 @@ A codepoint index, as in [firstIndexOf](#firstIndexOf).
 
 -}
 lastIndexOf : String -> String -> Maybe Int
-lastIndexOf =
-    Gren.Kernel.String.lastIndexOf
+lastIndexOf sub string =
+    let
+        found =
+            primFindLast string sub (primEnd string)
+    in
+    if found < 0 then
+        Nothing
+
+    else
+        Just (primOffsetToIndex string found)
 
 
 {-| Get all of the indices for a substring in another string.
@@ -503,8 +607,36 @@ Codepoint indices, as in [firstIndexOf](#firstIndexOf).
 
 -}
 indices : String -> String -> Array Int
-indices =
-    Gren.Kernel.String.indexes
+indices sub string =
+    let
+        subEnd =
+            primEnd sub
+    in
+    if subEnd < 1 then
+        []
+
+    else
+        indicesHelp sub subEnd string (Offset 0) 0 (Offset 0) (Array.Builder.empty 0)
+
+
+{-| Each match's index is the last one's plus the codepoints between them, so
+the conversion is one walk over the string however many matches there are.
+-}
+indicesHelp : String -> Int -> String -> Offset -> Int -> Offset -> Array.Builder.Builder Int -> Array Int
+indicesHelp sub subEnd string (Offset from) lastIndex (Offset lastOffset) acc =
+    let
+        found =
+            primFind string sub from
+    in
+    if found < 0 then
+        Array.Builder.toArray acc
+
+    else
+        let
+            index =
+                lastIndex + primLength (primSlice string lastOffset found)
+        in
+        indicesHelp sub subEnd string (Offset (found + subEnd)) index (Offset found) (Array.Builder.pushLast index acc)
 
 
 
@@ -702,8 +834,74 @@ want to use [`Maybe.withDefault`](Maybe#withDefault) to handle bad data:
 
 -}
 toInt : String -> Maybe Int
-toInt =
-    Gren.Kernel.String.toInt
+toInt string =
+    let
+        end =
+            primEnd string
+
+        first =
+            if end == 0 then
+                0
+
+            else
+                Char.toCode (primCharAt string 0)
+
+        signed =
+            first == 0x2D || first == 0x2B
+
+        start =
+            if signed then
+                primNext string 0
+
+            else
+                0
+    in
+    if start == end then
+        Nothing
+
+    else
+        when toIntHelp string end (Offset start) 0 is
+            Nothing ->
+                Nothing
+
+            Just magnitude ->
+                if first == 0x2D then
+                    Just magnitude
+
+                else if magnitude == -2147483648 then
+                    -- 2147483648, one past the largest `Int` (D2).
+                    Nothing
+
+                else
+                    Just (negate magnitude)
+
+
+{-| The digits, as a **non-positive** `Int`, so that `-2147483648` is reachable
+without overflowing on the way, as `int64Digits` counts down for the same
+reason. A number too large for an `Int` is `Nothing`: the kernel's loop
+answered a JavaScript number past 32 bits, which the next arithmetic wrapped.
+-}
+toIntHelp : String -> Int -> Offset -> Int -> Maybe Int
+toIntHelp string end (Offset o) acc =
+    if o == end then
+        Just acc
+
+    else
+        let
+            code =
+                Char.toCode (primCharAt string o)
+
+            digit =
+                code - 0x30
+        in
+        if code < 0x30 || code > 0x39 then
+            Nothing
+
+        else if acc < -214748364 || (acc == -214748364 && digit > 8) then
+            Nothing
+
+        else
+            toIntHelp string end (Offset (primNext string o)) (acc * 10 - digit)
 
 
 {-| Convert an `Int` to a `String`.
@@ -717,16 +915,38 @@ Check out [`inspect`](Inspect#Inspect) to convert any value that has an
 
 -}
 fromInt : Int -> String
-fromInt =
-    Gren.Kernel.String.fromNumber
+fromInt n =
+    if n < 0 then
+        primAppend "-" (intDigits n)
+
+    else
+        intDigits (negate n)
+
+
+{-| The decimal digits of a **non-positive** `Int`, as `int64Digits` below.
+-}
+intDigits : Int -> String
+intDigits n =
+    let
+        quotient =
+            n // 10
+
+        digit =
+            primSlice "0123456789" (negate (remainderBy 10 n)) (1 - remainderBy 10 n)
+    in
+    if quotient == 0 then
+        digit
+
+    else
+        primAppend (intDigits quotient) digit
 
 
 
 -- SIZED INTEGER CONVERSIONS
 --
--- Written in Gren rather than handed to `Gren.Kernel.String.fromNumber`,
--- because that kernel function is JavaScript's `String(x)` and a `BigInt` is
--- not the only thing these are: `docs/core.md` C13 has a backend where an
+-- Written in Gren, as `fromInt` now is too: the kernel's `fromNumber` was
+-- JavaScript's `String(x)`, and a `BigInt` is not the only thing these
+-- are: `docs/core.md` C13 has a backend where an
 -- `Int64` is an `i64` and a `UInt64` is a `u64`, and a decimal rendering by
 -- repeated division is the same rendering on all of them. The division is the
 -- width's own `//` and `remainderBy`, which A3 makes total and A11 makes
@@ -842,8 +1062,93 @@ It reads everything [`fromFloat`](#fromFloat) writes, `"NaN"`, `"Infinity"` and
 
 -}
 toFloat : String -> Maybe Float
-toFloat =
-    Gren.Kernel.String.toFloat
+toFloat string =
+    if primEq string "NaN" then
+        Just (0 / 0)
+
+    else if isDecimal string then
+        Just (primFromDecimal string)
+
+    else
+        Nothing
+
+
+{-| The strings `toFloat` reads, which are what the kernel's `+s` read once
+whitespace and the `0x`, `0b` and `0o` prefixes were refused: an optional sign,
+then `Infinity`, or digits with an optional point and fraction (either side of
+the point may be empty but not both), then an optional exponent (D210).
+-}
+isDecimal : String -> Bool
+isDecimal string =
+    let
+        end =
+            primEnd string
+
+        afterSign =
+            if end > 0 && (primCharAt string 0 == '-' || primCharAt string 0 == '+') then
+                1
+
+            else
+                0
+
+        rest =
+            primSlice string afterSign end
+    in
+    if primEq rest "Infinity" then
+        True
+
+    else
+        let
+            intEnd =
+                skipDigits rest (primEnd rest) 0
+
+            { fracStart, fracEnd } =
+                if intEnd < primEnd rest && primCharAt rest intEnd == '.' then
+                    { fracStart = intEnd + 1, fracEnd = skipDigits rest (primEnd rest) (intEnd + 1) }
+
+                else
+                    { fracStart = intEnd, fracEnd = intEnd }
+
+            mantissaDigits =
+                intEnd + (fracEnd - fracStart)
+        in
+        if mantissaDigits == 0 then
+            False
+
+        else if fracEnd == primEnd rest then
+            True
+
+        else if primCharAt rest fracEnd == 'e' || primCharAt rest fracEnd == 'E' then
+            let
+                expSign =
+                    fracEnd + 1
+
+                expStart =
+                    if expSign < primEnd rest && (primCharAt rest expSign == '-' || primCharAt rest expSign == '+') then
+                        expSign + 1
+
+                    else
+                        expSign
+
+                expEnd =
+                    skipDigits rest (primEnd rest) expStart
+            in
+            expEnd > expStart && expEnd == primEnd rest
+
+        else
+            False
+
+
+{-| The offset past a run of ASCII digits. A digit is one offset wide on every
+backend, so the arithmetic on offsets here is sound.
+-}
+skipDigits : String -> Int -> Int -> Int
+skipDigits string end o =
+    if o < end && Char.toCode (primCharAt string o) >= 0x30 && Char.toCode (primCharAt string o) <= 0x39 then
+        skipDigits string end (o + 1)
+
+    else
+        o
 
 
 {-| Convert a `Float` to a `String`.
@@ -1041,7 +1346,7 @@ toArray string =
 -}
 fromArray : Array Char -> String
 fromArray =
-    Gren.Kernel.String.fromArray
+    primFromCodepoints
 
 
 
@@ -1064,8 +1369,8 @@ fromChar char =
 
 -}
 pushFirst : Char -> String -> String
-pushFirst =
-    Gren.Kernel.String.pushFirst
+pushFirst char string =
+    primAppend (primFromCodepoints [ char ]) string
 
 
 {-| Add a character to the end of a string.
@@ -1074,8 +1379,8 @@ pushFirst =
 
 -}
 pushLast : Char -> String -> String
-pushLast =
-    Gren.Kernel.String.pushLast
+pushLast char string =
+    primAppend string (primFromCodepoints [ char ])
 
 
 {-| Split a non-empty string into its first character and its remaining characters. This lets you
@@ -1087,8 +1392,16 @@ pattern match on strings exactly as you would with arrays.
 
 -}
 popFirst : String -> Maybe { first : Char, rest : String }
-popFirst =
-    Gren.Kernel.String.popFirst
+popFirst string =
+    let
+        end =
+            primEnd string
+    in
+    if end == 0 then
+        Nothing
+
+    else
+        Just { first = primCharAt string 0, rest = primSlice string (primNext string 0) end }
 
 
 {-| Split a non-empty string into its last character and its remaining characters. This lets you
@@ -1101,8 +1414,20 @@ pattern match on strings exactly as you would with arrays.
 
 -}
 popLast : String -> Maybe { last : Char, rest : String }
-popLast =
-    Gren.Kernel.String.popLast
+popLast string =
+    let
+        end =
+            primEnd string
+    in
+    if end == 0 then
+        Nothing
+
+    else
+        let
+            lastStart =
+                primPrev string end
+        in
+        Just { last = primCharAt string lastStart, rest = primSlice string 0 lastStart }
 
 
 -- HIGHER-ORDER FUNCTIONS
@@ -1157,8 +1482,8 @@ keepIf isGood str =
 
 -}
 foldl : (Char -> b -> b) -> b -> String -> b
-foldl =
-    Gren.Kernel.String.foldl
+foldl step initial string =
+    primFoldl string initial step
 
 
 {-| Reduce a string from the end.
@@ -1167,8 +1492,8 @@ foldl =
 
 -}
 foldr : (Char -> b -> b) -> b -> String -> b
-foldr =
-    Gren.Kernel.String.foldr
+foldr step initial string =
+    primFoldr string initial step
 
 
 {-| Determine whether _any_ characters pass the test.
@@ -1183,8 +1508,20 @@ foldr =
 
 -}
 any : (Char -> Bool) -> String -> Bool
-any =
-    Gren.Kernel.String.any
+any isGood string =
+    anyHelp isGood string (primEnd string) (Offset 0)
+
+
+anyHelp : (Char -> Bool) -> String -> Int -> Offset -> Bool
+anyHelp isGood string end (Offset o) =
+    if o == end then
+        False
+
+    else if isGood (primCharAt string o) then
+        True
+
+    else
+        anyHelp isGood string end (Offset (primNext string o))
 
 
 {-| Determine whether _all_ characters pass the test.
@@ -1289,20 +1626,20 @@ closeGrapheme fn acc =
 
 
 
--- A `String` is a JavaScript primitive, so `===` is what "the same" means at
--- one, and `Gren.Kernel.Utils.identical` is `===` (D142,
--- `docs/m1b-classes.md` §G40). What this called until D142 was the kernel's
--- structural walker, which reached the same answer through a `typeof`.
+-- `str_eq`, which is `===` on JavaScript and a byte comparison on UTF-8
+-- (D206). It was `Gren.Kernel.Utils.identical` (D142,
+-- `docs/m1b-classes.md` §G40), and before D142 the kernel's structural
+-- walker, which reached the same answer through a `typeof`.
 
 
 instance Eq String where
     eq a b =
-        Gren.Kernel.Utils.identical a b
+        primEq a b
 
 
--- Codepoint order, which JavaScript `<` is not: the kernel's comparison is
--- guarded so that it pays for the difference only when a surrogate is present
--- (D8, `docs/m1b-str.md` §T13). What this called before was
+-- Codepoint order, which JavaScript `<` is not: `str_cmp` is guarded so
+-- that it pays for the difference only when a surrogate is present, and
+-- answers an `Int` this makes an `Order` (D8, §T13, D207). Before §T13 it was
 -- `Gren.Kernel.Utils.compare`, whose string branch is `<` -- so `Array.sort`,
 -- `Dict` and `Set`, which consult `compare` and nothing else, sorted every
 -- astral character below U+E000-U+FFFF.
@@ -1310,14 +1647,111 @@ instance Eq String where
 
 instance Ord String where
     compare a b =
-        Gren.Kernel.String.compare a b
+        let
+            c =
+                primCmp a b
+        in
+        if c < 0 then
+            LT
+
+        else if c > 0 then
+            GT
+
+        else
+            EQ
 
 
 -- `a ++ b` is `prepend`, not `append`: `String.append` is the reversed one
--- (`docs/m1b-classes.md` §G34.2). So the method is the kernel primitive the
--- operator always ran, with its arguments in the order it always had them.
+-- (`docs/m1b-classes.md` §G34.2). So the method is `str_append`, the operation
+-- the operator always ran, with its arguments in the order it always had them.
 
 
 instance Appendable String where
     append a b =
-        Gren.Kernel.String.append a b
+        primAppend a b
+
+
+
+-- PRIMITIVES
+--
+-- D206's table (`docs/m1b-str-prim.md` §Z3, §Z9). A position inside a string is
+-- an offset, a code unit offset on JavaScript and a byte offset on a UTF-8
+-- backend, and it never leaves this module: a public function that answers a
+-- position answers a codepoint index, converted once by `primOffsetToIndex`.
+-- `Offset` is what a position carried from one step of a loop to the next is,
+-- so that an offset and an index cannot be mixed up there. The primitives
+-- themselves take and give an `Int`, since a primitive is an expression and
+-- cannot build a constructor.
+
+
+type Offset
+    = Offset Int
+
+
+offsetValue : Offset -> Int
+offsetValue (Offset o) =
+    o
+
+
+@prim("str_length")
+primLength : String -> Int
+
+
+@prim("str_append")
+primAppend : String -> String -> String
+
+
+@prim("str_eq")
+primEq : String -> String -> Bool
+
+
+@prim("str_cmp")
+primCmp : String -> String -> Int
+
+
+@prim("str_end")
+primEnd : String -> Int
+
+
+@prim("str_slice")
+primSlice : String -> Int -> Int -> String
+
+
+@prim("str_find")
+primFind : String -> String -> Int -> Int
+
+
+@prim("str_find_last")
+primFindLast : String -> String -> Int -> Int
+
+
+@prim("str_offset_to_index")
+primOffsetToIndex : String -> Int -> Int
+
+
+@prim("str_next")
+primNext : String -> Int -> Int
+
+
+@prim("str_prev")
+primPrev : String -> Int -> Int
+
+
+@prim("str_char_at")
+primCharAt : String -> Int -> Char
+
+
+@prim("str_foldl")
+primFoldl : String -> b -> (Char -> b -> b) -> b
+
+
+@prim("str_foldr")
+primFoldr : String -> b -> (Char -> b -> b) -> b
+
+
+@prim("str_from_codepoints")
+primFromCodepoints : Array Char -> String
+
+
+@prim("f64_from_decimal")
+primFromDecimal : String -> Float

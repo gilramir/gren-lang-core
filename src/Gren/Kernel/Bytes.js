@@ -49,24 +49,9 @@ var _Bytes_getHostEndianness = F2(function (le, be) {
   });
 });
 
-function _Bytes_fromString(str) {
-  var encoder = new TextEncoder();
-  var uint8s = encoder.encode(str);
-  return new DataView(uint8s.buffer);
-}
-
-function _Bytes_toString(bytes) {
-  // `ignoreBOM` keeps a leading U+FEFF: without it the decoder drops one as a
-  // byte-order mark, and a string that starts with the character does not
-  // survive `fromString` and back.
-  var decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
-
-  try {
-    return __Maybe_Just(decoder.decode(bytes));
-  } catch (e) {
-    return __Maybe_Nothing;
-  }
-}
+// `_Bytes_fromString` and `_Bytes_toString` were here, and are the `str_to_utf8`,
+// `str_from_utf8` and `str_utf8_valid` primitives now (D211,
+// `docs/m1b-str-prim.md` §Z9).
 
 function _Bytes_flatten(arrayOfBytes) {
   var requiredSize = 0;

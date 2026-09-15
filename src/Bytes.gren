@@ -208,15 +208,19 @@ about [UTF-8](https://en.wikipedia.org/wiki/UTF-8) to learn the details!
 -}
 fromString : String -> Bytes
 fromString =
-  Gren.Kernel.Bytes.fromString
+  primToUtf8
 
 
 {-| Convert UTF-8 encoded `Bytes` to `String`. If the byte sequence isn't
 valid UTF-8, `Nothing` will be returned.
 -}
 toString : Bytes -> Maybe String
-toString =
-  Gren.Kernel.Bytes.toString
+toString bytes =
+  if primUtf8Valid bytes then
+    Maybe.Just (primFromUtf8 bytes)
+
+  else
+    Maybe.Nothing
 
 
 -- COMBINE
@@ -227,3 +231,24 @@ toString =
 flatten : Array Bytes -> Bytes
 flatten =
   Gren.Kernel.Bytes.flatten
+
+
+-- PRIMITIVES
+--
+-- UTF-8, which is `docs/core.md` C13's one place a `String`'s encoding shows,
+-- and which D211 builds with the `str_` group (`docs/m1b-str-prim.md` §Z9).
+-- `str_from_utf8`'s precondition is `str_utf8_valid`, so `toString` asks
+-- first. A leading U+FEFF is a character, not a byte-order mark
+-- (`m1b-protobuf.md` §Q14), in both.
+
+
+@prim("str_to_utf8")
+primToUtf8 : String -> Bytes
+
+
+@prim("str_utf8_valid")
+primUtf8Valid : Bytes -> Bool
+
+
+@prim("str_from_utf8")
+primFromUtf8 : Bytes -> String
