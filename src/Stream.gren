@@ -85,19 +85,22 @@ import Maybe exposing (Maybe(..))
 import Result exposing (Result(..))
 import String exposing (String)
 import Task exposing (Task)
-import Gren.Kernel.Stream
 
 
 {-| A source of data. You can only read data out of a Readable stream, not write data into it.
 -}
 type Readable value
-    = Readable
+    = -- Note: the value is a web stream, crossing externs at a type variable
+      -- (m1b-extern.md §H17)
+      Readable
 
 
 {-| A destination for data. You can only write data into a Writable stream, not read data out of it.
 -}
 type Writable value
-    = Writable
+    = -- Note: the value is a web stream, crossing externs at a type variable
+      -- (m1b-extern.md §H17)
+      Writable
 
 
 {-| Different kind of errors that can happen when operating on a stream.
@@ -158,7 +161,11 @@ fromArray array =
 -}
 read : Readable value -> Task Error value
 read =
-    Gren.Kernel.Stream.read
+    readWith Locked Closed Cancelled
+
+
+@extern(js, "Stream", "read")
+readWith : error -> error -> (String -> error) -> stream -> Task error value
 
 
 {-| Reads `Bytes` off the stream and attempt to convert it into `String`. If the conversion fails,
@@ -224,7 +231,11 @@ another value out of this stream.
 -}
 cancelReadable : String -> Readable value -> Task Error {}
 cancelReadable =
-    Gren.Kernel.Stream.cancelReadable
+    cancelReadableWith Locked
+
+
+@extern(js, "Stream", "cancelReadable")
+cancelReadableWith : error -> String -> stream -> Task error {}
 
 
 -- Writable
@@ -236,7 +247,11 @@ it is read from a [Readable](#Readable) stream, or stored in some stream buffer.
 -}
 write : value -> Writable value -> Task Error (Writable value)
 write =
-    Gren.Kernel.Stream.write
+    writeWith Locked Cancelled
+
+
+@extern(js, "Stream", "write")
+writeWith : error -> (String -> error) -> value -> stream -> Task error stream
 
 
 {-| Converts the given `String` to `Bytes` and writes it to the stream.
@@ -265,14 +280,22 @@ In general you should prefer [write](#write), and reach for this function if you
 -}
 enqueue : value -> Writable value -> Task Error (Writable value)
 enqueue =
-    Gren.Kernel.Stream.enqueue
+    enqueueWith Locked
+
+
+@extern(js, "Stream", "enqueue")
+enqueueWith : error -> value -> stream -> Task error stream
 
 
 {-| Closes the stream. This indicates that no new values will be added to the stream after this point.
 -}
 closeWritable : Writable value -> Task Error {}
 closeWritable =
-    Gren.Kernel.Stream.closeWritable
+    closeWritableWith Locked Cancelled
+
+
+@extern(js, "Stream", "closeWritable")
+closeWritableWith : error -> (String -> error) -> stream -> Task error {}
 
 
 {-| Cancels the stream. This indicates a fatal error, and the given `String` should explain in a human-readable
@@ -280,7 +303,11 @@ way what that error is. If the stream contains a buffer, the buffer is dropped.
 -}
 cancelWritable : String -> Writable value -> Task Error {}
 cancelWritable =
-    Gren.Kernel.Stream.cancelWritable
+    cancelWritableWith Locked
+
+
+@extern(js, "Stream", "cancelWritable")
+cancelWritableWith : error -> String -> stream -> Task error {}
 
 
 -- Transformation
@@ -291,7 +318,8 @@ After data is written, and before it is placed on the readable stream, it goes t
 can alter the data, or even drop it entirely.
 -}
 type Transformation read write =
-    -- Note: Implementation in kernel code
+    -- Note: the value is a web TransformStream, crossing externs at a type
+    -- variable (m1b-extern.md §H17)
     Transformation
 
 
@@ -318,7 +346,11 @@ empty or capacity is 0, the read will succeed once there's a value to be read.
 -}
 identityTransformationWithOptions : { readCapacity : Int, writeCapacity : Int } -> Task x (Transformation data data)
 identityTransformationWithOptions { readCapacity, writeCapacity } =
-    Gren.Kernel.Stream.identityTransformation (max 1 readCapacity) (max 1 writeCapacity)
+    identityTransformationWith (max 1 readCapacity) (max 1 writeCapacity)
+
+
+@extern(js, "Stream", "identityTransformation")
+identityTransformationWith : Int -> Int -> Task x transformation
 
 
 {-| A [Transformation](#Transformation) that ignores all data written to it. The readable stream never outputs data,
@@ -374,13 +406,39 @@ customTransformationWithOptions
        }
     -> Task x (Transformation input output)
 customTransformationWithOptions fn { initialState, readCapacity, writeCapacity } =
-    Gren.Kernel.Stream.customTransformation
+    customTransformationWith
         (customTransformationActionWrapper fn)
+        .ctor
+        .state
+        .send
+        .cancelReason
         initialState
         (max 0 readCapacity)
         (max 0 writeCapacity)
 
 
+{-| The implementation calls `step` for each chunk and reads what it answers
+through the four functions after it, since it cannot name a record's fields
+(D192).
+-}
+@extern(js, "Stream", "customTransformation")
+customTransformationWith
+    : (state -> input -> action)
+    -> (action -> String)
+    -> (action -> state)
+    -> (action -> Array output)
+    -> (action -> String)
+    -> state
+    -> Int
+    -> Int
+    -> Task x transformation
+
+
+customTransformationActionWrapper
+    : (state -> input -> CustomTransformationAction state output)
+    -> state
+    -> input
+    -> { ctor : String, state : state, send : Array output, cancelReason : String }
 customTransformationActionWrapper toAction =
     \state input ->
         when toAction state input is
@@ -417,14 +475,22 @@ customTransformationActionWrapper toAction =
 -}
 readable : Transformation read write -> Readable read
 readable =
-    Gren.Kernel.Stream.readable
+    readableOf
+
+
+@externPure(js, "Stream", "readable")
+readableOf : transformation -> stream
 
 
 {-| Retrieve the [Writable](#Writable) stream of a [Transformation](#Transformation).
 -}
 writable : Transformation read write -> Writable write
 writable =
-    Gren.Kernel.Stream.writable
+    writableOf
+
+
+@externPure(js, "Stream", "writable")
+writableOf : transformation -> stream
 
 
 {-| When data becomes available on a [Readable](#Readable) stream, immediatly write that data to
@@ -435,7 +501,11 @@ On success, the [Readable](#Readable) stream of the [Transformation](#Transforma
 -}
 pipeThrough : Transformation input output -> Readable input -> Task Error (Readable output)
 pipeThrough =
-    Gren.Kernel.Stream.pipeThrough
+    pipeThroughWith Locked
+
+
+@extern(js, "Stream", "pipeThrough")
+pipeThroughWith : error -> transformation -> readable -> Task error stream
 
 
 {-| Same as [pipeThrough](#pipeThrough), except the [Transformation](#Transformation) is resolved from a
@@ -452,7 +522,11 @@ the other. The `Task` will resolve once the [Writable](#Writable) stream is clos
 -}
 pipeTo : Writable data -> Readable data -> Task Error {}
 pipeTo =
-    Gren.Kernel.Stream.pipeTo
+    pipeToWith Locked Cancelled
+
+
+@extern(js, "Stream", "pipeTo")
+pipeToWith : error -> (String -> error) -> writable -> readable -> Task error {}
 
 
 -- Built-in transformations
@@ -462,53 +536,69 @@ pipeTo =
 -}
 textEncoder : Task x (Transformation String Bytes)
 textEncoder =
-    Gren.Kernel.Stream.textEncoder
+    textEncoderStream
+
+
+@extern(js, "Stream", "textEncoder")
+textEncoderStream : Task x transformation
 
 
 {-| Transforms `Bytes` to `String`. If the conversion fails, the streams will be cancelled.
 -}
 textDecoder : Task x (Transformation Bytes String)
 textDecoder =
-    Gren.Kernel.Stream.textDecoder
+    textDecoderStream
+
+
+@extern(js, "Stream", "textDecoder")
+textDecoderStream : Task x transformation
 
 
 {-| Compress `Bytes` using the `gzip` algorithm.
 -}
 gzipCompression : Task x (Transformation Bytes Bytes)
 gzipCompression =
-    Gren.Kernel.Stream.compressor "gzip"
+    compressor "gzip"
 
 
 {-| Compress `Bytes` using the `deflate` algorithm.
 -}
 deflateCompression : Task x (Transformation Bytes Bytes)
 deflateCompression =
-    Gren.Kernel.Stream.compressor "deflate"
+    compressor "deflate"
 
 
 {-| Compress `Bytes` using the `deflate` algorithm, without leading headers.
 -}
 deflateRawCompression : Task x (Transformation Bytes Bytes)
 deflateRawCompression =
-    Gren.Kernel.Stream.compressor "deflate-raw"
+    compressor "deflate-raw"
 
 
 {-| Decompress `Bytes` using the `gzip` algorithm.
 -}
 gzipDecompression : Task x (Transformation Bytes Bytes)
 gzipDecompression =
-    Gren.Kernel.Stream.decompressor "gzip"
+    decompressor "gzip"
 
 
 {-| Decompress `Bytes` using the `deflate` algorithm.
 -}
 deflateDecompression : Task x (Transformation Bytes Bytes)
 deflateDecompression =
-    Gren.Kernel.Stream.decompressor "deflate"
+    decompressor "deflate"
 
 
 {-| Decompress `Bytes` using the `deflate` algorithm, without leading headers.
 -}
 deflateRawDecompression : Task x (Transformation Bytes Bytes)
 deflateRawDecompression =
-    Gren.Kernel.Stream.decompressor "deflate-raw"
+    decompressor "deflate-raw"
+
+
+@extern(js, "Stream", "compressor")
+compressor : String -> Task x transformation
+
+
+@extern(js, "Stream", "decompressor")
+decompressor : String -> Task x transformation

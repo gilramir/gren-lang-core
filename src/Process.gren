@@ -42,7 +42,6 @@ longer. That’s kind of what Gren is all about.
 -}
 
 import Basics exposing (Float, Never)
-import Gren.Kernel.Process
 import Gren.Kernel.Scheduler
 import Platform
 import Task exposing (Task)
@@ -90,9 +89,8 @@ delay work until later.
 [setTimeout]: https://developer.mozilla.org/en-US/docs/Web/API/WindowTimers/setTimeout
 
 -}
+@extern(js, "Process", "sleep")
 sleep : Float -> Task x {}
-sleep =
-    Gren.Kernel.Process.sleep
 
 
 {-| Sometimes you `spawn` a process, but later decide it would be a waste to

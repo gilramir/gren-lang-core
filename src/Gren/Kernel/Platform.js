@@ -2,7 +2,6 @@
 
 import Gren.Kernel.Debug exposing (crash)
 import Gren.Kernel.Json exposing (run, wrap, unwrap, errorToString)
-import Gren.Kernel.Process exposing (sleep)
 import Gren.Kernel.Scheduler exposing (andThen, binding, rawSend, rawSpawn, receive, send, succeed, fail)
 import Array exposing (pushLast)
 import Result exposing (isOk)
@@ -369,7 +368,16 @@ function _Platform_setupOutgoingPort(name, isBytes) {
 
   // CREATE MANAGER
 
-  var init = __Process_sleep(0);
+  // `Process.sleep 0`, which was kernel code and is an extern now
+  // (m1b-extern.md §H8 step 6).
+  var init = __Scheduler_binding(function (callback) {
+    var id = setTimeout(function () {
+      callback(__Scheduler_succeed({}));
+    }, 0);
+    return function () {
+      clearTimeout(id);
+    };
+  });
 
   _Platform_effectManagers[name].__init = init;
   _Platform_effectManagers[name].__onEffects = F3(

@@ -98,7 +98,11 @@ type Posix = Posix Int64
 -}
 now : Task x Posix
 now =
-  Gren.Kernel.Time.now millisToPosix
+  nowWith millisToPosix
+
+
+@extern(js, "Time", "now")
+nowWith : (Int64 -> posix) -> Task x posix
 
 
 {-| Turn a `Posix` time into the number of milliseconds since 1970 January 1
@@ -315,7 +319,11 @@ cannot do it myself unfortunately.
 -}
 here : Task x Zone
 here =
-  Gren.Kernel.Time.here {}
+  hereWith (\offset -> customZone offset [])
+
+
+@extern(js, "Time", "here")
+hereWith : (Int -> zone) -> Task x zone
 
 
 
@@ -726,7 +734,11 @@ IANA data you loaded yourself.
 -}
 getZoneName : Task x ZoneName
 getZoneName =
-  Gren.Kernel.Time.getZoneName {}
+  getZoneNameWith Name Offset
+
+
+@extern(js, "Time", "getZoneName")
+getZoneNameWith : (String -> name) -> (Int -> name) -> Task x name
 
 
 {-| **Intended for package authors.**
