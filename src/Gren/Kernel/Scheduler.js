@@ -266,6 +266,68 @@ function _Scheduler_spawn(task) {
   });
 }
 
+// MAIN
+
+// A `main : Task Never {}` (D72; geng-lang m1b-source.md §SO12). What the
+// export's `init` is: a function, as a `Program`'s is, which runs the task in a
+// process of its own. The type says the task cannot fail, so the program ends in
+// one of two ways, and each ends the process (D257):
+//
+// - `main` completes, and the status is `process.exitCode`, which is 0 unless
+//   the program chose one with `Node.setExitCode`.
+// - something throws, in the first slice of the task, which runs inside this
+//   call, or in any later one, which runs from a host callback. Both are
+//   reported the same way, the error on standard error and status 1, where
+//   left to node the first would be caught by the output's `try` and exit 0
+//   (compiler#385) and the second would print a source line before the error.
+function _Scheduler_runMain(task) {
+  return function (args) {
+    var host = typeof process !== "undefined" && process.stdout && process.stderr;
+    if (host) {
+      process.on("uncaughtException", _Scheduler_mainCrashed);
+    }
+    try {
+      _Scheduler_rawSpawn(
+        A2(
+          _Scheduler_andThen,
+          function (value) {
+            if (host) {
+              _Scheduler_mainEnd();
+            }
+            return _Scheduler_succeed(value);
+          },
+          task,
+        ),
+      );
+    } catch (e) {
+      if (!host) {
+        throw e;
+      }
+      _Scheduler_mainCrashed(e);
+    }
+  };
+}
+
+function _Scheduler_mainCrashed(e) {
+  console.error(e);
+  process.exitCode = 1;
+  _Scheduler_mainEnd();
+}
+
+// The program ends when `main` does (D72), even if a host resource it opened
+// and did not close would keep node's event loop alive: nothing can be
+// listening to it, since only `main` could have been. Standard output and error
+// are written through first, because a write to a pipe is asynchronous on POSIX
+// and `process.exit` drops what is still queued (§SO12 measured 64 KiB of 8 MiB
+// arriving). `process.exit()` takes `process.exitCode`.
+function _Scheduler_mainEnd() {
+  process.stdout.write("", function () {
+    process.stderr.write("", function () {
+      process.exit();
+    });
+  });
+}
+
 function _Scheduler_rawSend(proc, msg) {
   proc.__mailbox.push(msg);
   _Scheduler_enqueue(proc);

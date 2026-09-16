@@ -25,6 +25,7 @@
             "Inspect"
         ],
         "Effects": [
+            "Console",
             "Platform",
             "Platform.Cmd",
             "Platform.Sub",

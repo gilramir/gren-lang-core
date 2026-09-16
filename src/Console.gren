@@ -1,0 +1,44 @@
+module Console exposing (write, writeErr)
+
+{-| The one effect every runtime has: text, out.
+
+`Console` is for a program's report of itself — its output, its errors, a log
+line. It writes a `String` and nothing else, and it cannot fail: a write nobody
+can see is not an error the program could do anything about. Anything richer,
+bytes or reading or a stream to hand around, is `Stream`, which is a runtime's
+to give and not every runtime has.
+
+Neither function adds a newline. What is written is exactly the string.
+
+@docs write, writeErr
+
+-}
+
+import String exposing (String)
+import Task exposing (Task)
+
+
+{-| Write a string to standard output.
+
+The task completes once the runtime has taken the text, so what one `write`
+writes comes before what the next one does, and before the program ends.
+
+    main : Task Never {}
+    main =
+        Console.write "hello\n"
+
+-}
+@extern(js, "Console", "write")
+write : String -> Task x {}
+
+
+{-| Write a string to standard error, as `write` writes to standard output.
+
+    main : Task Never {}
+    main =
+        run
+            |> Task.onError (\error -> Console.writeErr (inspect error ++ "\n"))
+
+-}
+@extern(js, "Console", "writeErr")
+writeErr : String -> Task x {}
