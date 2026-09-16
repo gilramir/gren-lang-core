@@ -26,11 +26,14 @@ function _Scheduler_fail(error) {
   };
 }
 
+// A binding node holds only what to run. The wait it starts, and the function
+// that cancels that wait, belong to the process that runs it (D286), because a
+// node is a value: an extern with no arguments is one node for the whole
+// program, and two processes may be waiting on it at once.
 function _Scheduler_binding(callback) {
   return {
     $: __1_BINDING,
     __callback: callback,
-    __kill: null,
   };
 }
 
@@ -253,6 +256,8 @@ function _Scheduler_rawSpawn(task) {
     __id: _Scheduler_guid++,
     __root: task,
     __stack: null,
+    __wait: null,
+    __cancel: null,
   };
 
   _Scheduler_enqueue(proc);
@@ -373,16 +378,19 @@ function _Scheduler_kill(proc) {
 function _Scheduler_rawKill(proc) {
   var steps = [];
 
-  var task = proc.__root;
-  if (task && task.$ === __1_BINDING && task.__kill) {
-    // A kill function returns nothing, or the task its *own* cancellation has
-    // left to do. `concurrent`'s below is the only one that returns anything:
-    // the other ten in `core` and `node` are a `clearTimeout`, a
-    // `clearInterval`, an `abort`, a `close`, two `kill`s and four `off`s, and
-    // every one of them answers `undefined`. It is sequenced first, so an
-    // inner scope is finished with before this process's own handlers run:
-    // innermost-first holds across a `concurrent` as well as within one.
-    var pending = task.__kill();
+  // A process that is waiting stops waiting here, whether or not the wait can
+  // be cancelled: clearing `__wait` is what makes the operation's callback do
+  // nothing when it comes, and most operations have no cancel function.
+  if (proc.__wait) {
+    var cancel = proc.__cancel;
+    proc.__wait = null;
+    proc.__cancel = null;
+    // A cancel function returns nothing, or the task its *own* cancellation
+    // has left to do. `concurrent`'s scope is the only one that returns
+    // anything. It is sequenced first, so an inner scope is finished with
+    // before this process's own handlers run: innermost-first holds across a
+    // `concurrent` as well as within one.
+    var pending = typeof cancel === "function" ? cancel() : null;
     if (pending) {
       steps.push(_Scheduler_always(pending));
     }
@@ -418,6 +426,8 @@ type alias Process =
   , root : Task
   , stack : null | { $: SUCCEED | FAIL, a: callback, b: stack }
                  | { $: RELEASE, a: () -> Task Never {}, b: stack }
+  , wait : null | {}               the token of the wait in progress
+  , cancel : null | () -> ?Task    that wait's cancel function
   }
 
 */
@@ -463,10 +473,29 @@ function _Scheduler_step(proc) {
       proc.__root = proc.__stack.__callback(proc.__root.__value);
       proc.__stack = proc.__stack.__rest;
     } else if (rootTag === __1_BINDING) {
-      proc.__root.__kill = proc.__root.__callback(function (newRoot) {
+      // Each wait is a fresh token (D286). The callback answers only the wait
+      // that is still current: one that comes after a kill, or a second one
+      // for the same wait, finds a different token or none and does nothing.
+      // Without that, a killed process ran on once an operation with no
+      // cancel function finished, and unwound into release frames its kill
+      // had already emptied (m1b-source.md §SO22.3).
+      var wait = {};
+      proc.__wait = wait;
+      proc.__cancel = null;
+      var cancel = proc.__root.__callback(function (newRoot) {
+        if (proc.__wait !== wait) {
+          return;
+        }
+        proc.__wait = null;
+        proc.__cancel = null;
         proc.__root = newRoot;
         _Scheduler_enqueue(proc);
       });
+      // A callback that answered before returning has already ended the
+      // wait, and its cancel function has nothing left to cancel.
+      if (proc.__wait === wait) {
+        proc.__cancel = cancel;
+      }
       return;
     } else if (rootTag === __1_BRACKET) {
       proc.__stack = {

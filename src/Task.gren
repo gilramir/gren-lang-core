@@ -35,7 +35,7 @@ HTTP requests or writing to a database.
 -}
 
 import Array exposing (Array)
-import Basics exposing ((<<), (|>), Never)
+import Basics exposing ((//), (<<), (|>), Never)
 import Gren.Kernel.Scheduler
 import Maybe exposing (Maybe(..))
 import Result exposing (Result(..))
@@ -199,8 +199,30 @@ sequence fails.
 
 -}
 sequence : Array (Task x a) -> Task x (Array a)
-sequence =
-    Array.foldr (\task combined -> task |> andThen (\x -> map (Array.pushFirst x) combined)) (succeed []) 
+sequence tasks =
+    -- The first half, then the second, appended. A fold that put each result
+    -- on the front of the rest copied the array once per task, so 100,000
+    -- tasks took 20 seconds; this copies each result once per level
+    -- (D287, geng-lang `m1b-source.md` §SO22.4).
+    when Array.length tasks is
+        0 ->
+            succeed []
+
+        1 ->
+            when Array.first tasks is
+                Just task ->
+                    map (\x -> [ x ]) task
+
+                Nothing ->
+                    succeed []
+
+        n ->
+            let
+                half =
+                    n // 2
+            in
+            sequence (Array.slice 0 half tasks)
+                |> andThen (\first -> map (\second -> Array.prepend first second) (sequence (Array.slice half n tasks)))
 
 
 {-| Start with an array of tasks, and turn them into a single task that returns a
