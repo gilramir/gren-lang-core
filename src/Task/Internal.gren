@@ -1,0 +1,24 @@
+module Task.Internal exposing (Task)
+
+{-| The type of a `Task`, in a module `core` does not expose
+(`m1b-source.md` §SO11, after D233's `Bytes.Transient` and D240's
+`Array.Transient`).
+
+It was declared in `Platform`, which is the module close-out item 4 deletes, and
+it cannot simply move into `Task`: `Platform.sendToApp` and `sendToSelf` answer
+a `Task`, and `Task`'s own effect manager names `Platform.Router`, so the two
+modules would import each other. A third module both can import is the same
+answer the two transients gave to the same problem, and it is where the type
+stays once `Platform` is gone.
+
+A `Task` has no constructor that Geng can reach. The scheduler builds its nodes
+in JavaScript, and until the `task_` group lands (D246) `Task`'s combinators are
+the kernel's.
+
+-}
+
+
+{-| A description of something to do, which does nothing until it is run.
+-}
+type Task err ok
+    = Task

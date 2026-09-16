@@ -1,0 +1,107 @@
+module Source exposing
+    ( Source
+    , new, next, close
+    )
+
+{-| A mailbox that events arrive in and a `Task` reads.
+
+This is how a long-lived event stream reaches a Geng program: **the host pushes
+and Geng pulls** (`ffi.md` F4, D71). A package that owns a subscription takes a
+`Source` from its caller and its implementation emits into it; the program reads
+with [`next`](#next) in an ordinary loop.
+
+    watchAndReport : FileSystem.Permission -> Path -> Task x {}
+    watchAndReport permission path =
+        Task.bracket Source.new Source.close <| \events ->
+            FileSystem.watch permission events path
+                |> Task.andThen (\_ -> report events)
+
+    report : Source WatchEvent -> Task x {}
+    report events =
+        Source.next events
+            |> Task.andThen
+                (\event ->
+                    when event is
+                        Nothing ->
+                            Task.succeed {}
+
+                        Just e ->
+                            Console.write (inspect e)
+                                |> Task.andThen (\_ -> report events)
+                )
+
+**Fan-in is free.** Many implementations may emit into one source, and the
+reader sees every event in the order they arrived. That is what replaces
+`Platform.Sub`: a mailbox and a loop, with no router and no compiler privilege.
+
+**A source has one reader, and nothing enforces it** (D245). A second reader
+takes events from the first rather than seeing a copy of them, the way a
+transient handed to two owners copies rather than complaining. Read a source
+from one process.
+
+@docs Source, new, next, close
+
+-}
+
+import Array exposing (Array)
+import Maybe exposing (Maybe)
+import Task exposing (Task)
+import Task.Internal
+
+
+{-| A mailbox holding events of type `msg`.
+-}
+type Source msg
+    = Source
+
+
+{-| A new, empty source.
+
+Running this allocates a mailbox, so running it twice gives two — as with any
+`Task`, the value is a description and the effect is the run.
+
+-}
+@prim("source_new")
+new : Task x (Source msg)
+
+
+{-| The next event, once there is one.
+
+This **blocks the process** until an event arrives. It answers `Nothing` when
+the source has been closed and every event already in it has been read, so a
+reader that loops until `Nothing` sees the whole stream and then stops.
+
+-}
+next : Source msg -> Task x (Maybe msg)
+next source =
+    Task.map Array.first (nextPrim source)
+
+
+{-| Close a source. Events emitted afterwards are dropped, a reader parked on
+[`next`](#next) is answered `Nothing`, and closing twice is not an error.
+
+A source that is opened for the duration of a task belongs under
+`Task.bracket`, which closes it on success, on failure and on cancellation.
+
+-}
+@prim("source_close")
+close : Source msg -> Task x {}
+
+
+
+-- THE PRIMITIVE BEHIND `next`
+
+
+{-| `source_next` answers an array rather than a `Maybe` — empty once the source
+is closed and drained, one element otherwise — and this is where it becomes the
+`Maybe` the caller wants (D254).
+
+The reason is the one `arr_get` had for answering an `a` and leaving
+`Array.get`'s `Maybe` to Geng (D239), except that here it is forced rather than
+chosen: the primitive's JavaScript is emitted by the backend, and a `Just` built
+there would name a constructor the linker had no reason to keep, since a type
+that mentions `Maybe` creates no dependency on its constructors.
+
+-}
+@prim("source_next")
+nextPrim : Source msg -> Task x (Array msg)

@@ -29,6 +29,7 @@
             "Platform.Cmd",
             "Platform.Sub",
             "Process",
+            "Source",
             "Task",
             "Extern"
         ],

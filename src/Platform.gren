@@ -34,6 +34,7 @@ import Gren.Kernel.Platform
 import Gren.Kernel.Scheduler
 import Platform.Cmd exposing (Cmd)
 import Platform.Sub exposing (Sub)
+import Task.Internal
 
 
 
@@ -83,11 +84,12 @@ worker =
 
 
 {-| Head over to the documentation for the [`Task`](Task) module for more
-information on this. It is only defined here because it is a platform
-primitive.
+information on this. It is declared in the unexposed `Task.Internal` and aliased
+here, because this module is the one close-out item 4 deletes and the type has
+to outlive it (`m1b-source.md` §SO11).
 -}
-type Task err ok
-    = Task
+type alias Task err ok =
+    Task.Internal.Task err ok
 
 
 {-| Head over to the documentation for the [`Process`](Process) module for

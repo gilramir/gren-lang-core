@@ -41,6 +41,7 @@ import Maybe exposing (Maybe(..))
 import Platform
 import Platform.Cmd exposing (Cmd)
 import Result exposing (Result(..))
+import Task.Internal
 
 
 {-| Here are some common tasks:
@@ -64,7 +65,7 @@ to tell me the current POSIX time" does not complete the task! You need
 
 -}
 type alias Task x a =
-    Platform.Task x a
+    Task.Internal.Task x a
 
 
 
