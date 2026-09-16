@@ -36,9 +36,8 @@ function read(locked, closed, cancelled, stream, succeed, fail) {
   }
 
   const reader = stream.getReader();
-  reader
-    .read()
-    .then(({ done, value }) => {
+  reader.read().then(
+    ({ done, value }) => {
       reader.releaseLock();
 
       if (done) {
@@ -46,11 +45,12 @@ function read(locked, closed, cancelled, stream, succeed, fail) {
       }
 
       succeed(toDataView(value));
-    })
-    .catch((err) => {
+    },
+    (err) => {
       reader.releaseLock();
       fail(cancelled(cancellationErrorString(err)));
-    });
+    },
+  );
 }
 
 function write(locked, cancelled, value, stream, succeed, fail) {
@@ -67,12 +67,14 @@ function write(locked, cancelled, value, stream, succeed, fail) {
       writer.releaseLock();
       return writePromise;
     })
-    .then(() => {
-      succeed(stream);
-    })
-    .catch((err) => {
-      fail(cancelled(cancellationErrorString(err)));
-    });
+    .then(
+      () => {
+        succeed(stream);
+      },
+      (err) => {
+        fail(cancelled(cancellationErrorString(err)));
+      },
+    );
 }
 
 function enqueue(locked, value, stream, succeed, fail) {
@@ -117,16 +119,16 @@ function closeWritable(locked, cancelled, stream, succeed, fail) {
   }
 
   const writer = stream.getWriter();
-  writer
-    .close()
-    .then(() => {
+  writer.close().then(
+    () => {
       writer.releaseLock();
       succeed();
-    })
-    .catch((err) => {
+    },
+    (err) => {
       writer.releaseLock();
       fail(cancelled(cancellationErrorString(err)));
-    });
+    },
+  );
 }
 
 function pipeThrough(locked, transformer, readable, succeed, fail) {
@@ -142,14 +144,14 @@ function pipeTo(locked, cancelled, writable, readable, succeed, fail) {
     return fail(locked);
   }
 
-  readable
-    .pipeTo(writable)
-    .then(() => {
+  readable.pipeTo(writable).then(
+    () => {
       succeed();
-    })
-    .catch((err) => {
+    },
+    (err) => {
       fail(cancelled(cancellationErrorString(err)));
-    });
+    },
+  );
 }
 
 function identityTransformation(readCapacity, writeCapacity, succeed, fail) {

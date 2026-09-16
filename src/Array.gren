@@ -79,8 +79,16 @@ In the above example, we create an array containing 3 integers
 starting at 5.
 -}
 initialize : Int -> Int -> (Int -> a) -> Array a
-initialize =
-    Gren.Kernel.Array.initialize
+initialize len offset fn =
+    -- A count below one is the empty array, not a crash: the kernel's
+    -- `new Array(size)` throws `RangeError: Invalid array length` for a
+    -- negative one, where every other size-shaped argument in this module
+    -- answers empty (D242, `m1b-arr-prim.md` §AR5.4). Stock Gren still throws.
+    if len < 1 then
+        []
+
+    else
+        Gren.Kernel.Array.initialize len offset fn
 
 
 {-| Create an array with `n` copies of a value:
@@ -846,7 +854,15 @@ eqFrom index a b =
                     False
 
                 Just y ->
-                    eq x y && eqFrom (index + 1) a b
+                    -- Not `eq x y && eqFrom …`: `&&` is an expression, so the
+                    -- call under it is not a tail call, and `==` of two
+                    -- 9,000-element arrays was a stack overflow (D241,
+                    -- `m1b-arr-prim.md` §AR5.2).
+                    if eq x y then
+                        eqFrom (index + 1) a b
+
+                    else
+                        False
 
 
 compareFrom : Ord a => Int -> Array a -> Array a -> Order
