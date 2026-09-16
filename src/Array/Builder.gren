@@ -9,64 +9,68 @@ module Array.Builder exposing
 Unless you have a performance problem, it's recommended to stick with the functions
 in the `Array` module.
 
+A `Builder` *is* the `tr_` transient (`m1b-arr-prim.md` D240), and this module
+is the public face of it.
+
 @docs Builder, empty, fromArray, pushLast, append, toArray
 
 -}
 
 import Array exposing (Array)
-import Basics exposing (Int, clamp)
-import Gren.Kernel.Array
+import Array.Transient as T
+import Basics exposing (..)
 
 
-{-| A `Builder` represents an `Array` under construction. The functionality
-of this type is intentionally limited. You can only create it, add elements to
-it and convert it to an `Array`. Any other operation is out of scope. In return,
-you get a faster way of building `Array`s.
+{-| An `Array` under construction.
 -}
-type Builder a =
-    -- NOTE: Actual implementation in kernel code
-    Builder
+type alias Builder a =
+    T.Transient a
 
 
 {-| Creates a [Builder](#Builder) without any elements.
 
 The `Int` argument lets you specify the amount of elements you expect
-to end up in the final `Array`. Nothing bad happens if you pass a wrong
-value, but being exact gives you a tiny bit more performance.
-
-In other words: it's ok to pass `0`.
+to end up in the final `Array`.
 -}
 empty : Int -> Builder a
 empty capacity =
-    -- The ceiling is `Random.maxInt`, written out: importing `Random` for one
-    -- constant put `Task` and `Platform` above this module, and `String`, which
-    -- is below both, needs a linear way to build an array.
-    Gren.Kernel.Array.emptyBuilder (clamp 0 2147483647 capacity)
+    T.new (clamp 0 2147483647 capacity)
 
 
 {-| Creates a [Builder](#Builder) based on an existing `Array`.
 -}
+@prim("tr_from_array")
 fromArray : Array a -> Builder a
-fromArray =
-    Gren.Kernel.Array.toBuilder
 
 
 {-| Add a single element to a [Builder](#Builder).
 -}
 pushLast : a -> Builder a -> Builder a
-pushLast =
-    Gren.Kernel.Array.pushToBuilder
+pushLast value builder =
+    T.push builder value
 
 
 {-| Adds the elements of an `Array` to the end of a [Builder](#Builder).
 -}
 append : Array a -> Builder a -> Builder a
-append =
-    Gren.Kernel.Array.appendToBuilder
+append array builder =
+    appendHelp array 0 (Array.length array) builder
+
+
+appendHelp : Array a -> Int -> Int -> Builder a -> Builder a
+appendHelp array index len builder =
+    if index < len then
+        appendHelp array (index + 1) len (T.push builder (unsafeGet array index))
+
+    else
+        builder
+
+
+@prim("arr_get")
+unsafeGet : Array a -> Int -> a
 
 
 {-| Converts a [Builder](#Builder) to an `Array`.
 -}
+@prim("tr_to_array")
 toArray : Builder a -> Array a
-toArray =
-    Gren.Kernel.Array.fromBuilder

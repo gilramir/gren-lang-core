@@ -1,0 +1,50 @@
+module Array.Transient exposing
+    ( Transient
+    , new
+    , push
+    , set
+    , get
+    , length
+    )
+
+{-| The array transient every loop in `Array` builds into and which
+`Array.Builder` is an alias for, and which `core` does not expose
+(`m1b-arr-prim.md` D240, after D233's `Bytes.Transient` and D221's
+`Json.Value`).
+
+A transient is used linearly: each `tr_` primitive answers the transient it was
+given, and nothing reads one after passing it on. A non-linear use is still
+correct — the primitive copies before it writes — but it costs a copy, and
+nothing checks for one.
+
+`tr_from_array` and `tr_to_array` are not here, because they mention `Array`,
+which imports this module. `Array` and `Array.Builder` each declare them where
+they use them (§BY12.2).
+
+-}
+
+import Basics exposing (Int)
+
+
+type Transient a
+    = Transient
+
+
+@prim("tr_new")
+new : Int -> Transient a
+
+
+@prim("tr_push")
+push : Transient a -> a -> Transient a
+
+
+@prim("tr_set")
+set : Transient a -> Int -> a -> Transient a
+
+
+@prim("tr_get")
+get : Transient a -> Int -> a
+
+
+@prim("tr_length")
+length : Transient a -> Int
