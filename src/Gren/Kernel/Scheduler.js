@@ -285,6 +285,7 @@ function _Scheduler_runMain(task) {
     var host = typeof process !== "undefined" && process.stdout && process.stderr;
     if (host) {
       process.on("uncaughtException", _Scheduler_mainCrashed);
+      process.once("beforeExit", _Scheduler_mainStalled);
     }
     try {
       _Scheduler_rawSpawn(
@@ -310,6 +311,19 @@ function _Scheduler_runMain(task) {
 
 function _Scheduler_mainCrashed(e) {
   console.error(e);
+  process.exitCode = 1;
+  _Scheduler_mainEnd();
+}
+
+// Node's event loop has emptied while `main` is still waiting, so nothing is
+// left that could wake it and it can never complete. Ending with status 0 would
+// say it did; this is `ffi.md` F4's rule for a source nothing can deliver to,
+// on JavaScript (D263). A completed `main` never gets here, since
+// `process.exit` does not emit `beforeExit`.
+function _Scheduler_mainStalled() {
+  console.error(
+    "main cannot complete: it is waiting for an event that nothing still running can deliver",
+  );
   process.exitCode = 1;
   _Scheduler_mainEnd();
 }

@@ -1,7 +1,9 @@
-effect module Time where { subscription = MySub } exposing
+module Time exposing
   ( Posix
   , now
+  , Timer
   , every
+  , cancel
   , posixToMillis
   , millisToPosix
   , Duration
@@ -38,7 +40,10 @@ effect module Time where { subscription = MySub } exposing
 
 {-| Functions for working with time and time zones.
 
-@docs Posix, now, every, posixToMillis, millisToPosix
+@docs Posix, now, posixToMillis, millisToPosix
+
+## Timers
+@docs Timer, every, cancel
 
 ## Durations
 
@@ -68,17 +73,14 @@ one moment a breaking change to `Time` was free.
 
 import Array exposing (Array)
 import Basics exposing (..)
-import Dict
 import Inspect
 import Int64
 import Math
 import Maybe exposing (Maybe(..))
-import Platform
-import Platform.Sub exposing (Sub)
-import Process
+import Extern exposing (Handle)
+import Source exposing (Source)
 import String exposing (String)
 import Task exposing (Task)
-import Gren.Kernel.Time
 
 
 
@@ -567,15 +569,27 @@ type Month = Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | D
 
 
 
--- SUBSCRIPTIONS
+-- TIMERS
+
+
+{-| A running timer, which delivers until it is [cancelled](#cancel).
+-}
+type Timer
+    = Timer Handle
 
 
 {-| Get the current time periodically. How often though? Well, you provide an
 interval in milliseconds (like `1000` for a second or `60 * 1000` for a minute
-or `60 * 60 * 1000` for an hour) and that is how often you get a new time!
+or `60 * 60 * 1000` for an hour) and that is how often a new time is delivered
+into the [`Source`](Source#Source) you give, made a `msg` by the function you
+give.
 
-Check out [this example](https://gren-lang.org/examples/time) to see how to use
-it in an application.
+The source is yours: many timers may deliver into one, and closing it is yours
+too. The timer runs until it is [cancelled](#cancel).
+
+    Task.bracket Source.new Source.close <| \ticks ->
+        Time.every 1000 ticks Tick
+            |> Task.andThen (\_ -> loop ticks)
 
 **This function is not for animation.** Use the [`onAnimationFrame`][af]
 function for that sort of thing! It syncs up with repaints and will end up
@@ -583,116 +597,25 @@ being much smoother for any moving visuals.
 
 [af]: /packages/gren-lang/browser/latest/Browser-Events#onAnimationFrame
 -}
-every : Float -> (Posix -> msg) -> Sub msg
-every interval tagger =
-  subscription (Every { interval = interval, toMessage = tagger })
+every : Float -> Source msg -> (Posix -> msg) -> Task x Timer
+every interval ticks tagger =
+  everyWith interval ticks (\millis -> tagger (Posix millis))
+    |> Task.map Timer
 
 
-type MySub msg =
-  Every { interval : Float, toMessage : (Posix -> msg) }
+{-| Stop a timer delivering. Cancelling one twice is not an error.
+-}
+cancel : Timer -> Task x {}
+cancel (Timer handle) =
+  cancelWith handle
 
 
-subMap : (a -> b) -> MySub a -> MySub b
-subMap f (Every { interval, toMessage = tagger }) =
-  Every { interval = interval, toMessage = (f << tagger) }
+@extern(js, "Time", "every")
+everyWith : Float -> Source msg -> (Int64 -> msg) -> Task x Handle
 
 
-
--- EFFECT MANAGER
-
-
-type alias State msg =
-  { taggers : Taggers msg
-  , processes : Processes
-  }
-
-
-type alias Processes =
-  Dict.Dict Float Platform.ProcessId
-
-
-type alias Taggers msg =
-  Dict.Dict Float (Array (Posix -> msg))
-
-
-init : Task Never (State msg)
-init =
-  Task.succeed { taggers = Dict.empty, processes = Dict.empty }
-
-
-onEffects : Platform.Router msg Float -> Array (MySub msg) -> State msg -> Task Never (State msg)
-onEffects router subs {processes} =
-  let
-    newTaggers =
-      Array.foldl addMySub Dict.empty subs
-
-    spawnArray =
-        Dict.diff newTaggers processes
-            |> Dict.keys
-
-    existingDict =
-        Dict.keepIf (\key _ -> Dict.member key newTaggers) processes
-
-    killTask =
-        Dict.diff processes newTaggers
-            |> Dict.values
-            |> Array.foldl (\id -> Task.andThen (\_ -> Process.kill id)) (Task.succeed {})
-  in
-    killTask
-      |> Task.andThen (\_ -> spawnHelp router spawnArray existingDict)
-      |> Task.andThen (\newProcesses -> Task.succeed { taggers = newTaggers, processes = newProcesses })
-
-
-addMySub : MySub msg -> Taggers msg -> Taggers msg
-addMySub (Every { interval, toMessage = tagger }) state =
-  when Dict.get interval state is
-    Nothing ->
-      Dict.set interval [tagger] state
-
-    Just taggers ->
-      Dict.set interval ([tagger] ++ taggers) state
-
-
-spawnHelp : Platform.Router msg Float -> Array Float -> Processes -> Task.Task x Processes
-spawnHelp router intervals processes =
-  when Array.get 0 intervals is
-    Nothing ->
-      Task.succeed processes
-
-    Just interval ->
-      let
-        spawnTimer =
-          Process.spawn (setInterval interval (Platform.sendToSelf router interval))
-
-        rest =
-          Array.slice 1 (Array.length intervals) intervals
-
-        spawnRest id =
-          spawnHelp router rest (Dict.set interval id processes)
-      in
-        spawnTimer
-          |> Task.andThen spawnRest
-
-
-onSelfMsg : Platform.Router msg Float -> Float -> State msg -> Task Never (State msg)
-onSelfMsg router interval state =
-  when Dict.get interval state.taggers is
-    Nothing ->
-      Task.succeed state
-
-    Just taggers ->
-      let
-        tellTaggers time =
-          Task.sequence (Array.map (\tagger -> Platform.sendToApp router (tagger time)) taggers)
-      in
-        now
-          |> Task.andThen tellTaggers
-          |> Task.andThen (\_ -> Task.succeed state)
-
-
-setInterval : Float -> Task Never {} -> Task x Never
-setInterval =
-  Gren.Kernel.Time.setInterval
+@extern(js, "Time", "cancel")
+cancelWith : Handle -> Task x {}
 
 
 

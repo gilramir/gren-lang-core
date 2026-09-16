@@ -10,25 +10,33 @@ and Geng pulls** (`ffi.md` F4, D71). A package that owns a subscription takes a
 `Source` from its caller and its implementation emits into it; the program reads
 with [`next`](#next) in an ordinary loop.
 
-    watchAndReport : FileSystem.Permission -> Path -> Task x {}
-    watchAndReport permission path =
-        Task.bracket Source.new Source.close <| \events ->
-            FileSystem.watch permission events path
-                |> Task.andThen (\_ -> report events)
+    printTicks : Int -> Task x {}
+    printTicks count =
+        Task.bracket Source.new Source.close <| \ticks ->
+            Time.every 1000 ticks identity
+                |> Task.andThen
+                    (\timer ->
+                        report count ticks
+                            |> Task.andThen (\_ -> Time.cancel timer)
+                    )
 
-    report : Source WatchEvent -> Task x {}
-    report events =
-        Source.next events
-            |> Task.andThen
-                (\event ->
-                    when event is
-                        Nothing ->
-                            Task.succeed {}
+    report : Int -> Source Time.Posix -> Task x {}
+    report remaining ticks =
+        if remaining <= 0 then
+            Task.succeed {}
 
-                        Just e ->
-                            Console.write (inspect e)
-                                |> Task.andThen (\_ -> report events)
-                )
+        else
+            Source.next ticks
+                |> Task.andThen
+                    (\tick ->
+                        when tick is
+                            Nothing ->
+                                Task.succeed {}
+
+                            Just time ->
+                                Console.write (inspect time ++ "\n")
+                                    |> Task.andThen (\_ -> report (remaining - 1) ticks)
+                    )
 
 **Fan-in is free.** Many implementations may emit into one source, and the
 reader sees every event in the order they arrived. That is what replaces
