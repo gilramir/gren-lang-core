@@ -1,5 +1,5 @@
-effect module Task where { command = MyCmd } exposing
-    ( Task, perform, attempt, execute, executeCmd
+module Task exposing
+    ( Task
     , andThen, await, succeed, fail, sequence, concurrent, race
     , map, map2, map3, andMap
     , onError, mapError
@@ -10,7 +10,7 @@ effect module Task where { command = MyCmd } exposing
 HTTP requests or writing to a database.
 
 
-@docs Task, perform, attempt, execute, executeCmd
+@docs Task
 
 
 ## Chains
@@ -38,8 +38,6 @@ import Array exposing (Array)
 import Basics exposing ((<<), (|>), Never)
 import Gren.Kernel.Scheduler
 import Maybe exposing (Maybe(..))
-import Platform
-import Platform.Cmd exposing (Cmd)
 import Result exposing (Result(..))
 import Task.Internal
 
@@ -60,8 +58,8 @@ always succeeds with the current POSIX time.
 
 More generally a task is a _description_ of what you need to do. Like a todo
 list. Or like a grocery list. Or like GitHub issues. So saying "the task is
-to tell me the current POSIX time" does not complete the task! You need
-[`perform`](#perform) tasks or [`attempt`](#attempt) tasks.
+to tell me the current POSIX time" does not complete the task! A task runs
+when it is part of the task a program's `main` is.
 
 -}
 type alias Task x a =
@@ -402,153 +400,3 @@ a cleanup that does not depend on a resource.
 finally : Task Never {} -> Task x a -> Task x a
 finally release task =
     bracket (succeed {}) (\_ -> release) (\_ -> task)
-
-
-
--- COMMANDS
-
-
-type MyCmd msg
-    = Perform (Task Never msg)
-    | ExecuteCmd (Task Never (Cmd msg))
-    | Execute (Task Never {})
-
-
-{-| Like I was saying in the [`Task`](#Task) documentation, just having a
-`Task` does not mean it is done. We must command Gren to `perform` the task:
-
-
-
-    import Task
-    import Time
-
-    type Msg
-        = Click
-        | Search String
-        | NewTime Time.Posix
-
-    getNewTime : Cmd Msg
-    getNewTime =
-        Task.perform NewTime Time.now
-
-So we have changed a task like "make delicious lasagna" into a command like
-"Hey Gren, make delicious lasagna and give it to my `update` function as a
-`Msg` value."
-
--}
-perform : (a -> msg) -> Task Never a -> Cmd msg
-perform toMessage task =
-    command (Perform (map toMessage task))
-
-
-{-| This is very similar to [`perform`](#perform) except it can handle failures!
-So we could _attempt_ to focus on a certain DOM node like this:
-
-    -- gren install gren-lang/browser
-
-
-    import Browser.Dom
-    import Task
-
-    type Msg
-        = Click
-        | Search String
-        | Focus (Result Browser.DomError {})
-
-    focus : Cmd Msg
-    focus =
-        Task.attempt Focus (Browser.Dom.focus "my-app-search-box")
-
-So the task is "focus on this DOM node" and we are turning it into the command
-"Hey Gren, attempt to focus on this DOM node and give me a `Msg` about whether
-you succeeded or failed."
-
--}
-attempt : (Result x a -> msg) -> Task x a -> Cmd msg
-attempt resultToMessage task =
-    command
-        (Perform
-            (task
-                |> andThen (succeed << resultToMessage << Ok)
-                |> onError (succeed << resultToMessage << Err)
-            )
-        )
-
-
-{-| Sometimes we want to give a command without being told how it went. Maybe we
-are logging something to the screen, or changing the scroll position of the window.
-In either case, there's really nothing for us to do afterwards. In those cases
-we can use `execute`.
--}
-execute : Task Never a -> Cmd msg
-execute task =
-    command (Execute (map (\_ -> {}) task))
-
-
-{-| This is very similar to [`execute`](#execute) except the resulting Cmd is run.
-Maybe we want to shut down a node program once a task is done.
-
-    import Node
-    import Task
-    import Stream.Log
-
-    Stream.Log.line stdout "Exiting program"
-        |> Task.map (\{} -> Node.exit)
-        |> Task.executeCmd
-
--}
-executeCmd : Task Never (Cmd msg) -> Cmd msg
-executeCmd task =
-    command (ExecuteCmd task)
-
-
-cmdMap : (a -> b) -> MyCmd a -> MyCmd b
-cmdMap tagger cmd =
-    when cmd is
-        Perform task ->
-            Perform (map tagger task)
-
-        ExecuteCmd task ->
-            ExecuteCmd (map (Platform.Cmd.map tagger) task)
-
-        Execute task ->
-            Execute task
-
-
--- MANAGER
-
-
-init : Task Never {}
-init =
-    succeed {}
-
-
-onEffects : Platform.Router msg Never -> Array (MyCmd msg) -> {} -> Task Never {}
-onEffects router commands state =
-    map
-        (\_ -> {})
-        (sequence (Array.map (spawnCmd router) commands))
-
-
-onSelfMsg : Platform.Router msg Never -> Never -> {} -> Task Never {}
-onSelfMsg _ _ _ =
-    succeed {}
-
-
-spawnCmd : Platform.Router msg Never -> MyCmd msg -> Task x {}
-spawnCmd router cmd =
-    when cmd is
-        Perform task ->
-            Gren.Kernel.Scheduler.spawn
-                (task
-                    |> andThen (Platform.sendToApp router)
-                )
-
-        ExecuteCmd task ->
-            Gren.Kernel.Scheduler.spawn
-                (task
-                    |> andThen (Gren.Kernel.Platform.executeCmd router)
-                )
-
-        Execute task ->
-            Gren.Kernel.Scheduler.spawn task

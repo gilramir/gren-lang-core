@@ -39,7 +39,7 @@ with [`next`](#next) in an ordinary loop.
                     )
 
 **Fan-in is free.** Many implementations may emit into one source, and the
-reader sees every event in the order they arrived. That is what replaces
+reader sees every event in the order they arrived. That is what replaced
 `Platform.Sub`: a mailbox and a loop, with no router and no compiler privilege.
 
 **A source has one reader, and nothing enforces it** (D245). A second reader

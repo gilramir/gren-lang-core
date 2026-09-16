@@ -19,10 +19,7 @@ import String exposing (String)
 import Char exposing (Char)
 
 import Debug
-
-import Platform exposing (Program)
-import Platform.Cmd as Cmd exposing (Cmd)
-import Platform.Sub as Sub exposing (Sub)
+import Inspect exposing (Inspect)
 ```
 
 The intention is to include things that are both extremely useful and very unlikely to overlap with anything that anyone will ever write in a package. By keeping the set of default imports relatively small, it also becomes easier to use whatever version of `map` suits your fancy. Finally, it makes it easier to figure out where the heck a function is coming from.

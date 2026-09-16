@@ -43,7 +43,6 @@ longer. That’s kind of what Gren is all about.
 
 import Basics exposing (Float, Never)
 import Gren.Kernel.Scheduler
-import Platform
 import Task exposing (Task)
 
 
@@ -59,9 +58,13 @@ sequences at the exact same time. For example, a
 concurrent, but not necessarily parallel. So even though JS runs within a
 single OS-level thread, Gren can still run things concurrently.
 
+The scheduler builds a process in JavaScript, so `Id` has no constructor that
+Geng can reach. It was `Platform.ProcessId` until `Platform` was deleted
+(`m1b-source.md` §SO19).
+
 -}
-type alias Id =
-    Platform.ProcessId
+type Id
+    = Id
 
 
 {-| Run a task in its own light-weight process. In the following example,

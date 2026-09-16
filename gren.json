@@ -26,9 +26,6 @@
         ],
         "Effects": [
             "Console",
-            "Platform",
-            "Platform.Cmd",
-            "Platform.Sub",
             "Process",
             "Source",
             "Task",

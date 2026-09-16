@@ -257,30 +257,10 @@ function _Debug_crash__DEBUG(identifier, fact1, fact2, fact3, fact4) {
           "\n\nWhat is the root? The root of your file system?",
       );
 
-    case 2:
-      var jsonErrorString = fact1;
-      throw new Error(
-        "Problem with the flags given to your Gren program on initialization.\n\n" +
-          jsonErrorString,
-      );
-
-    case 3:
-      var portName = fact1;
-      throw new Error(
-        "There can only be one port named `" +
-          portName +
-          "`, but your program has multiple.",
-      );
-
-    case 4:
-      var portName = fact1;
-      var problem = fact2;
-      throw new Error(
-        "Trying to send an unexpected type of value through port `" +
-          portName +
-          "`:\n" +
-          problem,
-      );
+    // 2, 3 and 4 were a `Program`'s flags that did not decode, two ports with
+    // one name, and a value of the wrong type sent through a port. Programs,
+    // flags and ports left with effect managers (geng-lang m1b-source.md
+    // §SO19), and nothing can throw them.
 
     // 5 was `(==)` on functions, thrown by the kernel's structural walker when
     // it reached one. D142 deleted the walker (`docs/m1b-classes.md` §G40) and

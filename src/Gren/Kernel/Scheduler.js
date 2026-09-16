@@ -1,6 +1,14 @@
 /*
 
+import Gren.Kernel.Platform exposing (export)
+
 */
+
+// Every program's output hands its `main` to `_Scheduler_runMain` below and the
+// whole to `_Platform_export`. The import is what brings `Platform.js` into a
+// build at all: the builder finds a kernel file only through an import, and
+// the `Platform` module that imported it is gone (geng-lang m1b-source.md
+// §SO19).
 
 // TASKS
 
@@ -41,13 +49,6 @@ var _Scheduler_onError = F2(function (callback, task) {
     __task: task,
   };
 });
-
-function _Scheduler_receive(callback) {
-  return {
-    $: __1_RECEIVE,
-    __callback: callback,
-  };
-}
 
 // `bracket` cannot be written on `andThen` and `onError`, because those two
 // only see a task that finished. A cancelled task does not finish: `rawKill`
@@ -252,7 +253,6 @@ function _Scheduler_rawSpawn(task) {
     __id: _Scheduler_guid++,
     __root: task,
     __stack: null,
-    __mailbox: [],
   };
 
   _Scheduler_enqueue(proc);
@@ -342,18 +342,6 @@ function _Scheduler_mainEnd() {
   });
 }
 
-function _Scheduler_rawSend(proc, msg) {
-  proc.__mailbox.push(msg);
-  _Scheduler_enqueue(proc);
-}
-
-var _Scheduler_send = F2(function (proc, msg) {
-  return _Scheduler_binding(function (callback) {
-    _Scheduler_rawSend(proc, msg);
-    callback(_Scheduler_succeed({}));
-  });
-});
-
 function _Scheduler_kill(proc) {
   return _Scheduler_binding(function (callback) {
     var pending = _Scheduler_rawKill(proc);
@@ -430,7 +418,6 @@ type alias Process =
   , root : Task
   , stack : null | { $: SUCCEED | FAIL, a: callback, b: stack }
                  | { $: RELEASE, a: () -> Task Never {}, b: stack }
-  , mailbox : [msg]
   }
 
 */
@@ -488,11 +475,6 @@ function _Scheduler_step(proc) {
         __rest: proc.__stack,
       };
       proc.__root = proc.__root.__task;
-    } else if (rootTag === __1_RECEIVE) {
-      if (proc.__mailbox.length === 0) {
-        return;
-      }
-      proc.__root = proc.__root.__callback(proc.__mailbox.shift());
     } // if (rootTag === __1_AND_THEN || rootTag === __1_ON_ERROR)
     else {
       proc.__stack = {
