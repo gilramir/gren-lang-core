@@ -36,7 +36,6 @@ HTTP requests or writing to a database.
 
 import Array exposing (Array)
 import Basics exposing ((//), (<<), (|>), Never)
-import Gren.Kernel.Scheduler
 import Maybe exposing (Maybe(..))
 import Result exposing (Result(..))
 import Task.Internal
@@ -82,9 +81,8 @@ type alias Task x a =
             |> Task.andThen (\t -> Task.succeed (Time.posixToMillis t))
 
 -}
+@prim("task_succeed")
 succeed : a -> Task x a
-succeed =
-    Gren.Kernel.Scheduler.succeed
 
 
 {-| A task that fails immediately when run. Like with `succeed`, this can be
@@ -98,9 +96,8 @@ used with `andThen` to check on the outcome of another task.
         Task.fail NotFound
 
 -}
+@prim("task_fail")
 fail : x -> Task x a
-fail =
-    Gren.Kernel.Scheduler.fail
 
 
 
@@ -149,9 +146,8 @@ If one request fails and the other is still in-flight, the in-flight task will b
 [time]: Time
 
 -}
+@prim("task_map2")
 map2 : (a -> b -> result) -> Task x a -> Task x b -> Task x result
-map2 =
-    Gren.Kernel.Scheduler.map2
 
 
 {-| -}
@@ -250,9 +246,8 @@ In practice this means CPU bound tasks (e.g. generate a cryptographic hash) won'
 IO bound tasks however (e.g. make a HTTP request and wait until the response comes back) may get a noticable speed boost from `concurrent`.
 
 -}
+@prim("task_concurrent")
 concurrent : Array (Task x a) -> Task x (Array a)
-concurrent =
-    Gren.Kernel.Scheduler.concurrent
 
 
 {-| Run tasks at the same time and take whichever one finishes first. The
@@ -291,9 +286,8 @@ and say what an empty one means:
             Task.fail NoMirrors
 
 -}
+@prim("task_race")
 race : Task x a -> Array (Task x a) -> Task x a
-race first rest =
-    Gren.Kernel.Scheduler.race (Array.pushFirst first rest)
 
 
 
@@ -317,9 +311,8 @@ now:
 First the process sleeps for an hour **and then** it tells us what time it is.
 
 -}
+@prim("task_and_then")
 andThen : (a -> Task x b) -> Task x a -> Task x b
-andThen =
-    Gren.Kernel.Scheduler.andThen
 
 
 {-| This is like [andThen](andThen) but the arguments are reversed. The callback
@@ -339,7 +332,7 @@ code where each callback involves more logic.
 -}
 await : Task x a -> (a -> Task x b) -> Task x b
 await tsk callback =
-    Gren.Kernel.Scheduler.andThen callback tsk
+    andThen callback tsk
 
 
 -- ERRORS
@@ -357,9 +350,8 @@ callback to recover.
       -- Task.succeed 9
 
 -}
+@prim("task_on_error")
 onError : (x -> Task y a) -> Task x a -> Task y a
-onError =
-    Gren.Kernel.Scheduler.onError
 
 
 {-| Transform the error value. This can be useful if you need a bunch of error
@@ -406,9 +398,8 @@ Nested brackets release innermost-first, in the order the resources were
 acquired reversed.
 
 -}
+@prim("task_bracket")
 bracket : Task x r -> (r -> Task Never {}) -> (r -> Task x a) -> Task x a
-bracket =
-    Gren.Kernel.Scheduler.bracket
 
 
 {-| Run a task, and run a second one afterwards whatever the first one did.

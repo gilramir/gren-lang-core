@@ -11,9 +11,9 @@ imported each other, and a third module both could import was the answer the
 two transients gave to the same problem. `Source` and `Extern` build tasks
 without being `Task`, so the type stays here.
 
-A `Task` has no constructor that Geng can reach. The scheduler builds its nodes
-in JavaScript, and until the `task_` group lands (D246) `Task`'s combinators are
-the kernel's.
+A `Task` has no constructor that Geng can reach. Its nodes are built by the
+`task_` primitives, which `Task` declares, and run by the backend's scheduler
+(D246, `m1b-source.md` §SO24).
 
 -}
 

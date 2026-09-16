@@ -62,18 +62,3 @@ var _Utils_compare = F2(function (x, y) {
   return n < 0 ? __Basics_LT : n ? __Basics_GT : __Basics_EQ;
 });
 
-// RECORDS
-
-function _Utils_update(oldRecord, updatedFields) {
-  var newRecord = {};
-
-  for (var key in oldRecord) {
-    newRecord[key] = oldRecord[key];
-  }
-
-  for (var key in updatedFields) {
-    newRecord[key] = updatedFields[key];
-  }
-
-  return newRecord;
-}

@@ -42,7 +42,6 @@ longer. That’s kind of what Gren is all about.
 -}
 
 import Basics exposing (Float, Never)
-import Gren.Kernel.Scheduler
 import Task exposing (Task)
 
 
@@ -58,8 +57,7 @@ sequences at the exact same time. For example, a
 concurrent, but not necessarily parallel. So even though JS runs within a
 single OS-level thread, Gren can still run things concurrently.
 
-The scheduler builds a process in JavaScript, so `Id` has no constructor that
-Geng can reach. It was `Platform.ProcessId` until `Platform` was deleted
+The runtime builds a process, so `Id` has no constructor that Geng can reach. It was `Platform.ProcessId` until `Platform` was deleted
 (`m1b-source.md` §SO19).
 
 -}
@@ -80,9 +78,8 @@ cannot receive any messages. More flexibility for user-defined processes will
 come in a later release!
 
 -}
+@prim("task_spawn")
 spawn : Task x a -> Task y Id
-spawn =
-    Gren.Kernel.Scheduler.spawn
 
 
 {-| Block progress on the current process for the given number of milliseconds.
@@ -106,6 +103,5 @@ A process being killed still runs the release handler of every
 does not succeed until they are done. So a killed process has given up its
 resources by the time `kill` answers, rather than at some point afterwards.
 -}
+@prim("task_kill")
 kill : Id -> Task x {}
-kill =
-    Gren.Kernel.Scheduler.kill
