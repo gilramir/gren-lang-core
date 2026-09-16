@@ -1,11 +1,11 @@
-effect module Random where { command = MyCmd } exposing
+module Random exposing
   ( Generator, Seed
   , int, float, uniform, weighted, constant
   , array, pair
   , map, map2, map3, andMap
   , andThen, lazy
   , minInt, maxInt
-  , generate
+  , generate, seedFromEntropy
   , step, initialSeed, independentSeed
   )
 
@@ -17,7 +17,7 @@ by M. E. O'Neil. It is not cryptographically secure.
 [pcg]: http://www.pcg-random.org/
 
 
-@docs Generator, generate
+@docs Generator, generate, seedFromEntropy
 
 ## Primitives
 @docs int, float, uniform, weighted, constant
@@ -44,10 +44,7 @@ import Basics exposing (..)
 import Math exposing (abs)
 import Maybe exposing (Maybe(..))
 import Bitwise
-import Platform
-import Platform.Cmd exposing (Cmd)
 import Task exposing (Task)
-import Time
 import UInt32
 
 
@@ -717,17 +714,15 @@ here is a generator for numbers between 1 and 10 inclusive:
       Random.int 1 10
 
 Notice that we are not actually generating any numbers yet! We are describing
-what kind of values we want. To actually get random values, you create a
-command with the [`generate`](#generate) function:
+what kind of values we want. To actually get random values, you run a task
+made with the [`generate`](#generate) function:
 
-    type Msg = NewNumber Int
-
-    newNumber : Cmd Msg
+    newNumber : Task x Int
     newNumber =
-      Random.generate NewNumber oneToTen
+      Random.generate oneToTen
 
-Each time you run this command, it runs the `oneToTen` generator and produces
-random integers between one and ten.
+Each time you run this task, it runs the `oneToTen` generator and produces a
+random integer between one and ten.
 
 **Note 1:** The random `Generator` API is quite similar to the JSON `Decoder` API, which we've inherited from Elm.
 Both are building blocks that snap together with `map`, `map2`, etc. You can read
@@ -741,7 +736,7 @@ type Generator a =
 
 {-| So you need _reproducible_ randomness for some reason.
 
-This `step` function lets you use a `Generator` without commands. It is a
+This `step` function lets you use a `Generator` without a task. It is a
 normal Gren function. Same input, same output! So to get a 3D point you could
 say:
 
@@ -787,11 +782,8 @@ If you hard-code your `Seed` like this, every run will be the same. This can
 be useful if you are testing a game with randomness and want it to be easy to
 reproduce past games.
 
-In practice, you may want to get the initial seed by (1) sending it to Gren
-through flags or (2) using `Time.now` to get a number that the user has not
-seen before. (Flags are described on [this page][flags].)
-
-[flags]: https://guide.elm-lang.org/interop/flags.html
+In practice, when the runs should differ, get the seed from
+[`seedFromEntropy`](#seedFromEntropy) instead.
 -}
 initialSeed : UInt32 -> Seed
 initialSeed x =
@@ -845,11 +837,11 @@ independentSeed =
 
 
 
--- MANAGER
+-- RUNNING A GENERATOR
 
 
-{-| Create a command that produces random values. Say you want to generate
-random points:
+{-| Run a generator on a fresh seed from the host's entropy. Say you want to
+generate random points:
 
     import Random
 
@@ -857,61 +849,34 @@ random points:
     point =
       Random.pair (Random.int -100 100) (Random.int -100 100)
 
-    type Msg = NewPoint { first : Int, second : Int }
-
-    newPoint : Cmd Msg
+    newPoint : Task x { first : Int, second : Int }
     newPoint =
-      Random.generate NewPoint point
+      Random.generate point
 
-Each time you run the `newPoint` command, it will produce a new 2D point like
+Each time you run the `newPoint` task, it produces a new 2D point like
 `{ first = 57, second = 18 }` or `{ first = -82, second = 6 }`.
 
-**Note:** Read through [guide.elm-lang.org][guide] to learn how commands work.
-If you are coming from JS it can be hopelessly frustrating if you just try to
-wing it. And definitely ask around on Slack if you feel stuck! Investing in
-understanding generators is really worth it, and once it clicks, folks often
-dread going back to `Math.random()` in JavaScript.
-
-[guide]: https://guide.elm-lang.org/
+Every run takes its own seed, so two runs are independent of each other. To draw
+many values from one sequence, take one seed with
+[`seedFromEntropy`](#seedFromEntropy) and [`step`](#step) through it.
 -}
-generate : (a -> msg) -> Generator a -> Cmd msg
-generate tagger generator =
-  command (Generate (map tagger generator))
+generate : Generator a -> Task x a
+generate generator =
+  Task.map (\seed -> (step generator seed).value) seedFromEntropy
 
 
-type MyCmd msg = Generate (Generator msg)
+{-| A `Seed` from the host's source of entropy, which is not a generator of its
+own: `crypto.getRandomValues` on JavaScript. Both halves of the seed come from
+it, the state and the increment that chooses among PCG's independent
+sequences, which [`initialSeed`](#initialSeed) fixes.
+-}
+seedFromEntropy : Task x Seed
+seedFromEntropy =
+  entropyWith
+    (\state increment ->
+      next (Seed { state = state, increment = Bitwise.or 1 increment })
+    )
 
 
-cmdMap : (a -> b) -> MyCmd a -> MyCmd b
-cmdMap func (Generate generator) =
-  Generate (map func generator)
-
-
-init : Task Never Seed
-init =
-  -- The low 32 bits of the epoch time. `Time.posixToMillis` is an `Int64` since
-  -- `int64-migration.md` M3 and a seed is a `UInt32`, so the narrowing is
-  -- written down: what a seed wants from the clock is that it differs between
-  -- runs, which the low bits carry and the high ones do not.
-  Task.andThen (\time -> Task.succeed (initialSeed (UInt32.fromInt64Wrap (Time.posixToMillis time)))) Time.now
-
-
-onEffects : Platform.Router msg Never -> Array (MyCmd msg) -> Seed -> Task Never Seed
-onEffects router commands seed =
-  when Array.popFirst commands is
-    Nothing ->
-      Task.succeed seed
-
-    Just { first = Generate generator, rest = rest } ->
-      let
-        { value = value, seed = newSeed } =
-          step generator seed
-      in
-          Task.andThen
-            (\_ -> onEffects router rest newSeed)
-            (Platform.sendToApp router value)
-
-
-onSelfMsg : Platform.Router msg Never -> Never -> Seed -> Task Never Seed
-onSelfMsg _ _ seed =
-  Task.succeed seed
+@extern(js, "Random", "entropy")
+entropyWith : (UInt32 -> UInt32 -> seed) -> Task x seed
