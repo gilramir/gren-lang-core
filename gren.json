@@ -17,9 +17,6 @@
             "Dict",
             "Set"
         ],
-        "Crypto": [
-            "Crypto"
-        ],
         "Debug": [
             "Debug",
             "Inspect"
@@ -52,10 +49,6 @@
         ],
         "Random": [
             "Random"
-        ],
-        "Streams": [
-            "Stream",
-            "Stream.Log"
         ],
         "Strings": [
             "String.Parser",

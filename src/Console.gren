@@ -5,8 +5,8 @@ module Console exposing (write, writeErr)
 `Console` is for a program's report of itself — its output, its errors, a log
 line. It writes a `String` and nothing else, and it cannot fail: a write nobody
 can see is not an error the program could do anything about. Anything richer,
-bytes or reading or a stream to hand around, is `Stream`, which is a runtime's
-to give and not every runtime has.
+bytes or reading or a stream to hand around, is `Stream`, in the `geng/stream`
+package, which is a runtime's to give and not every runtime has.
 
 Neither function adds a newline. What is written is exactly the string.
 
