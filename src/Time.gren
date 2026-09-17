@@ -73,7 +73,7 @@ one moment a breaking change to `Time` was free.
 
 import Array exposing (Array)
 import Basics exposing (..)
-import Inspect
+import Inspect exposing (Inspect)
 import Int64
 import Math
 import Maybe exposing (Maybe(..))
@@ -93,6 +93,7 @@ have a phone call or meeting at a certain POSIX time, there is no ambiguity.
 It is very hard for humans to _read_ a POSIX time though, so we use functions
 like [`toHour`](#toHour) and [`toMinute`](#toMinute) to `view` them.
 -}
+@derive(Eq, Ord, Inspect)
 type Posix = Posix Int64
 
 
@@ -135,6 +136,7 @@ the distinction bare millisecond arithmetic could not make. Build one with
 
     Time.add (Time.minutes 5) deadline
 -}
+@derive(Eq, Ord, Inspect)
 type Duration = Duration Int64
 
 
@@ -251,6 +253,7 @@ See [`utc`](#utc) and [`here`](#here) to learn how to obtain `Zone` values.
 
 [iana]: https://www.iana.org/time-zones
 -}
+@derive(Eq, Inspect)
 type Zone =
   Zone { offset : Int, eras : (Array Era) }
 
