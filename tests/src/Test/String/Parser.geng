@@ -35,7 +35,7 @@ type alias Located a =
 -- Helper functions for testing
 
 -- Test that a parser succeeds with expected result
-testOk : String -> Parser a -> a -> Test
+testOk : (Eq a, Inspect a) => String -> Parser a -> a -> Test
 testOk description parser expected =
     test description <| \{} ->
         when run parser description is
@@ -51,7 +51,7 @@ testErr description parser =
             Err _ -> Expect.pass
 
 -- Test that a parser succeeds and reaches end
-testOkEnd : String -> Parser a -> a -> Test
+testOkEnd : (Eq a, Inspect a) => String -> Parser a -> a -> Test
 testOkEnd description parser expected =
     test description <| \{} ->
         when run (parser |> andThen (\a -> succeed a |> skip end)) description is
@@ -61,14 +61,14 @@ testOkEnd description parser expected =
 -- U+1D41A MATHEMATICAL BOLD SMALL A, two UTF-16 units: 0xD835 0xDC1A.
 mathBoldA : String
 mathBoldA =
-    String.fromChar (Char.fromCode 0x1D41A)
+    String.fromChar '\u{1D41A}'
 
 
 -- U+FF5A FULLWIDTH LATIN SMALL LETTER Z, one UTF-16 unit. The control: a
 -- letter that is not ASCII and is still inside the BMP.
 fullwidthZ : String
 fullwidthZ =
-    String.fromChar (Char.fromCode 0xFF5A)
+    String.fromChar '\u{FF5A}'
 
 -- What a parser that wants letters beyond ASCII has to write for itself.
 -- `Compiler.Parse.Variable` in `gren-lang/compiler-common` asks a `\p{Ll}`
@@ -139,7 +139,13 @@ tests =
                 Expect.equal (Ok {}) (run (succeed {}) "mississippi")
             
             , test "succeed with Maybe Nothing" <| \{} ->
-                Expect.equal (Ok Nothing) (run (succeed Nothing) "mississippi")
+                let
+                    -- `Nothing` has no type of its own, and `==` is chosen by one.
+                    nothing : Maybe Int
+                    nothing =
+                        Nothing
+                in
+                Expect.equal (Ok nothing) (run (succeed nothing) "mississippi")
             
             , test "Point parser with keep and skip" <| \{} ->
                 let
@@ -324,7 +330,7 @@ tests =
                         Expect.equal { row = 2, col = 1 } ret
 
                     Err err ->
-                        Expect.fail <| "Unexpected failure: " ++ Debug.toString err
+                        Expect.fail <| "Unexpected failure: " ++ inspect err
 
             , test "token with infix whitespace" <| \{} ->
                 let
@@ -338,7 +344,7 @@ tests =
                         Expect.equal { row = 2, col = 4 } ret
 
                     Err err ->
-                        Expect.fail <| "Unexpected failure: " ++ Debug.toString err
+                        Expect.fail <| "Unexpected failure: " ++ inspect err
 
             , test "chompUntil with whitespace" <| \{} ->
                 let
@@ -352,7 +358,7 @@ tests =
                         Expect.equal { row = 1, col = 5 } ret
 
                     Err err ->
-                        Expect.fail <| "Unexpected failure: " ++ Debug.toString err
+                        Expect.fail <| "Unexpected failure: " ++ inspect err
 
             , test "chompUntil with suffix whitespace" <| \{} ->
                 let
@@ -366,7 +372,7 @@ tests =
                         Expect.equal { row = 1, col = 5 } ret
 
                     Err err ->
-                        Expect.fail <| "Unexpected failure: " ++ Debug.toString err
+                        Expect.fail <| "Unexpected failure: " ++ inspect err
 
             , test "chompUntil with non-matching whitespace" <| \{} ->
                 let
@@ -383,7 +389,7 @@ tests =
                         Expect.equal { row = 1, col = 1 } { row = err.row, col = err.col }
 
                     Err errs ->
-                        Expect.fail <| "Unexpected failure " ++ Debug.toString errs
+                        Expect.fail <| "Unexpected failure " ++ inspect errs
             ]
         
         , describe "Variable Functions" <|

@@ -47,7 +47,7 @@ decCodes =
     Array.range 48 (48 + Array.length dec - 1)
 
 
-oneOf : Array a -> a -> Bool
+oneOf : Eq a => Array a -> a -> Bool
 oneOf array e =
     Array.member e array
 
@@ -62,10 +62,10 @@ tests =
             , test "UTF-16" <| \{} -> Expect.equal 0x0001D306 (Char.toCode '𝌆')
             ]
         , describe "fromCode"
-            [ test "a-z" <| \{} -> Expect.equal lower (Array.map fromCode lowerCodes)
-            , test "A-Z" <| \{} -> Expect.equal upper (Array.map fromCode upperCodes)
-            , test "0-9" <| \{} -> Expect.equal dec (Array.map fromCode decCodes)
-            , test "UTF-16" <| \{} -> Expect.equal '𝌆' (Char.fromCode 0x0001D306)
+            [ test "a-z" <| \{} -> Expect.equal (Array.map Just lower) (Array.map fromCode lowerCodes)
+            , test "A-Z" <| \{} -> Expect.equal (Array.map Just upper) (Array.map fromCode upperCodes)
+            , test "0-9" <| \{} -> Expect.equal (Array.map Just dec) (Array.map fromCode decCodes)
+            , test "UTF-16" <| \{} -> Expect.equal (Just '𝌆') (Char.fromCode 0x0001D306)
             ]
         , describe "isLower"
             [ test "a-z" <| \{} -> Expect.equal True (Array.all isLower lower)

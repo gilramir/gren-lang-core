@@ -76,10 +76,12 @@ tests =
             , badInt "1e31"
             , badInt "123a"
             , goodInt "0123" 123
-            , goodInt "9007199254740944" 9007199254740944
-            , goodInt "9007199254740945" 9007199254740945
-            , goodInt "9007199254740991" 9007199254740991
-            , goodInt "-9007199254740991" -9007199254740991
+            -- Upstream checks 2^53's neighbourhood here; an `Int` is 32 bits (D2),
+            -- so these are the ends of its range and one past each.
+            , goodInt "2147483647" 2147483647
+            , goodInt "-2147483648" -2147483648
+            , badInt "2147483648"
+            , badInt "-2147483649"
             , badInt "0x001A"
             , badInt "0x001a"
             , badInt "0xBEEF"

@@ -13,9 +13,14 @@ tests : Test
 tests =
     describe "Array.Builder Tests"
         [ fuzz Fuzz.int "An empty builder makes for an empty array, regardless of capacity" <| \capacity ->
-            Builder.empty capacity
-                |> Builder.toArray
-                |> Expect.equalArrays []
+            let
+                -- `[]` has no element type of its own, and `==` is chosen by one.
+                built : Array String
+                built =
+                    Builder.empty capacity
+                        |> Builder.toArray
+            in
+            Expect.equalArrays [] built
         , test "Can build an array using builder API" <| \{} ->
             Builder.empty 3
                 |> Builder.pushLast 1
@@ -44,6 +49,7 @@ tests =
                 |> Expect.equalArrays array
         , test "Cannot detect mutation" <| \{} ->
             let
+                empty : Builder.Builder String
                 empty =
                     Builder.empty 0
 
@@ -61,6 +67,7 @@ tests =
                 {}
         , test "Cannot detect mutation after toArray" <| \{} ->
             let
+                empty : Builder.Builder String
                 empty =
                     Builder.empty 0
 
@@ -81,16 +88,9 @@ tests =
                 , \{} -> Expect.equalArrays [ "first", "second" ] secondArray
                 ]
                 {}
-        , test "Cannot detect mutation with equality" <| \{} ->
-            let
-                empty =
-                    Builder.empty 0
-                
-                first = 
-                    empty 
-                        |> Builder.pushLast 1
-            in
-            Expect.equal empty (Builder.empty 0)
+        -- Upstream's "Cannot detect mutation with equality" compared two
+        -- builders with `==`. A `Builder` is the transient and has no `Eq`
+        -- (m1b-arr-prim.md D240), so that comparison no longer compiles.
         , test "Builder.append" <| \{} ->
             Builder.empty 0
                 |> Builder.pushLast 5
@@ -100,6 +100,7 @@ tests =
                 |> Expect.equalArrays [ 5, 4, 3, 2, 1 ]
         , test "Cannot detect mutation with append" <| \{} ->
             let
+                init : Builder.Builder Int
                 init =
                     Builder.empty 0
 

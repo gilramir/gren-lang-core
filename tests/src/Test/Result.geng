@@ -9,11 +9,17 @@ import Test exposing (..)
 
 
 isEven n =
-    if Math.modBy 2 n == 0 then
+    if modBy 2 n == 0 then
         Ok n
 
     else
         Err "number is odd"
+
+
+{-| `Ok 3` has no error type of its own, and `==` is chosen by one. -}
+equalWithStringError : (Eq a, Inspect a) => Result String a -> Result String a -> Expect.Expectation
+equalWithStringError =
+    Expect.equal
 
 
 toIntResult : String -> Result String Int
@@ -42,19 +48,26 @@ tests =
             , test "Err" <| \{} -> Expect.equal Nothing (Result.firstOk [ Err 1, Err 2, Err 3 ])
             ]
         , describe "allOk"
-            [ test "Ok" <| \{} -> Expect.equal (Ok [ 0, 1 ]) (Result.allOk [ Ok 0, Ok 1 ])
+            [ test "Ok" <|
+                \{} ->
+                    let
+                        oks : Array (Result String Int)
+                        oks =
+                            [ Ok 0, Ok 1 ]
+                    in
+                    Expect.equal (Ok [ 0, 1 ]) (Result.allOk oks)
             , test "Err" <| \{} -> Expect.equal (Err [ 0 ]) (Result.allOk [ Ok 5, Err 0, Ok 10 ])
             ]
         , describe "map"
-            [ test "Ok" <| \{} -> Expect.equal (Ok 3) (Result.map ((+) 1) (Ok 2))
+            [ test "Ok" <| \{} -> equalWithStringError (Ok 3) (Result.map ((+) 1) (Ok 2))
             , test "Err" <| \{} -> Expect.equal (Err "error") (Result.map ((+) 1) (Err "error"))
             ]
         , describe "mapN"
-            [ test "map2 Ok" <| \{} -> Expect.equal (Ok 3) (Result.map2 (+) (Ok 1) (Ok 2))
+            [ test "map2 Ok" <| \{} -> equalWithStringError (Ok 3) (Result.map2 (+) (Ok 1) (Ok 2))
             , test "map2 Err" <| \{} -> Expect.equal (Err "x") (Result.map2 (+) (Ok 1) (Err "x"))
-            , test "map3 Ok" <| \{} -> Expect.equal (Ok 6) (Result.map3 add3 (Ok 1) (Ok 2) (Ok 3))
+            , test "map3 Ok" <| \{} -> equalWithStringError (Ok 6) (Result.map3 add3 (Ok 1) (Ok 2) (Ok 3))
             , test "map3 Err" <| \{} -> Expect.equal (Err "x") (Result.map3 add3 (Ok 1) (Ok 2) (Err "x"))
-            , test "andMap Ok" <| \{} -> Expect.equal (Ok 10) (Ok add4 |> Result.andMap (Ok 1) |> Result.andMap (Ok 2) |> Result.andMap (Ok 3) |> Result.andMap (Ok 4))
+            , test "andMap Ok" <| \{} -> equalWithStringError (Ok 10) (Ok add4 |> Result.andMap (Ok 1) |> Result.andMap (Ok 2) |> Result.andMap (Ok 3) |> Result.andMap (Ok 4))
             , test "andMap Err" <| \{} -> Expect.equal (Err "x") (Ok add4 |> Result.andMap (Ok 1) |> Result.andMap (Ok 2) |> Result.andMap (Ok 3) |> Result.andMap (Err "x"))
             ]
         , describe "andThen"
@@ -73,12 +86,12 @@ tests =
         , describe "onError"
             [ test "Ok" <|
                 \{} -> 
-                    Expect.equal 
-                        (Ok 42) 
+                    equalWithStringError
+                        (Ok 42)
                         (toIntResult "42" |> Result.onError (\_ -> Ok 0))
             , test "Err" <|
                 \{} ->
-                    Expect.equal
+                    equalWithStringError
                         (Ok 0)
                         (toIntResult "4.2" |> Result.onError (\_ -> Ok 0))
             ]

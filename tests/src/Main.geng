@@ -1,10 +1,7 @@
 module Main exposing (main)
 
 import Basics exposing (..)
-import Json.Decode exposing (Value)
-import Node
-import Platform.Cmd exposing (Cmd)
-import Task exposing (..)
+import Task exposing (Task)
 import Test exposing (..)
 import Test.Array as Array
 import Test.ArrayBuilder as ArrayBuilder
@@ -19,13 +16,13 @@ import Test.Json as Json
 import Test.Math as Math
 import Test.Maybe as Maybe
 import Test.Result as Result
-import Test.Runner.Node exposing (Program, run)
+import Test.Runner.Node exposing (run)
 import Test.Set as Set
 import Test.String as String
 import Test.String.Parser as StringParser
 
 
-main : Program
+main : Task Never {}
 main =
     run <|
         describe "Gren Core Library Tests"

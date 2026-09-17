@@ -80,6 +80,11 @@ tests =
 
         mergeTests =
             let
+                -- `Dict.empty` has no key type of its own, and `==` is chosen by one.
+                emptyDict : Dict.Dict String (Array Int)
+                emptyDict =
+                    Dict.empty
+
                 setBoth key leftVal rightVal dict =
                     Dict.set key (leftVal ++ rightVal) dict
 
@@ -119,7 +124,7 @@ tests =
             describe "merge Tests"
                 [ test "merge empties" <|
                     \{} ->
-                        Expect.equal Dict.empty
+                        Expect.equal emptyDict
                             (Dict.merge Dict.set setBoth Dict.set Dict.empty Dict.empty Dict.empty)
                 , test "merge singletons in order" <|
                     \{} ->

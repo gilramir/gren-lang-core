@@ -9,7 +9,7 @@ import Math
 
 isOdd : Int -> Bool
 isOdd n =
-    Math.remainderBy 2 n /= 0
+    remainderBy 2 n /= 0
 
 
 tests : Test

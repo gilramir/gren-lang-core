@@ -265,10 +265,16 @@ diffTests =
     ]
 
 
+{-| `Set.empty` has no element type of its own, and `==` is chosen by one. -}
+emptyIntSet : Set Int
+emptyIntSet =
+    Set.empty
+
+
 toArrayTests : Array Test
 toArrayTests =
     [ test "returns empty array for empty set" <|
-        \{} -> Expect.equal [] (Set.toArray Set.empty)
+        \{} -> Expect.equal [] (Set.toArray emptyIntSet)
     , test "returns singleton array for singleton set" <|
         \{} -> Expect.equal [ 42 ] (Set.toArray set42)
     , test "returns sorted array of set elements" <|
@@ -279,7 +285,7 @@ toArrayTests =
 fromArrayTests : Array Test
 fromArrayTests =
     [ test "returns empty set for empty array" <|
-        \{} -> Expect.equal Set.empty (Set.fromArray [])
+        \{} -> Expect.equal emptyIntSet (Set.fromArray [])
     , test "returns singleton set for singleton array" <|
         \{} -> Expect.equal set42 (Set.fromArray [ 42 ])
     , test "returns set with unique array elements" <|

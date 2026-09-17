@@ -54,6 +54,12 @@ modifications =
         ]
 
 
+{-| `[]` has no element type of its own, and `==` is chosen by one. -}
+noInts : Array Int
+noInts =
+    []
+
+
 testArrayOfN : Int -> Test
 testArrayOfN n =
     let
@@ -161,11 +167,11 @@ testArrayOfN n =
             , test "short first" <| \{} -> Expect.equal (map (\x -> x * 2 - 1) xs) (map2 (+) xs zs)
             ]
         , describe "mapAndKeepJust"
-            [ test "none" <| \{} -> Expect.equal [] (mapAndKeepJust (\x -> Nothing) xs)
+            [ test "none" <| \{} -> Expect.equal noInts (mapAndKeepJust (\x -> Nothing) xs)
             , test "all" <| \{} -> Expect.equal xsNeg (mapAndKeepJust (\x -> Just -x) xs)
             , let
                 halve x =
-                    if Math.modBy 2 x == 0 then
+                    if modBy 2 x == 0 then
                         Just (x // 2)
 
                     else
@@ -174,7 +180,7 @@ testArrayOfN n =
               test "some" <| \{} -> Expect.equal (Array.range 1 mid) (mapAndKeepJust halve xs)
             ]
         , describe "mapAndFlatten"
-            [ test "none" <| \{} -> Expect.equal [] (mapAndFlatten (\x -> []) xs)
+            [ test "none" <| \{} -> Expect.equal noInts (mapAndFlatten (\x -> []) xs)
             , test "all" <| \{} -> Expect.equal xsNeg (mapAndFlatten (\x -> [ -x ]) xs)
             ]
         , test "indexedMap" <| \{} -> Expect.equal (map2 (\i x -> { i = i, x = x }) zs xsNeg) (indexedMap (\i x -> { i = i, x = -x }) xs)

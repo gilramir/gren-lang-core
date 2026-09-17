@@ -33,8 +33,13 @@ intTests =
         , test "-whole int" <| \{} -> testInt True "-4"
         , test "whole float" <| \{} -> testInt True "4.0"
         , test "-whole float" <| \{} -> testInt True "-4.0"
-        , test "large int" <| \{} -> testInt True "1801439850948"
-        , test "-large int" <| \{} -> testInt True "-1801439850948"
+        -- Upstream's large ints are 1801439850948, inside a double's exact
+        -- range. `int` holds to `Int`'s 32 bits (m1b-json.md D214), so the
+        -- largest are its ends and upstream's value is refused.
+        , test "large int" <| \{} -> testInt True "2147483647"
+        , test "-large int" <| \{} -> testInt True "-2147483648"
+        , test "int past 32 bits" <| \{} -> testInt False "1801439850948"
+        , test "-int past 32 bits" <| \{} -> testInt False "-1801439850948"
         , test "float" <| \{} -> testInt False "4.2"
         , test "-float" <| \{} -> testInt False "-4.2"
         , test "Infinity" <| \{} -> testInt False "Infinity"

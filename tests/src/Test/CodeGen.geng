@@ -10,7 +10,7 @@ type Wrapper a
     = Wrapper a
 
 
-caseUnderscore : Maybe number -> number
+caseUnderscore : Num number => Maybe number -> number
 caseUnderscore m_ =
     when m_ is
         Just x ->
@@ -20,7 +20,7 @@ caseUnderscore m_ =
             0
 
 
-patternUnderscore : number
+patternUnderscore : Num number => number
 patternUnderscore =
     when Just 42 is
         Just x_ ->
@@ -30,7 +30,7 @@ patternUnderscore =
             0
 
 
-letQualified : number
+letQualified : Num number => number
 letQualified =
     let
         (Wrapper x) =
@@ -39,7 +39,7 @@ letQualified =
     x
 
 
-caseQualified : number
+caseQualified : Num number => number
 caseQualified =
     when Just 42 is
         Maybe.Just x ->
@@ -74,11 +74,11 @@ tests =
             describe "Hex"
                 [ test "0xFFFFFFFF" <|
                     \{} ->
-                        0xFFFFFFFF
+                        0xFFFFFFFFu32
                             |> Expect.equal 4294967295
                 , test "0xD066F00D" <|
                     \{} ->
-                        0xD066F00D
+                        0xD066F00Du32
                             |> Expect.equal 3496407053
                 , test "0x00" <|
                     \{} ->
