@@ -1,0 +1,65 @@
+[package]
+name = "core"
+version = "7.4.2"
+summary = "Gren's core modules"
+license = "BSD-3-Clause"
+geng = "0.6.0 <= v < 0.7.0"
+
+[platform]
+runtime = "any"
+
+[modules.exposed]
+"Bytes" = [
+    "Bytes",
+    "Bytes.Encode",
+    "Bytes.Decode",
+]
+"Collections" = [
+    "Array",
+    "Array.Builder",
+    "Dict",
+    "Set",
+]
+"Debug" = [
+    "Debug",
+    "Inspect",
+]
+"Effects" = [
+    "Console",
+    "Process",
+    "Source",
+    "Task",
+    "Extern",
+]
+"Error Handling" = [
+    "Maybe",
+    "Result",
+]
+"Json" = [
+    "Json.Decode",
+    "Json.Encode",
+]
+"Primitives" = [
+    "Basics",
+    "String",
+    "Char",
+    "Bitwise",
+    "Math",
+    "Int64",
+    "UInt32",
+    "UInt64",
+    "Float32",
+]
+"Random" = [
+    "Random",
+]
+"Strings" = [
+    "String.Parser",
+    "String.Parser.Advanced",
+]
+"Time" = [
+    "Time",
+]
+"Unicode" = [
+    "Unicode",
+]
