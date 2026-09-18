@@ -1,0 +1,95 @@
+module Test.Random exposing (tests)
+
+{-| `Random`'s combinators, which no test ran, found by `harness/coverage.py`'s
+survey (geng-lang `m1b-test.md` §TS9.2). A generator is run from a fixed seed,
+so each test is a property of the combinator, checked over a few hundred draws,
+and never a recorded number.
+-}
+
+import Array exposing (Array)
+import Basics exposing (..)
+import Expect
+import Maybe exposing (Maybe(..))
+import Random exposing (Generator)
+import Test exposing (Test, describe, test)
+
+
+tests : Test
+tests =
+    describe "Random"
+        [ test "constant answers its value every time" <| \{} ->
+            draws 50 (Random.constant "x")
+                |> Expect.equal (Array.repeat 50 "x")
+        , test "uniform answers only its values" <| \{} ->
+            draws 300 (Random.uniform 'a' [ 'b', 'c' ])
+                |> Array.all (\c -> c == 'a' || c == 'b' || c == 'c')
+                |> Expect.equal True
+        , test "uniform answers each of them" <| \{} ->
+            let
+                seen =
+                    draws 300 (Random.uniform 'a' [ 'b', 'c' ])
+            in
+            [ 'a', 'b', 'c' ]
+                |> Array.all (\c -> Array.member c seen)
+                |> Expect.equal True
+        , test "uniform with no others is its first" <| \{} ->
+            draws 20 (Random.uniform 9 [])
+                |> Expect.equal (Array.repeat 20 9)
+        , test "pair draws both, each in its own range" <| \{} ->
+            draws 200 (Random.pair (Random.int 0 9) (Random.int 100 109))
+                |> Array.all (\p -> p.first >= 0 && p.first <= 9 && p.second >= 100 && p.second <= 109)
+                |> Expect.equal True
+        , test "map2 combines" <| \{} ->
+            draws 200 (Random.map2 (+) (Random.int 0 9) (Random.int 100 109))
+                |> Array.all (\n -> n >= 100 && n <= 118)
+                |> Expect.equal True
+        , test "map3 combines" <| \{} ->
+            draws 200 (Random.map3 (\a b c -> a + b + c) (Random.int 1 1) (Random.int 10 10) (Random.int 0 5))
+                |> Array.all (\n -> n >= 11 && n <= 16)
+                |> Expect.equal True
+        , test "andMap applies a drawn function" <| \{} ->
+            draws 100 (Random.constant (\n -> n * 2) |> Random.andMap (Random.int 1 5))
+                |> Array.all (\n -> n >= 2 && n <= 10 && modBy 2 n == 0)
+                |> Expect.equal True
+        , test "andThen draws from a generator chosen by a draw" <| \{} ->
+            draws 200 (Random.int 0 1 |> Random.andThen (\b -> if b == 0 then Random.int 0 9 else Random.int 100 109))
+                |> Array.all (\n -> n <= 9 || (n >= 100 && n <= 109))
+                |> Expect.equal True
+        , test "lazy defines a recursive generator: a list that ends" <| \{} ->
+            draws 100 lengths
+                |> Array.all (\n -> n >= 0)
+                |> Expect.equal True
+        , test "the same seed draws the same values" <| \{} ->
+            Expect.equal (draws 30 (Random.int 0 1000)) (draws 30 (Random.int 0 1000))
+        ]
+
+
+{-| How many times a coin came up heads before the first tails. -}
+lengths : Generator Int
+lengths =
+    Random.int 0 1
+        |> Random.andThen
+            (\coin ->
+                if coin == 0 then
+                    Random.constant 0
+
+                else
+                    Random.map (\n -> n + 1) (Random.lazy (\{} -> lengths))
+            )
+
+
+draws : Int -> Generator a -> Array a
+draws count generator =
+    let
+        go n seed acc =
+            if n <= 0 then
+                acc
+
+            else
+                let
+                    next =
+                        Random.step generator seed
+                in
+                go (n - 1) next.seed (Array.pushLast next.value acc)
+    in
+    go count (Random.initialSeed 42) []

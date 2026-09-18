@@ -1,0 +1,131 @@
+module Test.String.ParserCombinators exposing (tests)
+
+{-| The combinators no test ran, found by `harness/coverage.py`'s survey
+(geng-lang `m1b-test.md` §TS9.2): `andThen`, `lazy`, `backtrackable` and
+`commit`, `mapChompedString`, `getSource`, `sequence` under each trailing rule,
+and `Advanced`'s `setPayload`, `getSource` and `sequence`.
+-}
+
+import Array exposing (Array)
+import Basics exposing (..)
+import Char
+import Expect
+import Maybe exposing (Maybe(..))
+import Result exposing (Result(..))
+import String exposing (String)
+import String.Parser as P exposing (Parser, Trailing(..))
+import String.Parser.Advanced as A
+import Test exposing (Test, describe, test)
+
+
+tests : Test
+tests =
+    describe "String.Parser combinators"
+        [ describe "andThen"
+            [ test "the second parser depends on the first's value" <| \{} ->
+                P.run (P.int |> P.andThen (\n -> if n > 0 then P.succeed (n * 2) else P.problem "not positive")) "21"
+                    |> Expect.equal (Ok 42)
+            , test "and can fail on it" <| \{} ->
+                P.run (P.int |> P.andThen (\n -> if n > 0 then P.succeed n else P.problem "not positive")) "0"
+                    |> Result.toMaybe
+                    |> Expect.equal Nothing
+            ]
+        , describe "lazy"
+            [ test "a recursive parser: nested brackets" <| \{} ->
+                P.run nesting "[[[]]]"
+                    |> Expect.equal (Ok 3)
+            , test "an unbalanced one fails" <| \{} ->
+                P.run (nesting |> P.skip (P.end)) "[[]"
+                    |> Result.toMaybe
+                    |> Expect.equal Nothing
+            ]
+        , describe "backtrackable and commit"
+            [ test "without backtrackable, a branch that consumed input does not fall through" <| \{} ->
+                P.run (P.oneOf [ P.token "ab" |> P.skip (P.token "c") |> P.map (\_ -> 1), P.token "ab" |> P.map (\_ -> 2) ]) "abd"
+                    |> Result.toMaybe
+                    |> Expect.equal Nothing
+            , test "with it, the next branch is tried" <| \{} ->
+                P.run (P.oneOf [ P.backtrackable (P.token "ab" |> P.skip (P.token "c")) |> P.map (\_ -> 1), P.token "ab" |> P.map (\_ -> 2) ]) "abd"
+                    |> Expect.equal (Ok 2)
+            , test "commit turns a backtrackable branch into a committed one" <| \{} ->
+                P.run
+                    (P.oneOf
+                        [ P.backtrackable (P.token "ab")
+                            |> P.andThen (\_ -> P.commit {})
+                            |> P.skip (P.token "c")
+                            |> P.map (\_ -> 1)
+                        , P.token "ab" |> P.map (\_ -> 2)
+                        ]
+                    )
+                    "abd"
+                    |> Result.toMaybe
+                    |> Expect.equal Nothing
+            ]
+        , describe "mapChompedString"
+            [ test "hands over what was chomped and the value" <| \{} ->
+                P.run (P.mapChompedString (\s n -> { text = s, value = n }) P.int) "4200"
+                    |> Result.toMaybe
+                    |> Maybe.map .text
+                    |> Expect.equal (Just "4200")
+            , test "for a parser answering {}" <| \{} ->
+                P.run (P.mapChompedString (\s _ -> String.count s) (P.chompWhile Char.isAlpha)) "abc123"
+                    |> Expect.equal (Ok 3)
+            ]
+        , describe "getSource"
+            [ test "is the whole input, wherever the parser is" <| \{} ->
+                P.run (P.token "ab" |> P.andThen (\_ -> P.getSource)) "abcdef"
+                    |> Expect.equal (Ok "abcdef")
+            , test "and Advanced's" <| \{} ->
+                A.run (A.token "x" "expected x" |> A.andThen (\_ -> A.getSource)) {} "xyz"
+                    |> Result.toMaybe
+                    |> Expect.equal (Just "xyz")
+            ]
+        , describe "sequence"
+            [ trailing "Forbidden, without a trailing separator" Forbidden "[1, 2, 3]" (Just [ 1, 2, 3 ])
+            , trailing "Forbidden, with one" Forbidden "[1, 2, 3,]" Nothing
+            , trailing "Optional, without" Optional "[1, 2, 3]" (Just [ 1, 2, 3 ])
+            , trailing "Optional, with" Optional "[1, 2, 3,]" (Just [ 1, 2, 3 ])
+            , trailing "Mandatory, with" Mandatory "[1, 2, 3,]" (Just [ 1, 2, 3 ])
+            , trailing "Mandatory, without" Mandatory "[1, 2, 3]" Nothing
+            , trailing "empty" Forbidden "[ ]" (Just [])
+            , trailing "spaces around everything" Optional "[ 1 ,2 , 3 , ]" (Just [ 1, 2, 3 ])
+            ]
+        , describe "Advanced.setPayload"
+            [ test "the parser after it sees the new payload" <| \{} ->
+                A.run (A.setPayload 7 A.getPayload) 0 ""
+                    |> Result.toMaybe
+                    |> Expect.equal (Just 7)
+            , test "and it stays set for what follows" <| \{} ->
+                A.run (A.setPayload 7 (A.succeed {}) |> A.andThen (\_ -> A.getPayload)) 0 ""
+                    |> Result.toMaybe
+                    |> Expect.equal (Just 7)
+            ]
+        ]
+
+
+{-| How deep a run of balanced brackets goes: `[]` is 1. -}
+nesting : Parser Int
+nesting =
+    P.succeed (\inner -> inner + 1)
+        |> P.skip (P.token "[")
+        |> P.keep (P.oneOf [ P.lazy (\{} -> nesting), P.succeed 0 ])
+        |> P.skip (P.token "]")
+
+
+trailing : String -> Trailing -> String -> Maybe (Array Int) -> Test
+trailing name rule source expected =
+    test name <| \{} ->
+        P.run
+            (P.sequence
+                { start = "["
+                , separator = ","
+                , end = "]"
+                , spaces = P.spaces
+                , item = P.int
+                , trailing = rule
+                }
+                |> P.skip P.end
+            )
+            source
+            |> Result.toMaybe
+            |> Expect.equal expected

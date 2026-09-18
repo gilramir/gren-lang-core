@@ -28,6 +28,9 @@ tests =
         , describe "diff" diffTests
         , describe "toArray" toArrayTests
         , describe "fromArray" fromArrayTests
+        , describe "first, last, findFirst, findLast" endTests
+        , describe "any, all" anyAllTests
+        , describe "mapAndKeepJust" mapAndKeepJustTests
         ]
 
 
@@ -290,4 +293,62 @@ fromArrayTests =
         \{} -> Expect.equal set42 (Set.fromArray [ 42 ])
     , test "returns set with unique array elements" <|
         \{} -> Expect.equal set1To100 (Set.fromArray (Array.pushFirst 1 <| Array.range 1 100))
+    ]
+
+
+{-| Written from `harness/coverage.py`'s survey, which found no test running
+these (geng-lang `m1b-test.md` §TS9.2).
+-}
+endTests : Array Test
+endTests =
+    [ test "first of an empty set is Nothing" <|
+        \{} -> Expect.equal Nothing (Set.first emptyIntSet)
+    , test "first is the least" <|
+        \{} -> Expect.equal (Just 1) (Set.first set1To100)
+    , test "last is the greatest" <|
+        \{} -> Expect.equal (Just 100) (Set.last set1To100)
+    , test "last of an empty set is Nothing" <|
+        \{} -> Expect.equal Nothing (Set.last emptyIntSet)
+    , test "findFirst is the least that passes" <|
+        \{} -> Expect.equal (Just 7) (Set.findFirst (\n -> modBy 7 n == 0) set1To100)
+    , test "findLast is the greatest that passes" <|
+        \{} -> Expect.equal (Just 98) (Set.findLast (\n -> modBy 7 n == 0) set1To100)
+    , test "findFirst with nothing passing is Nothing" <|
+        \{} -> Expect.equal Nothing (Set.findFirst (\n -> n > 100) set1To100)
+    , test "findLast with nothing passing is Nothing" <|
+        \{} -> Expect.equal Nothing (Set.findLast (\n -> n < 1) set1To100)
+    ]
+
+
+anyAllTests : Array Test
+anyAllTests =
+    [ test "any is False on an empty set" <|
+        \{} -> Expect.equal False (Set.any (\_ -> True) emptyIntSet)
+    , test "all is True on an empty set" <|
+        \{} -> Expect.equal True (Set.all (\_ -> False) emptyIntSet)
+    , test "any finds one" <|
+        \{} -> Expect.equal True (Set.any (\n -> n == 64) set1To100)
+    , test "any finds none" <|
+        \{} -> Expect.equal False (Set.any (\n -> n == 101) set1To100)
+    , test "all passes" <|
+        \{} -> Expect.equal True (Set.all (\n -> n >= 1) set1To100)
+    , test "all fails on one" <|
+        \{} -> Expect.equal False (Set.all (\n -> n /= 50) set1To100)
+    ]
+
+
+mapAndKeepJustTests : Array Test
+mapAndKeepJustTests =
+    [ test "keeps the Justs, mapped, as a set" <|
+        \{} ->
+            Set.mapAndKeepJust (\n -> if modBy 10 n == 0 then Just (n // 10) else Nothing) set1To100
+                |> Set.toArray
+                |> Expect.equal (Array.range 1 10)
+    , test "merges results that collide" <|
+        \{} ->
+            Set.mapAndKeepJust (\n -> Just (modBy 3 n)) set1To100
+                |> Set.toArray
+                |> Expect.equal [ 0, 1, 2 ]
+    , test "of an empty set is empty" <|
+        \{} -> Expect.equal emptyIntSet (Set.mapAndKeepJust Just emptyIntSet)
     ]

@@ -12,6 +12,7 @@ tests : Test
 tests =
     describe "Array Tests"
         [ modifications
+        , indexedFoldrTests
         , testArrayOfN 0
         , testArrayOfN 1
         , testArrayOfN 2
@@ -220,4 +221,17 @@ testArrayOfN n =
             [ test "sorted" <| \{} -> Expect.equal xsNeg (sortWith (\x -> \y -> compare y x) xsNeg)
             , test "unsorted" <| \{} -> Expect.equal xsNeg (sortWith (\x -> \y -> compare y x) xsOpp)
             ]
+        ]
+
+
+{-| From `harness/coverage.py`'s survey (geng-lang `m1b-test.md` §TS9.2). -}
+indexedFoldrTests : Test
+indexedFoldrTests =
+    describe "indexedFoldr"
+        [ test "visits from the right, with each index" <| \{} ->
+            indexedFoldr (\i x acc -> pushLast { index = i, value = x } acc) [] [ "a", "b", "c" ]
+                |> Expect.equal [ { index = 2, value = "c" }, { index = 1, value = "b" }, { index = 0, value = "a" } ]
+        , test "of an empty array is the initial value" <| \{} ->
+            indexedFoldr (\i x acc -> acc + i + x) 5 []
+                |> Expect.equal 5
         ]

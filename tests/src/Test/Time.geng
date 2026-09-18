@@ -1,0 +1,36 @@
+module Test.Time exposing (tests)
+
+{-| `Time.toMonth` and `Time.milliseconds`, which no test ran, found by
+`harness/coverage.py`'s survey (geng-lang `m1b-test.md` §TS9.2).
+-}
+
+import Array exposing (Array)
+import Basics exposing (..)
+import Expect
+import Test exposing (Test, describe, test)
+import Time exposing (Month(..))
+
+
+tests : Test
+tests =
+    describe "Time"
+        [ test "toMonth, the first instant of each month of 2024 in UTC" <| \{} ->
+            [ 1704067200000, 1706745600000, 1709251200000, 1711929600000, 1714521600000, 1717200000000
+            , 1719792000000, 1722470400000, 1725148800000, 1727740800000, 1730419200000, 1733011200000
+            ]
+                |> Array.map (\ms -> Time.toMonth Time.utc (Time.millisToPosix ms))
+                |> Expect.equal [ Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec ]
+        , test "toMonth, the last millisecond of February in a leap year" <| \{} ->
+            Time.toMonth Time.utc (Time.millisToPosix 1709251199999)
+                |> Expect.equal Feb
+        , test "toMonth, before 1970" <| \{} ->
+            Time.toMonth Time.utc (Time.millisToPosix -1)
+                |> Expect.equal Dec
+        , test "milliseconds is a duration of that many milliseconds" <| \{} ->
+            Time.inMilliseconds (Time.milliseconds 1234)
+                |> Expect.equal 1234
+        , test "and adds as one" <| \{} ->
+            Time.add (Time.milliseconds 250) (Time.millisToPosix 1000)
+                |> Time.posixToMillis
+                |> Expect.equal 1250
+        ]

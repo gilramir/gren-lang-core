@@ -15,11 +15,15 @@ import Test.Equality as Equality
 import Test.Json as Json
 import Test.Math as Math
 import Test.Maybe as Maybe
+import Test.Random as Random
 import Test.Result as Result
 import Test.Runner.Node exposing (run)
 import Test.Set as Set
+import Test.SizedIntegers as SizedIntegers
 import Test.String as String
 import Test.String.Parser as StringParser
+import Test.String.ParserCombinators as ParserCombinators
+import Test.Time as Time
 
 
 main : Task Never {}
@@ -40,6 +44,10 @@ main =
             , Set.tests
             , String.tests
             , StringParser.tests
+            , ParserCombinators.tests
+            , Random.tests
+            , SizedIntegers.tests
+            , Time.tests
             , Maybe.tests
             , Math.tests
             ]

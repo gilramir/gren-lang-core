@@ -95,4 +95,21 @@ tests =
                         (Ok 0)
                         (toIntResult "4.2" |> Result.onError (\_ -> Ok 0))
             ]
+        -- From `harness/coverage.py`'s survey (geng-lang m1b-test.md §TS9.2).
+        , describe "hasValue"
+            [ test "Ok with the value" <| \{} -> Expect.equal True (Result.hasValue 42 (toIntResult "42"))
+            , test "Ok with another value" <| \{} -> Expect.equal False (Result.hasValue 41 (toIntResult "42"))
+            , test "Err" <| \{} -> Expect.equal False (Result.hasValue 42 (toIntResult "x"))
+            ]
+        , describe "checkValue"
+            [ test "Ok that passes" <| \{} -> Expect.equal True (Result.checkValue (\n -> n > 40) (toIntResult "42"))
+            , test "Ok that fails" <| \{} -> Expect.equal False (Result.checkValue (\n -> n > 50) (toIntResult "42"))
+            , test "Err" <| \{} -> Expect.equal False (Result.checkValue (\_ -> True) (toIntResult "x"))
+            ]
+        , describe "withDefaultLazy"
+            [ test "Ok answers its value" <|
+                \{} -> Expect.equal 42 (Result.withDefaultLazy (\{} -> -1) (toIntResult "42"))
+            , test "Err asks for it" <|
+                \{} -> Expect.equal 7 (Result.withDefaultLazy (\{} -> 7) (toIntResult "x"))
+            ]
         ]
