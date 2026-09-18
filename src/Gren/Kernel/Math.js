@@ -15,13 +15,10 @@
 // The crash is also why this file imported `Gren.Kernel.Debug`, and it no longer
 // needs to.
 
-// CONSTANTS
-
-var _Math_pi = Math.PI;
-var _Math_e = Math.E;
-var _Math_maxSafeInteger = Number.MAX_SAFE_INTEGER;
-var _Math_minSafeInteger = Number.MIN_SAFE_INTEGER;
-var _Math_maxFloat = Number.MAX_VALUE;
+// The five constants were here. They are `Float` literals in `Math` since
+// D344, and `sqrt` is `f64_sqrt`. `truncate`, `ceiling`, `floor` and `round`
+// were here and dead: `Math` has been Geng over `f64_trunc`, `f64_ceil` and
+// `f64_floor` since D151. What is left is A9's set, destined for fdlibm.
 
 // TRIGONOMETRY
 
@@ -35,10 +32,5 @@ var _Math_atan2 = F2(Math.atan2);
 
 // MORE MATH
 
-var _Math_truncate = Math.trunc;
-var _Math_ceiling = Math.ceil;
-var _Math_floor = Math.floor;
-var _Math_round = Math.round;
-var _Math_sqrt = Math.sqrt;
 var _Math_log = Math.log;
 var _Math_log10 = Math.log10;

@@ -290,9 +290,8 @@ abs n =
     sqrt 25 == 5
 
 -}
+@prim("f64_sqrt")
 sqrt : Float -> Float
-sqrt =
-    Gren.Kernel.Math.sqrt
 
 
 {-| Calculate the logarithm of a number with a given base.
@@ -351,14 +350,16 @@ turns angleInTurns =
 -}
 e : Float
 e =
-    Gren.Kernel.Math.e
+    -- JavaScript's `Math.E`, as the shortest decimal that reads back as the
+    -- same double. The five constants were kernel values until D344.
+    2.718281828459045
 
 
 {-| An approximation of pi.
 -}
 pi : Float
 pi =
-    Gren.Kernel.Math.pi
+    3.141592653589793
 
 
 {-| The largest integer a `Float` holds exactly: 2^53 - 1.
@@ -375,7 +376,7 @@ true of any backend: an `Int` is 32 bits now (`docs/m1b-int.md` §I20), and
 -}
 maxSafeInteger : Float
 maxSafeInteger =
-    Gren.Kernel.Math.maxSafeInteger
+    9007199254740991.0
 
 
 {-| The smallest integer a `Float` holds exactly: -(2^53 - 1). See
@@ -383,14 +384,14 @@ maxSafeInteger =
 -}
 minSafeInteger : Float
 minSafeInteger =
-    Gren.Kernel.Math.minSafeInteger
+    -maxSafeInteger
 
 
 {-| The largest `Float` value.
 -}
 maxFloat : Float
 maxFloat =
-    Gren.Kernel.Math.maxFloat
+    1.7976931348623157e308
 
 
 {-| The smallest `Float` value.

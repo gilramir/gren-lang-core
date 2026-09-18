@@ -19,23 +19,7 @@
 
 var _Basics_pow = F2(Math.pow);
 
-// MORE MATH
+// `toFloat`, `not`, `and`, `or` and `xor` were here. They are Geng in
+// `Basics` since D344: `toFloat` is `i32_to_f64`, the four booleans are
+// `when`s, and the short circuit of `&&` and `||` is the lowering's.
 
-function _Basics_toFloat(x) {
-  return x;
-}
-
-// BOOLEANS
-
-function _Basics_not(bool) {
-  return !bool;
-}
-var _Basics_and = F2(function (a, b) {
-  return a && b;
-});
-var _Basics_or = F2(function (a, b) {
-  return a || b;
-});
-var _Basics_xor = F2(function (a, b) {
-  return a !== b;
-});

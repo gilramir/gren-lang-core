@@ -1077,7 +1077,10 @@ values like this:
 -}
 toFloat : Int -> Float
 toFloat =
-    Gren.Kernel.Basics.toFloat
+    -- `i32_to_f64`, which was already `Num Float`'s `fromInt`. It was a kernel
+    -- function answering its argument, which is the JavaScript of the
+    -- conversion and nothing a second backend could call (D344).
+    intToFloat
 
 
 
@@ -1468,8 +1471,16 @@ type Bool
 
 -}
 not : Bool -> Bool
-not =
-    Gren.Kernel.Basics.not
+not bool =
+    -- This and the three below were kernel functions until D344, which is
+    -- JavaScript's `!`, `&&`, `||` and `!==` behind a name no other backend
+    -- could resolve.
+    when bool is
+        True ->
+            False
+
+        False ->
+            True
 
 
 {-| The logical AND operator. `True` if both inputs are `True`.
@@ -1488,8 +1499,16 @@ and just return `False` overall.
 
 -}
 and : Bool -> Bool -> Bool
-and =
-    Gren.Kernel.Basics.and
+and a b =
+    -- Both arguments are evaluated before this runs, as for any function. The
+    -- short circuit is the operator's: `a && b` lowers to a `when` on `a`
+    -- (`Core.Lower.Expression.shortCircuit`, D344), not to a call to this.
+    when a is
+        True ->
+            b
+
+        False ->
+            False
 
 
 {-| The logical OR operator. `True` if one or both inputs are `True`.
@@ -1508,8 +1527,14 @@ and just return `True` overall.
 
 -}
 or : Bool -> Bool -> Bool
-or =
-    Gren.Kernel.Basics.or
+or a b =
+    -- As `and`: the operator short-circuits, the function does not.
+    when a is
+        True ->
+            True
+
+        False ->
+            b
 
 
 {-| The exclusive-or operator. `True` if exactly one input is `True`.
@@ -1524,8 +1549,13 @@ or =
 
 -}
 xor : Bool -> Bool -> Bool
-xor =
-    Gren.Kernel.Basics.xor
+xor a b =
+    when a is
+        True ->
+            not b
+
+        False ->
+            b
 
 
 
