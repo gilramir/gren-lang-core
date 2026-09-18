@@ -81,8 +81,25 @@ add : Int -> Int -> Int
 shl : Int -> Int -> Int
 
 
-@prim("i32_shr")
-shr : Int -> Int -> Int
+-- D342's wraps. A byte and a 16-bit word are already in range, so the
+-- unsigned two change no value and are here for the type; the signed two are
+-- the sign extension `shr (shl b 24) 24` was written by hand before D348.
+
+
+@prim("i32_to_i8")
+i32ToI8 : Int -> Int8
+
+
+@prim("i32_to_u8")
+i32ToU8 : Int -> UInt8
+
+
+@prim("i32_to_i16")
+i32ToI16 : Int -> Int16
+
+
+@prim("i32_to_u16")
+i32ToU16 : Int -> UInt16
 
 
 @prim("i32_or")
@@ -227,18 +244,26 @@ guard run input _ =
 -- SIGNED INTEGERS
 
 
-{-| Decode one byte into an integer from `-128` to `127`.
+{-| Decode one byte into an `Int8`.
+
+The 8- and 16-bit decoders answer the type of their width rather than an `Int`
+(D342), so that a format read and written by one module uses one type: the
+encoders take these types, and an `Int` they cannot write is an `Int` these
+cannot answer. A byte that is a count, such as a length prefix, is
+`UInt8.toInt` away:
+
+    unsignedInt8 |> map UInt8.toInt |> andThen bytes
 -}
-signedInt8 : Decoder Int
+signedInt8 : Decoder Int8
 signedInt8 =
-  Decoder (sized 1 (\b o -> shr (shl (byte b o) 24) 24))
+  Decoder (sized 1 (\b o -> i32ToI8 (byte b o)))
 
 
-{-| Decode two bytes into an integer from `-32768` to `32767`.
+{-| Decode two bytes into an `Int16`.
 -}
-signedInt16 : Endianness -> Decoder Int
+signedInt16 : Endianness -> Decoder Int16
 signedInt16 endianness =
-  Decoder (sized 2 (\b o -> shr (shl (word16 (endianness == LE) b o) 16) 16))
+  Decoder (sized 2 (\b o -> i32ToI16 (word16 (endianness == LE) b o)))
 
 
 {-| Decode four bytes into an integer from `-2147483648` to `2147483647`.
@@ -252,24 +277,24 @@ signedInt32 endianness =
 -- UNSIGNED INTEGERS
 
 
-{-| Decode one byte into an integer from `0` to `255`.
+{-| Decode one byte into a `UInt8`.
 -}
-unsignedInt8 : Decoder Int
+unsignedInt8 : Decoder UInt8
 unsignedInt8 =
   Decoder
     (\bites offset ->
       if lt offset (primLength bites) then
-        Good { offset = add offset 1, value = byte bites offset }
+        Good { offset = add offset 1, value = i32ToU8 (byte bites offset) }
       else
         ended bites
     )
 
 
-{-| Decode two bytes into an integer from `0` to `65535`.
+{-| Decode two bytes into a `UInt16`.
 -}
-unsignedInt16 : Endianness -> Decoder Int
+unsignedInt16 : Endianness -> Decoder UInt16
 unsignedInt16 endianness =
-  Decoder (sized 2 (word16 (endianness == LE)))
+  Decoder (sized 2 (\b o -> i32ToU16 (word16 (endianness == LE) b o)))
 
 
 {-| Decode four bytes into a `UInt32`.

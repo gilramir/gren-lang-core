@@ -4,13 +4,14 @@ import Bytes exposing (Bytes)
 import Bytes.Encode
 import Expect
 import Fuzz
+import Int8
 import Test exposing (..)
 
 
 encodeInt : Int -> Bytes
 encodeInt i =
     Bytes.Encode.encode <|
-        Bytes.Encode.signedInt8 i
+        Bytes.Encode.signedInt8 (Int8.fromIntWrap i)
 
 
 tests : Test

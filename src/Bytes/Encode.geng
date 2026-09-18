@@ -78,7 +78,7 @@ value directly. This is valuable when you are encoding more elaborate data:
     import Bytes.Encode as Encode
 
     type alias Person =
-      { age : Int
+      { age : UInt16
       , name : String
       }
 
@@ -105,18 +105,25 @@ encode encoder =
 -- INTEGERS
 
 
-{-| Encode integers from `-128` to `127` in one byte.
+{-| Encode an `Int8` in one byte.
+
+The 8- and 16-bit encoders take the type of their width rather than an `Int`
+(D342), because an `Int` has values they cannot write: until D348
+`unsignedInt8 300` wrote `44` and said nothing, which is the defect
+`unsignedInt32` had until 2026-09-13 at the two narrower widths. A number that
+is already in an `Int` is `Int8.fromInt` away, which saturates, or
+`Int8.fromIntWrap`, which keeps the low bits as this used to.
 -}
-signedInt8 : Int -> Encoder
+signedInt8 : Int8 -> Encoder
 signedInt8 n =
-  I8 n
+  I8 (i8ToI32 n)
 
 
-{-| Encode integers from `-32768` to `32767` in two bytes.
+{-| Encode an `Int16` in two bytes.
 -}
-signedInt16 : Endianness -> Int -> Encoder
+signedInt16 : Endianness -> Int16 -> Encoder
 signedInt16 e n =
-  I16 { endian = e, number = n }
+  I16 { endian = e, number = i16ToI32 n }
 
 
 {-| Encode integers from `-2147483648` to `2147483647` in four bytes.
@@ -126,18 +133,18 @@ signedInt32 e n =
   I32 { endian = e, number = n }
 
 
-{-| Encode integers from `0` to `255` in one byte.
+{-| Encode a `UInt8`, a byte, in one byte.
 -}
-unsignedInt8 : Int -> Encoder
+unsignedInt8 : UInt8 -> Encoder
 unsignedInt8 n =
-  U8 n
+  U8 (u8ToI32 n)
 
 
-{-| Encode integers from `0` to `65535` in two bytes.
+{-| Encode a `UInt16` in two bytes.
 -}
-unsignedInt16 : Endianness -> Int -> Encoder
+unsignedInt16 : Endianness -> UInt16 -> Encoder
 unsignedInt16 e n =
-  U16 { endian = e, number = n }
+  U16 { endian = e, number = u16ToI32 n }
 
 
 {-| Encode a `UInt32` in four bytes.
@@ -237,6 +244,22 @@ set =
 
 @prim("i32_and")
 band : Int -> Int -> Int
+
+
+@prim("i8_to_i32")
+i8ToI32 : Int8 -> Int
+
+
+@prim("u8_to_i32")
+u8ToI32 : UInt8 -> Int
+
+
+@prim("i16_to_i32")
+i16ToI32 : Int16 -> Int
+
+
+@prim("u16_to_i32")
+u16ToI32 : UInt16 -> Int
 
 
 @prim("i32_ushr")
