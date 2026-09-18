@@ -80,5 +80,7 @@ goes unhandled!
 
 -}
 todo : String -> a
-todo =
-    Gren.Kernel.Debug.todo
+todo message =
+    -- Not a recursive call: the lowering makes every `Debug.todo` applied to a
+    -- message an `ECrash Todo`, this one included (D335).
+    todo message

@@ -23,31 +23,24 @@ var _Debug_log__DEBUG = F2(function (line, value) {
 });
 
 // TODOS
-
-function _Debug_todo(moduleName, region) {
-  return function (message) {
-    _Debug_crash(8, moduleName, region, message);
-  };
-}
-
-function _Debug_todoCase(moduleName, region, value) {
-  return function (message) {
-    _Debug_crash(9, moduleName, region, value, message);
-  };
-}
+//
+// `Debug.todo` is not here any more: the lowering makes each one an `ECrash
+// Todo` carrying where it was written and its message, and the backend's
+// `_Crash_todo` throws (D335, geng-lang `m1a-lowering.md` §L4). `_Debug_todo`
+// took a module name and a region that stock's code generator filled in and
+// this one never did, so it answered a function instead of crashing
+// (`m1b-extern.md` §H18.4). `_Debug_todoCase` and `_Debug_crash`, which only it
+// reached, went with it.
 
 // TO STRING
 //
 // `Debug.toString` is gone (D16, `syntax.md` S8): `inspect` replaced it, and
 // unlike this walker `inspect` is typed, total, pinned by
 // `docs/representation.md` R5, and written in Gren rather than in one runtime's
-// JavaScript. What is left here has no Gren binding and three callers that are
-// not `inspect`'s to take:
-//
-//   - `Debug.log`, whose type is `String -> a -> a` with no constraint, so
-//     there is no instance to reach and nothing to render with;
-//   - `_Debug_crash` case 9, the value an incomplete `case` was handed;
-//   - `Generate.CoreJS.printForRepl`, which prints a REPL entry of any type.
+// JavaScript. What is left here has no Gren binding and one caller that is
+// not `inspect`'s to take: `Generate.CoreJS.printForRepl`, which prints a REPL
+// entry of any type. (`Debug.log` was another until D158 made it render with
+// `inspect`, and `_Debug_crash`'s case 9 a third until D335 deleted it.)
 //
 // So the `Dict` and `Set` tag-matching below stays too, and stays a duplicate
 // of the instances `Dict` and `Set` now write. `m1b-classes.md` §G45 registers
@@ -233,90 +226,4 @@ function _Debug_internalColor(ansi, string) {
 
 function _Debug_toHexDigit(n) {
   return String.fromCharCode(n < 10 ? 48 + n : 55 + n);
-}
-
-// CRASH
-
-function _Debug_crash__PROD(identifier) {
-  throw new Error(
-    "https://github.com/gren-lang/core/blob/1.0.0/hints/" + identifier + ".md",
-  );
-}
-
-function _Debug_crash__DEBUG(identifier, fact1, fact2, fact3, fact4) {
-  switch (identifier) {
-    case 0:
-      throw new Error(
-        'What node should I take over? In JavaScript I need something like:\n\n    Gren.Main.init({\n        node: document.getElementById("gren-node")\n    })\n\nYou need to do this with any Browser.sandbox or Browser.element program.',
-      );
-
-    case 1:
-      throw new Error(
-        "Browser.application programs cannot handle URLs like this:\n\n    " +
-          document.location.href +
-          "\n\nWhat is the root? The root of your file system?",
-      );
-
-    // 2, 3 and 4 were a `Program`'s flags that did not decode, two ports with
-    // one name, and a value of the wrong type sent through a port. Programs,
-    // flags and ports left with effect managers (geng-lang m1b-source.md
-    // §SO19), and nothing can throw them.
-
-    // 5 was `(==)` on functions, thrown by the kernel's structural walker when
-    // it reached one. D142 deleted the walker (`docs/m1b-classes.md` §G40) and
-    // the type checker asks the question first: a function type has no `Eq`
-    // instance, so `f == g` does not compile and there is nothing to throw.
-
-    case 6:
-      var moduleName = fact1;
-      throw new Error(
-        "Your page is loading multiple Gren scripts with a module named " +
-          moduleName +
-          ". Maybe a duplicate script is getting loaded accidentally? If not, rename one of them so I know which is which!",
-      );
-
-    case 8:
-      var moduleName = fact1;
-      var region = fact2;
-      var message = fact3;
-      throw new Error(
-        "TODO in module `" +
-          moduleName +
-          "` " +
-          _Debug_regionToString(region) +
-          "\n\n" +
-          message,
-      );
-
-    case 9:
-      var moduleName = fact1;
-      var region = fact2;
-      var value = fact3;
-      var message = fact4;
-      throw new Error(
-        "TODO in module `" +
-          moduleName +
-          "` from the `case` expression " +
-          _Debug_regionToString(region) +
-          "\n\nIt received the following value:\n\n    " +
-          _Debug_toString(value).replace("\n", "\n    ") +
-          "\n\nBut the branch that handles it says:\n\n    " +
-          message.replace("\n", "\n    "),
-      );
-
-    case 10:
-      throw new Error("Bug in https://github.com/gren-lang/core/issues");
-
-    case 11:
-      throw new Error("Cannot perform mod 0. Division by zero error.");
-  }
-}
-
-function _Debug_regionToString(region) {
-  if (region.__$start.__$line === region.__$end.__$line) {
-    return "on line " + region.__$start.__$line;
-  }
-  return (
-    "on lines " + region.__$start.__$line + " through " + region.__$end.__$line
-  );
 }
