@@ -903,7 +903,14 @@ sort array =
 -}
 sortBy : Ord b => (a -> b) -> Array a -> Array a
 sortBy toKey array =
-    sortWith (\x y -> compare (toKey x) (toKey y)) array
+    -- Decorate, sort, undecorate: the key is computed once per element rather
+    -- than twice per comparison, which is `n` calls instead of `2 n log n`
+    -- (`m1b-arr-prim.md` §AR17). Stable, because the merge is.
+    map (\pair -> pair.value)
+        (sortWith
+            (\x y -> compare x.key y.key)
+            (map (\x -> { key = toKey x, value = x }) array)
+        )
 
 
 {-| Sort values with a custom comparison function.
@@ -926,6 +933,11 @@ sortWith fn array =
             unsafeLength array
     in
     if lt len 2 then
+        array
+
+    else if not (lt (runEnd fn array 1 len) len) then
+        -- One non-descending run covers it: already sorted, and the whole sort
+        -- is the scan that found that out.
         array
 
     else
@@ -1272,6 +1284,26 @@ map3Help fn xs ys zs index len acc =
 
     else
         acc
+
+
+{-| The first index from `at` whose element sorts before the one ahead of it,
+or `len` if there is none, so `runEnd fn array 1 len == len` says the array is
+already in order. The scan stops at the first descent, so an unsorted array
+pays a comparison or two. This is not run detection: only a single run
+covering the whole array is used (`m1b-arr-prim.md` §AR17, D330).
+-}
+runEnd : (a -> a -> Order) -> Array a -> Int -> Int -> Int
+runEnd fn array at len =
+    if not (lt at len) then
+        len
+
+    else
+        when fn (unsafeGet array at) (unsafeGet array (subtract at 1)) is
+            LT ->
+                at
+
+            _ ->
+                runEnd fn array (add at 1) len
 
 
 {-| A bottom-up merge sort: runs of `width` are merged from `src` into `dst`,
