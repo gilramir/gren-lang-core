@@ -1199,13 +1199,40 @@ fromFloat number =
                 else
                     ""
 
-            { mantissa, exponent } =
-                Ryu.decimal number
-
-            digits =
-                fromUInt64 mantissa
+            normalized =
+                shortestDigits number
         in
-        place sign digits (exponent + count digits - 1)
+        when firstIndexOf "e" normalized is
+            Just at ->
+                place sign
+                    (takeFirst at normalized)
+                    (dropFirst (at + 1) normalized |> toInt |> Maybe.withDefault 0)
+
+            Nothing ->
+                normalized
+
+
+{-| The shortest digits that read back as `number`, and the decimal exponent of
+the first of them, as `<digits>e<exponent>`: `1.5e-7` is `15e-7`, `1.0e21` is
+`1e21`. No sign, no point, no trailing zero; `number` is finite and not zero,
+and its sign is ignored (D328, `docs/m1b-ryu.md` §Y16).
+
+The body is the portable implementation, Ryu's `decimal`, and it is what every
+backend without a `js` row compiles. On JavaScript the host's
+`toExponential()` answers the same digits, which §Y16.2 checked and the
+`geng-hs-bodies` target keeps checking, at about a seventh of the cost.
+-}
+@externPure(js, "String", "shortestDigits")
+shortestDigits : Float -> String
+shortestDigits number =
+    let
+        { mantissa, exponent } =
+            Ryu.decimal number
+
+        digits =
+            fromUInt64 mantissa
+    in
+    digits ++ "e" ++ fromInt (exponent + count digits - 1)
 
 
 {-| Convert a `Float32` to a `String`.
