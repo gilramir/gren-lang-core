@@ -75,7 +75,6 @@ derives or writes an instance for.
 -}
 
 import Gren.Kernel.Basics
-import Gren.Kernel.Utils
 
 
 
@@ -312,6 +311,14 @@ negateInt : Int -> Int
 
 @prim("i32_div")
 divInt : Int -> Int -> Int
+
+
+@prim("i32_eq")
+eqInt : Int -> Int -> Bool
+
+
+@prim("i32_lt")
+ltInt : Int -> Int -> Bool
 
 
 @prim("i32_rem")
@@ -600,6 +607,14 @@ class Fractional a where
 
 @prim("f64_div")
 divFloat : Float -> Float -> Float
+
+
+@prim("f64_eq")
+eqFloat : Float -> Float -> Bool
+
+
+@prim("f64_lt")
+ltFloat : Float -> Float -> Bool
 
 
 @prim("f64_isnan")
@@ -1091,21 +1106,19 @@ class Eq a where
     eq : a -> a -> Bool
 
 
--- The primitive instances `Basics` can write. An `Int`, a `Float` and a `Bool`
--- are each a JavaScript primitive, so `Gren.Kernel.Utils.identical` -- `===` --
--- is what "the same" means at one (D142, `docs/m1b-classes.md` §G40). What all
--- three called until D142 was the kernel's structural walker, which read the
--- shape of both values at run time and was right about an `Int` by accident.
---
--- D2's four sized types use their own `eq` primitive instead of the kernel.
--- `i64_eq` *is* `===` on JavaScript, so this is the same answer written down
--- rather than found at run time -- and it is the answer at a backend where a
--- 64-bit integer is not a JavaScript value at all.
+-- The primitive instances `Basics` can write, each over its width's `eq`
+-- primitive (D333). `i32_eq` and `f64_eq` *are* `===` on JavaScript, which is
+-- what `Gren.Kernel.Utils.identical` answered here from D142 to D333; written as
+-- the primitive it is the same answer, and it is also the answer at a backend
+-- where an `Int` is not a JavaScript value at all. Before D142 all three called
+-- the kernel's structural walker, which read the shape of both values at run
+-- time and was right about an `Int` by accident. A `Bool` is a constructor on
+-- every backend but this one, so it is a Geng `if`.
 
 
 instance Eq Int where
     eq a b =
-        Gren.Kernel.Utils.identical a b
+        eqInt a b
 
 
 -- `Eq Float` is the one that is not `===` alone: `arithmetic.md` A2 makes all
@@ -1119,13 +1132,20 @@ instance Eq Int where
 instance Eq Float where
     eq a b =
         or
-            (Gren.Kernel.Utils.identical a b)
+            (eqFloat a b)
             (and (isNaN a) (isNaN b))
 
 
 instance Eq Bool where
     eq a b =
-        Gren.Kernel.Utils.identical a b
+        if a then
+            b
+
+        else if b then
+            False
+
+        else
+            True
 
 
 instance Eq Int64 where
@@ -1168,9 +1188,24 @@ class Ord a where
     compare : a -> a -> Order
 
 
+-- Over `i32_lt`, with the two tests written out (D333,
+-- `docs/m1b-classes.md` §G51). It was `Gren.Kernel.Utils.compare`: a curried call
+-- through an `F2` wrapper to a `typeof` dispatch, whose integer answer was then
+-- made an `Order`. Written out, a specialized `<` at `Int` is two JavaScript `<`
+-- and no call: a loop of them went from 0.129 ms a round to 0.072, and sorting
+-- 20,000 `Int`s from 3.41 ms to 2.55.
+
+
 instance Ord Int where
     compare a b =
-        Gren.Kernel.Utils.compare a b
+        if ltInt a b then
+            LT
+
+        else if ltInt b a then
+            GT
+
+        else
+            EQ
 
 
 -- All NaNs are one equivalence class and they sort after every other value
@@ -1191,8 +1226,14 @@ instance Ord Float where
         else if isNaN b then
             LT
 
+        else if ltFloat a b then
+            LT
+
+        else if ltFloat b a then
+            GT
+
         else
-            Gren.Kernel.Utils.compare a b
+            EQ
 
 
 -- Written rather than derived, and it is the one instance in `core` that has to
@@ -1209,40 +1250,61 @@ instance Ord Float where
 
 instance Ord Bool where
     compare a b =
-        Gren.Kernel.Utils.compare a b
+        if a then
+            if b then
+                EQ
+
+            else
+                GT
+
+        else if b then
+            LT
+
+        else
+            EQ
 
 
--- D2's four, over the `lt` primitive of each width. `Gren.Kernel.Utils.compare`
--- is a run-time dispatch on the shape of its arguments and there is nothing for
--- it to learn here: the instance already knows the width, so it names the
--- comparison. Two calls at worst, and the second only when the first says no.
-
-
-compareOver : (a -> a -> Bool) -> a -> a -> Order
-compareOver lessThan a b =
-    if lessThan a b then
-        LT
-
-    else if lessThan b a then
-        GT
-
-    else
-        EQ
+-- D2's four, over the `lt` primitive of each width, the same way. They went
+-- through a `compareOver lessThan a b` until D333, and handing it the primitive
+-- as a value made each comparison an `A2` through the primitive's wrapper:
+-- measured at `Int`, that shape sorted 1.19 times slower than the kernel call it
+-- was meant to replace (§G51).
 
 
 instance Ord Int64 where
     compare a b =
-        compareOver ltInt64 a b
+        if ltInt64 a b then
+            LT
+
+        else if ltInt64 b a then
+            GT
+
+        else
+            EQ
 
 
 instance Ord UInt32 where
     compare a b =
-        compareOver ltUInt32 a b
+        if ltUInt32 a b then
+            LT
+
+        else if ltUInt32 b a then
+            GT
+
+        else
+            EQ
 
 
 instance Ord UInt64 where
     compare a b =
-        compareOver ltUInt64 a b
+        if ltUInt64 a b then
+            LT
+
+        else if ltUInt64 b a then
+            GT
+
+        else
+            EQ
 
 
 -- A2 again: IEEE leaves NaN unordered, which would make `compare` neither
@@ -1262,8 +1324,14 @@ instance Ord Float32 where
         else if isNaNFloat32 b then
             LT
 
+        else if ltFloat32 a b then
+            LT
+
+        else if ltFloat32 b a then
+            GT
+
         else
-            compareOver ltFloat32 a b
+            EQ
 
 
 {-| -}

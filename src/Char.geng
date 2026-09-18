@@ -28,8 +28,7 @@ module Char exposing
 
 -}
 
-import Basics exposing ((&&), (<=), (>=), (||), Bool, Eq, Int, Ord)
-import Gren.Kernel.Utils
+import Basics exposing ((&&), (<=), (==), (>=), (||), Bool, Eq, Int, Ord)
 import Maybe exposing (Maybe(..))
 
 
@@ -322,18 +321,20 @@ fromCode code =
 codeToCharPrim : Int -> Char
 
 
--- `Eq Char` is reference equality, the same as `Eq Int` and for the same reason:
--- a `Char` is a code point, so two of them are equal exactly when the numbers
--- are (D142, `docs/m1b-classes.md` §G40). It used to be `Char.identical`,
--- because a `Char` was a one-character string that a dev build boxed in a
--- `String` object; `m1b-str.md` §T12 is where that box went.
+-- `Eq Char` and `Ord Char` are `Int`'s, on the code point: a `Char` is one
+-- (C8), so `toCode` is the identity on every backend and two `Char`s are equal
+-- or ordered exactly when their numbers are (D333; D142 and
+-- `docs/m1b-classes.md` §G40 before it, when both were
+-- `Gren.Kernel.Utils`). It used to be `Char.identical`, because a `Char` was a
+-- one-character string that a dev build boxed in a `String` object;
+-- `m1b-str.md` §T12 is where that box went.
 
 
 instance Eq Char where
     eq a b =
-        Gren.Kernel.Utils.identical a b
+        toCode a == toCode b
 
 
 instance Ord Char where
     compare a b =
-        Gren.Kernel.Utils.compare a b
+        compare (toCode a) (toCode b)

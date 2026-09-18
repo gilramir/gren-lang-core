@@ -112,42 +112,6 @@ primOffsetToIndex : String -> Int -> Int
 primFromDecimal : String -> Float
 
 
-@prim("i32_lt")
-primLt : Int -> Int -> Bool
-
-
-{-| `Int` comparisons, over `i32_lt` rather than `Ord Int`'s `compare`, which is
-a kernel call that answers an `Order` (`m1b-json.md` §O12.3).
--}
-intLt : Int -> Int -> Bool
-intLt a b =
-    primLt a b
-
-
-intGt : Int -> Int -> Bool
-intGt a b =
-    primLt b a
-
-
-intLe : Int -> Int -> Bool
-intLe a b =
-    if primLt b a then
-        False
-
-    else
-        True
-
-
-intGe : Int -> Int -> Bool
-intGe a b =
-    if primLt a b then
-        False
-
-    else
-        True
-
-
-
 -- MEMBERS
 
 
@@ -161,10 +125,10 @@ members pairs =
         count =
             Array.length pairs
     in
-    if intLt count 2 then
+    if count < 2 then
         pairs
 
-    else if intLe count 8 then
+    else if count <= 8 then
         if hasDuplicate pairs count 1 then
             dedupe pairs
 
@@ -180,7 +144,7 @@ small objects most JSON is made of.
 -}
 hasDuplicate : Array { key : String, value : a } -> Int -> Int -> Bool
 hasDuplicate pairs count j =
-    if intGe j count then
+    if j >= count then
         False
 
     else
@@ -198,7 +162,7 @@ hasDuplicate pairs count j =
 
 seenBefore : Array { key : String, value : a } -> String -> Int -> Int -> Bool
 seenBefore pairs key i j =
-    if intGe i j then
+    if i >= j then
         False
 
     else
@@ -369,7 +333,7 @@ codeAt s i =
 
 skipWs : String -> Int -> Int -> Int
 skipWs s end i =
-    if intLt i end then
+    if i < end then
         let
             c =
                 codeAt s i
@@ -419,7 +383,7 @@ run s end i stack kind elements pairs key hashes clash have v =
                 more =
                     Builder.pushLast v elements
             in
-            if intGe j end then
+            if j >= end then
                 Err { offset = j, reason = "Unexpected end of input in an array" }
 
             else
@@ -450,7 +414,7 @@ run s end i stack kind elements pairs key hashes clash have v =
                 more =
                     Builder.pushLast { key = key, value = v } pairs
             in
-            if intGe j end then
+            if j >= end then
                 Err { offset = j, reason = "Unexpected end of input in an object" }
 
             else
@@ -464,27 +428,27 @@ run s end i stack kind elements pairs key hashes clash have v =
                             skipWs s end (j + 1)
 
                         closing =
-                            if intLt k end && codeAt s k == 0x22 then
+                            if k < end && codeAt s k == 0x22 then
                                 stringEnd s end (k + 1)
 
                             else
                                 -1
 
                         newKey =
-                            if intGe closing 0 then
+                            if closing >= 0 then
                                 primSlice s (k + 1) closing
 
                             else
                                 escapedKey s end k closing
 
                         colon =
-                            if intGe closing 0 then
+                            if closing >= 0 then
                                 skipWs s end (closing + 1)
 
                             else
                                 afterEscapedKey s end k closing
                     in
-                    if intGe colon end || codeAt s colon /= 0x3A then
+                    if colon >= end || codeAt s colon /= 0x3A then
                         Err (keyProblem s end k)
 
                     else
@@ -524,7 +488,7 @@ run s end i stack kind elements pairs key hashes clash have v =
         else
             Err { offset = j, reason = "Unexpected " ++ describe s end j ++ " after the JSON value" }
 
-    else if intGe i end then
+    else if i >= end then
         Err { offset = i, reason = "Unexpected end of input where a value was expected" }
 
     else
@@ -537,7 +501,7 @@ run s end i stack kind elements pairs key hashes clash have v =
                 closing =
                     stringEnd s end (i + 1)
             in
-            if intGe closing 0 then
+            if closing >= 0 then
                 run s end (closing + 1) stack kind elements pairs key hashes clash True (Str (primSlice s (i + 1) closing))
 
             else
@@ -548,12 +512,12 @@ run s end i stack kind elements pairs key hashes clash have v =
                     ScanFailed problem ->
                         Err problem
 
-        else if c == 0x2D || (intGe c 0x30 && intLe c 0x39) then
+        else if c == 0x2D || (c >= 0x30 && c <= 0x39) then
             let
                 stop =
                     scanNumber s end i
             in
-            if intLt stop 0 then
+            if stop < 0 then
                 Err (numberProblem s end i)
 
             else
@@ -564,33 +528,33 @@ run s end i stack kind elements pairs key hashes clash have v =
                 k =
                     skipWs s end (i + 1)
             in
-            if intLt k end && codeAt s k == 0x7D then
+            if k < end && codeAt s k == 0x7D then
                 run s end (k + 1) stack kind elements pairs key hashes clash True (Obj [])
 
             else
                 let
                     closing =
-                        if intLt k end && codeAt s k == 0x22 then
+                        if k < end && codeAt s k == 0x22 then
                             stringEnd s end (k + 1)
 
                         else
                             -1
 
                     newKey =
-                        if intGe closing 0 then
+                        if closing >= 0 then
                             primSlice s (k + 1) closing
 
                         else
                             escapedKey s end k closing
 
                     colon =
-                        if intGe closing 0 then
+                        if closing >= 0 then
                             skipWs s end (closing + 1)
 
                         else
                             afterEscapedKey s end k closing
                 in
-                if intGe colon end || codeAt s colon /= 0x3A then
+                if colon >= end || codeAt s colon /= 0x3A then
                     Err (keyProblem s end k)
 
                 else
@@ -613,7 +577,7 @@ run s end i stack kind elements pairs key hashes clash have v =
                 k =
                     skipWs s end (i + 1)
             in
-            if intLt k end && codeAt s k == 0x5D then
+            if k < end && codeAt s k == 0x5D then
                 run s end (k + 1) stack kind elements pairs key hashes clash True (Arr [])
 
             else
@@ -659,7 +623,7 @@ word s end i w =
         stop =
             i + primEnd w
     in
-    intLe stop end && primEq (primSlice s i stop) w
+    stop <= end && primEq (primSlice s i stop) w
 
 
 {-| One bit of 32 for a key, from its length and its first and last characters. -}
@@ -684,7 +648,7 @@ says why.
 -}
 stringEnd : String -> Int -> Int -> Int
 stringEnd s end i =
-    if intGe i end then
+    if i >= end then
         -1
 
     else
@@ -698,7 +662,7 @@ stringEnd s end i =
         else if c == 0x5C then
             -2 - i
 
-        else if intLt c 0x20 then
+        else if c < 0x20 then
             -1
 
         else
@@ -710,7 +674,7 @@ quote, given what `stringEnd` said, or a problem.
 -}
 stringAt : String -> Int -> Int -> Int -> Scanned
 stringAt s end open closing =
-    if intGe closing 0 then
+    if closing >= 0 then
         Scanned { str = primSlice s (open + 1) closing, next = closing + 1 }
 
     else if closing == -1 then
@@ -768,17 +732,17 @@ keyProblem s end k =
 {-| A key, the `:` after it and the whitespace after that. -}
 readKey : String -> Int -> Int -> Scanned
 readKey s end i =
-    if intLt i end && codeAt s i == 0x22 then
+    if i < end && codeAt s i == 0x22 then
         when scan s end "" (i + 1) (i + 1) is
             Scanned { str, next } ->
                 let
                     colon =
                         skipWs s end next
                 in
-                if intLt colon end && codeAt s colon == 0x3A then
+                if colon < end && codeAt s colon == 0x3A then
                     Scanned { str = str, next = skipWs s end (colon + 1) }
 
-                else if intGe colon end then
+                else if colon >= end then
                     ScanFailed { offset = colon, reason = "Unexpected end of input in an object" }
 
                 else
@@ -787,7 +751,7 @@ readKey s end i =
             failed ->
                 failed
 
-    else if intGe i end then
+    else if i >= end then
         ScanFailed { offset = i, reason = "Unexpected end of input in an object" }
 
     else
@@ -800,7 +764,7 @@ no escape is one slice.
 -}
 scan : String -> Int -> String -> Int -> Int -> Scanned
 scan s end acc start i =
-    if intGe i end then
+    if i >= end then
         ScanFailed { offset = i, reason = "Unterminated string" }
 
     else
@@ -812,7 +776,7 @@ scan s end acc start i =
             Scanned { str = primAppend acc (primSlice s start i), next = i + 1 }
 
         else if c == 0x5C then
-            if intGe (i + 1) (end) then
+            if (i + 1) >= end then
                 ScanFailed { offset = i + 1, reason = "Unterminated string" }
 
             else
@@ -828,26 +792,26 @@ scan s end acc start i =
                         u =
                             hex4 s end (i + 2)
                     in
-                    if intLt u 0 then
+                    if u < 0 then
                         ScanFailed { offset = i, reason = "Expected four hexadecimal digits after \\u" }
 
-                    else if intGe u 0xD800 && intLe u 0xDBFF then
+                    else if u >= 0xD800 && u <= 0xDBFF then
                         let
                             low =
-                                if intLt (i + 7) (end) && codeAt s (i + 6) == 0x5C && codeAt s (i + 7) == 0x75 then
+                                if (i + 7) < end && codeAt s (i + 6) == 0x5C && codeAt s (i + 7) == 0x75 then
                                     hex4 s end (i + 8)
 
                                 else
                                     -1
                         in
-                        if intGe low 0xDC00 && intLe low 0xDFFF then
+                        if low >= 0xDC00 && low <= 0xDFFF then
                             scan s end (primAppend before (codepoint (0x10000 + (u - 0xD800) * 0x0400 + (low - 0xDC00)))) (i + 12) (i + 12)
 
                         else
                             -- D209: half a surrogate pair is not a character.
                             scan s end (primAppend before "\u{FFFD}") (i + 6) (i + 6)
 
-                    else if intGe u 0xDC00 && intLe u 0xDFFF then
+                    else if u >= 0xDC00 && u <= 0xDFFF then
                         scan s end (primAppend before "\u{FFFD}") (i + 6) (i + 6)
 
                     else
@@ -889,7 +853,7 @@ scan s end acc start i =
                     else
                         scan s end (primAppend before piece) (i + 2) (i + 2)
 
-        else if intLt c 0x20 then
+        else if c < 0x20 then
             ScanFailed { offset = i, reason = "Unescaped control character " ++ describeChar c ++ " in a string" }
 
         else
@@ -909,7 +873,7 @@ codepoint cp =
 {-| Four hexadecimal digits as a number, or -1. -}
 hex4 : String -> Int -> Int -> Int
 hex4 s end i =
-    if intGt (i + 4) (end) then
+    if (i + 4) > end then
         -1
 
     else
@@ -926,7 +890,7 @@ hex4 s end i =
             d =
                 hexDigit (codeAt s (i + 3))
         in
-        if intLt a 0 || intLt b 0 || intLt c 0 || intLt d 0 then
+        if a < 0 || b < 0 || c < 0 || d < 0 then
             -1
 
         else
@@ -935,13 +899,13 @@ hex4 s end i =
 
 hexDigit : Int -> Int
 hexDigit c =
-    if intGe c 0x30 && intLe c 0x39 then
+    if c >= 0x30 && c <= 0x39 then
         c - 0x30
 
-    else if intGe c 0x61 && intLe c 0x66 then
+    else if c >= 0x61 && c <= 0x66 then
         c - 0x57
 
-    else if intGe c 0x41 && intLe c 0x46 then
+    else if c >= 0x41 && c <= 0x46 then
         c - 0x37
 
     else
@@ -962,7 +926,7 @@ scanNumber s end i =
                 i
 
         afterInt =
-            if intLt afterSign end && codeAt s afterSign == 0x30 then
+            if afterSign < end && codeAt s afterSign == 0x30 then
                 afterSign + 1
 
             else
@@ -974,7 +938,7 @@ scanNumber s end i =
     else
         let
             afterFrac =
-                if intLt afterInt end && codeAt s afterInt == 0x2E then
+                if afterInt < end && codeAt s afterInt == 0x2E then
                     digits s end (afterInt + 1)
 
                 else
@@ -983,10 +947,10 @@ scanNumber s end i =
         if afterFrac == afterInt + 1 then
             -1
 
-        else if intLt afterFrac end && (codeAt s afterFrac == 0x65 || codeAt s afterFrac == 0x45) then
+        else if afterFrac < end && (codeAt s afterFrac == 0x65 || codeAt s afterFrac == 0x45) then
             let
                 j =
-                    if intLt (afterFrac + 1) (end) && (codeAt s (afterFrac + 1) == 0x2B || codeAt s (afterFrac + 1) == 0x2D) then
+                    if (afterFrac + 1) < end && (codeAt s (afterFrac + 1) == 0x2B || codeAt s (afterFrac + 1) == 0x2D) then
                         afterFrac + 2
 
                     else
@@ -1016,7 +980,7 @@ numberProblem s end i =
                 i
 
         afterInt =
-            if intLt afterSign end && codeAt s afterSign == 0x30 then
+            if afterSign < end && codeAt s afterSign == 0x30 then
                 afterSign + 1
 
             else
@@ -1028,7 +992,7 @@ numberProblem s end i =
     else
         let
             afterFrac =
-                if intLt afterInt end && codeAt s afterInt == 0x2E then
+                if afterInt < end && codeAt s afterInt == 0x2E then
                     digits s end (afterInt + 1)
 
                 else
@@ -1040,7 +1004,7 @@ numberProblem s end i =
         else
             let
                 j =
-                    if intLt (afterFrac + 1) (end) && (codeAt s (afterFrac + 1) == 0x2B || codeAt s (afterFrac + 1) == 0x2D) then
+                    if (afterFrac + 1) < end && (codeAt s (afterFrac + 1) == 0x2B || codeAt s (afterFrac + 1) == 0x2D) then
                         afterFrac + 2
 
                     else
@@ -1051,12 +1015,12 @@ numberProblem s end i =
 
 digits : String -> Int -> Int -> Int
 digits s end i =
-    if intLt i end then
+    if i < end then
         let
             c =
                 codeAt s i
         in
-        if intGe c 0x30 && intLe c 0x39 then
+        if c >= 0x30 && c <= 0x39 then
             digits s end (i + 1)
 
         else
@@ -1069,7 +1033,7 @@ digits s end i =
 {-| The character at an offset, as a parse error names it. -}
 describe : String -> Int -> Int -> String
 describe s end i =
-    if intGe i end then
+    if i >= end then
         "the end of the input"
 
     else
@@ -1093,13 +1057,13 @@ nothing (`m1b-json.md` §O14).
 -}
 invisible : Int -> Bool
 invisible c =
-    if intLt c 0x7F then
-        intLt c 0x20
+    if c < 0x7F then
+        c < 0x20
 
-    else if intLt c 0x2000 then
-        intLe c 0xA0
+    else if c < 0x2000 then
+        c <= 0xA0
             || c == 0xAD
-            || (intGe c 0x0600 && intLe c 0x0605)
+            || (c >= 0x0600 && c <= 0x0605)
             || c == 0x061C
             || c == 0x06DD
             || c == 0x070F
@@ -1109,23 +1073,23 @@ invisible c =
             || c == 0x1680
             || c == 0x180E
 
-    else if intLt c 0x3001 then
-        intLe c 0x200F
-            || (intGe c 0x2028 && intLe c 0x202F)
-            || (intGe c 0x205F && intLe c 0x2064)
-            || (intGe c 0x2066 && intLe c 0x206F)
+    else if c < 0x3001 then
+        c <= 0x200F
+            || (c >= 0x2028 && c <= 0x202F)
+            || (c >= 0x205F && c <= 0x2064)
+            || (c >= 0x2066 && c <= 0x206F)
             || c == 0x3000
 
     else
         c == 0xFEFF
-            || (intGe c 0xFFF9 && intLe c 0xFFFB)
+            || (c >= 0xFFF9 && c <= 0xFFFB)
             || c == 0x000110BD
             || c == 0x000110CD
-            || (intGe c 0x00013430 && intLe c 0x0001343F)
-            || (intGe c 0x0001BCA0 && intLe c 0x0001BCA3)
-            || (intGe c 0x0001D173 && intLe c 0x0001D17A)
+            || (c >= 0x00013430 && c <= 0x0001343F)
+            || (c >= 0x0001BCA0 && c <= 0x0001BCA3)
+            || (c >= 0x0001D173 && c <= 0x0001D17A)
             || c == 0x000E0001
-            || (intGe c 0x000E0020 && intLe c 0x000E007F)
+            || (c >= 0x000E0020 && c <= 0x000E007F)
 
 
 hexWidth : Int -> Int -> String
@@ -1143,7 +1107,7 @@ hexString n acc =
         digit =
             primSlice "0123456789ABCDEF" (n - (n // 16) * 16) (n - (n // 16) * 16 + 1)
     in
-    if intLt n 16 then
+    if n < 16 then
         primAppend digit acc
 
     else
@@ -1164,7 +1128,7 @@ positionHelp s offset line lineStart =
         lf =
             primFind s "\n" lineStart
     in
-    if intGe lf 0 && intLt lf offset then
+    if lf >= 0 && lf < offset then
         positionHelp s offset (line + 1) (lf + 1)
 
     else
@@ -1301,7 +1265,7 @@ escapeString str acc =
 
 escapeRun : String -> Int -> String -> Int -> Int -> String
 escapeRun str end acc start i =
-    if intGe i end then
+    if i >= end then
         primAppend acc (primSlice str start i)
 
     else
@@ -1309,7 +1273,7 @@ escapeRun str end acc start i =
             c =
                 codeAt str i
         in
-        if c == 0x22 || c == 0x5C || intLt c 0x20 then
+        if c == 0x22 || c == 0x5C || c < 0x20 then
             escapeRun str end (primAppend (primAppend acc (primSlice str start i)) (escapeChar c)) (i + 1) (i + 1)
 
         else
@@ -1518,7 +1482,7 @@ foldLoop builders work built =
 {-| The top `count` built values, first-built on top. -}
 take : Int -> Built h -> Built h -> { values : Built h, left : Built h }
 take count built acc =
-    if intLe count 0 then
+    if count <= 0 then
         { values = acc, left = built }
 
     else
