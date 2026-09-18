@@ -7,7 +7,8 @@ import Math
 import Expect
 import Array exposing (..)
 import Maybe exposing (Maybe(..))
-import Test.Runner.Effectful exposing (fuzz, describe, concat, test, await, awaitError, run)
+import Test.Runner.Effectful exposing (fuzz, describe, concat, test, run)
+import Await exposing (await, awaitError, differentJwk, sameJwk)
 import Task exposing ( Task )
 import Crypto
 import Bytes exposing ( Bytes )
@@ -51,13 +52,20 @@ tests =
 -- Random Value Tests
 
 
-{-|-}
-type alias RandomValueTestsHelper x =
+{-| `min` and `max` are the element type's own ends, and the decoder answers
+that type: an 8- or 16-bit decoder answers `Int8`, `UInt8`, `Int16` or `UInt16`
+since D349, and a 32-bit one `Int` or `UInt32`. Upstream's bounds were written
+in one type for all six and were each one past a type's end at the top
+(`max = 128` for `int8`, `256` for `uint8`, `2147483648` for `int32`), or one
+short at the bottom (`min = -32767` for `int16`), which a check written at the
+element type refuses to compile.
+-}
+type alias RandomValueTestsHelper x n =
     { label : String
     , generator : Int -> Task x Bytes
-    , decoder : Bytes.Endianness -> Bytes.Decode.Decoder Int
-    , min : Int
-    , max : Int
+    , decoder : Bytes.Endianness -> Bytes.Decode.Decoder n
+    , min : n
+    , max : n
     , maximumPossibleValues : Int
     }
 
@@ -73,7 +81,7 @@ randomValueTests endianness =
             , generator = Crypto.getRandomInt8Values
             , decoder = \_ -> Bytes.Decode.signedInt8
             , min = -128
-            , max = 128
+            , max = 127
             , maximumPossibleValues = 65536
             }
         , randomValueTestsHelper 
@@ -82,7 +90,7 @@ randomValueTests endianness =
             , generator = Crypto.getRandomUInt8Values
             , decoder = \_ -> Bytes.Decode.unsignedInt8
             , min = 0
-            , max = 256
+            , max = 255
             , maximumPossibleValues = 65536
             }
         , randomValueTestsHelper 
@@ -90,7 +98,7 @@ randomValueTests endianness =
             { label = "int16"
             , generator = Crypto.getRandomInt16Values
             , decoder = Bytes.Decode.signedInt16
-            , min = -32767
+            , min = -32768
             , max = 32767
             , maximumPossibleValues = 32768
             }
@@ -109,7 +117,7 @@ randomValueTests endianness =
             , generator = Crypto.getRandomInt32Values
             , decoder = Bytes.Decode.signedInt32
             , min = -2147483648
-            , max = 2147483648
+            , max = 2147483647
             , maximumPossibleValues = 16384
             }
         , randomValueTestsHelper 
@@ -126,7 +134,7 @@ randomValueTests endianness =
 
 {-| A helper for generating tests for the random value functions.
 -}
-randomValueTestsHelper : Bytes.Endianness -> RandomValueTestsHelper a -> Test.Runner.Effectful.Test
+randomValueTestsHelper : (Eq n, Ord n, Inspect n) => Bytes.Endianness -> RandomValueTestsHelper x n -> Test.Runner.Effectful.Test
 randomValueTestsHelper endianness { label, generator, decoder, min, max, maximumPossibleValues } =
     concat
         [ await
@@ -355,10 +363,7 @@ rsaOaepKeyTestHelper secureContext { label, encryptionLabel, modulusLength, hash
                             ) 
                             (withLabel "Importing a successfully extracted public key")
                             (\importedKey ->
-                                test "The imported key matches the original key"
-                                    (\_ ->
-                                        Expect.equal importedKey publicKey
-                                    )
+                                sameJwk Crypto.exportRsaOaepPublicKeyAsJwk importedKey publicKey "The imported key matches the original key"
                             )
                         , await
                             (Crypto.importRsaOaepPublicKeyFromSpki 
@@ -369,10 +374,7 @@ rsaOaepKeyTestHelper secureContext { label, encryptionLabel, modulusLength, hash
                             ) 
                             (withLabel "Importing a successfully extracted public key with the wrong hash")
                             (\importedKey ->
-                                test "The imported key does not equal the original key given the different hash used to generate it"
-                                    (\_ ->
-                                        Expect.notEqual importedKey publicKey
-                                    )
+                                differentJwk Crypto.exportRsaOaepPublicKeyAsJwk importedKey publicKey "The imported key does not equal the original key given the different hash used to generate it"
                             )
                         ]
                 )
@@ -392,10 +394,7 @@ rsaOaepKeyTestHelper secureContext { label, encryptionLabel, modulusLength, hash
                             ) 
                             (withLabel "Importing a successfully extracted public key")
                             (\importedKey ->
-                                test "The imported key matches the original key"
-                                    (\_ ->
-                                        Expect.equal importedKey publicKey
-                                    )
+                                sameJwk Crypto.exportRsaOaepPublicKeyAsJwk importedKey publicKey "The imported key matches the original key"
                             )
                         , awaitError
                             (Crypto.importRsaOaepPublicKeyFromJwk
@@ -480,10 +479,7 @@ rsaOaepKeyTestHelper secureContext { label, encryptionLabel, modulusLength, hash
                                     ) 
                                     (withLabel "Importing a successfully extracted private key")
                                     (\importedKey ->
-                                        test "The imported key matches the original key"
-                                            (\_ ->
-                                                Expect.equal importedKey privateKey
-                                            )
+                                        sameJwk Crypto.exportRsaOaepPrivateKeyAsJwk importedKey privateKey "The imported key matches the original key"
                                     )
                                 , await
                                     (Crypto.importRsaOaepPrivateKeyFromPkcs8 
@@ -495,10 +491,7 @@ rsaOaepKeyTestHelper secureContext { label, encryptionLabel, modulusLength, hash
                                     ) 
                                     (withLabel "Importing a successfully extracted private key with the wrong hash")
                                     (\importedKey ->
-                                        test "The imported key does not match the original key"
-                                            (\_ ->
-                                                Expect.notEqual importedKey privateKey
-                                            )
+                                        differentJwk Crypto.exportRsaOaepPrivateKeyAsJwk importedKey privateKey "The imported key does not match the original key"
                                     )
                                 ]
                         )
@@ -517,10 +510,7 @@ rsaOaepKeyTestHelper secureContext { label, encryptionLabel, modulusLength, hash
                                     ) 
                                     (withLabel "Importing a successfully extracted private key")
                                     (\importedKey ->
-                                        test "The imported key matches the original key"
-                                            (\_ ->
-                                                Expect.equal importedKey privateKey
-                                            )
+                                        sameJwk Crypto.exportRsaOaepPrivateKeyAsJwk importedKey privateKey "The imported key matches the original key"
                                     )
                                 , awaitError
                                     (Crypto.importRsaOaepPrivateKeyFromJwk 
@@ -727,10 +717,7 @@ aesCtrTestsHelper secureContext label { aesLength, encryptionLength } =
                                 )
                                 "Importing the exported key"
                                 (\importedKey ->
-                                    test "When importing an exported key, the imported key matches the original"
-                                        (\_ ->
-                                            Expect.equal importedKey key
-                                        )
+                                    sameJwk Crypto.exportAesCtrKeyAsJwk importedKey key "When importing an exported key, the imported key matches the original"
                                 )
                         )
                     , await
@@ -745,10 +732,7 @@ aesCtrTestsHelper secureContext label { aesLength, encryptionLength } =
                                 )
                                 "Importing the exported key"
                                 (\importedKey ->
-                                    test "When importing an exported key, the imported key matches the original"
-                                        (\_ ->
-                                            Expect.equal importedKey key
-                                        )
+                                    sameJwk Crypto.exportAesCtrKeyAsJwk importedKey key "When importing an exported key, the imported key matches the original"
                                 )
                         )
                     , await
@@ -923,10 +907,7 @@ aesCbcTestHelper secureContext label { aesLength } =
                                 )
                                 "Importing the exported key"
                                 (\importedKey ->
-                                    test "When importing an exported key, the imported key matches the original"
-                                        (\_ ->
-                                            Expect.equal importedKey key
-                                        )
+                                    sameJwk Crypto.exportAesCbcKeyAsJwk importedKey key "When importing an exported key, the imported key matches the original"
                                 )
                         )
                     , await
@@ -941,10 +922,7 @@ aesCbcTestHelper secureContext label { aesLength } =
                                 )
                                 "Importing the exported key"
                                 (\importedKey ->
-                                    test "When importing an exported key, the imported key matches the original"
-                                        (\_ ->
-                                            Expect.equal importedKey key
-                                        )
+                                    sameJwk Crypto.exportAesCbcKeyAsJwk importedKey key "When importing an exported key, the imported key matches the original"
                                 )
                         )
                     , await
@@ -1265,10 +1243,7 @@ aesGcmTestsHelper secureContext label { aesLength, tagLength } =
                                 )
                                 "Importing the exported key"
                                 (\importedKey ->
-                                    test "When importing an exported key, the imported key matches the original"
-                                        (\_ ->
-                                            Expect.equal importedKey key
-                                        )
+                                    sameJwk Crypto.exportAesGcmKeyAsJwk importedKey key "When importing an exported key, the imported key matches the original"
                                 )
                         )
                     , await
@@ -1283,10 +1258,7 @@ aesGcmTestsHelper secureContext label { aesLength, tagLength } =
                                 )
                                 "Importing the exported key"
                                 (\importedKey ->
-                                    test "When importing an exported key, the imported key matches the original"
-                                        (\_ ->
-                                            Expect.equal importedKey key
-                                        )
+                                    sameJwk Crypto.exportAesGcmKeyAsJwk importedKey key "When importing an exported key, the imported key matches the original"
                                 )
                         )
                     -- Can, in the future, fuzz the bytes generated to test random values between 12 and 132 bytes
@@ -1557,10 +1529,7 @@ rsaSsaPkcs1V1_5KeyTestsHelper secureContext label { encryptionLabel, modulusLeng
                                 )
                                 "Importing the exported key with the same hash"
                                 (\importedKey ->
-                                    test "When importing the key with the same hash, succeeds"
-                                        (\_ ->
-                                            Expect.equal importedKey publicKey
-                                        )
+                                    sameJwk Crypto.exportRsaSsaPkcs1V1_5PublicKeyAsJwk importedKey publicKey "When importing the key with the same hash, succeeds"
                                 )
                         )
                     , await
@@ -1577,10 +1546,7 @@ rsaSsaPkcs1V1_5KeyTestsHelper secureContext label { encryptionLabel, modulusLeng
                                     )
                                     "Importing the exported key with the same hash"
                                     (\importedKey ->
-                                        test "When importing the key with the same hash, succeeds"
-                                            (\_ ->
-                                                Expect.equal importedKey publicKey
-                                            )
+                                        sameJwk Crypto.exportRsaSsaPkcs1V1_5PublicKeyAsJwk importedKey publicKey "When importing the key with the same hash, succeeds"
                                     )
                                 , awaitError
                                     (Crypto.importRsaSsaPkcs1V1_5PublicKeyFromJwk
@@ -1646,10 +1612,7 @@ rsaSsaPkcs1V1_5KeyTestsHelper secureContext label { encryptionLabel, modulusLeng
                                 )
                                 "Importing the exported key with the same hash"
                                 (\importedKey ->
-                                    test "When importing the key with the same hash, succeeds"
-                                        (\_ ->
-                                            Expect.equal importedKey publicKey
-                                        )
+                                    sameJwk Crypto.exportRsaSsaPkcs1V1_5PublicKeyAsJwk importedKey publicKey "When importing the key with the same hash, succeeds"
                                 )
                         )
                     , await
@@ -1666,10 +1629,7 @@ rsaSsaPkcs1V1_5KeyTestsHelper secureContext label { encryptionLabel, modulusLeng
                                     )
                                     "Importing the exported key with the same hash"
                                     (\importedKey ->
-                                        test "When importing the key with the same hash, succeeds"
-                                            (\_ ->
-                                                Expect.equal importedKey publicKey
-                                            )
+                                        sameJwk Crypto.exportRsaSsaPkcs1V1_5PublicKeyAsJwk importedKey publicKey "When importing the key with the same hash, succeeds"
                                     )
                                 , awaitError
                                     (Crypto.importRsaSsaPkcs1V1_5PublicKeyFromJwk
@@ -1701,10 +1661,7 @@ rsaSsaPkcs1V1_5KeyTestsHelper secureContext label { encryptionLabel, modulusLeng
                                 )
                                 "Importing the exported key with the same hash"
                                 (\importedKey ->
-                                    test "When importing the key with the same hash, succeeds"
-                                        (\_ ->
-                                            Expect.equal importedKey privateKey
-                                        )
+                                    sameJwk Crypto.exportRsaSsaPkcs1V1_5PrivateKeyAsJwk importedKey privateKey "When importing the key with the same hash, succeeds"
                                 )
                         )
                     , await
@@ -1722,10 +1679,7 @@ rsaSsaPkcs1V1_5KeyTestsHelper secureContext label { encryptionLabel, modulusLeng
                                     )
                                     "Importing the exported key with the same hash"
                                     (\importedKey ->
-                                        test "When importing the key with the same hash, succeeds"
-                                            (\_ ->
-                                                Expect.equal importedKey privateKey
-                                            )
+                                        sameJwk Crypto.exportRsaSsaPkcs1V1_5PrivateKeyAsJwk importedKey privateKey "When importing the key with the same hash, succeeds"
                                     )
                                 , awaitError
                                     (Crypto.importRsaSsaPkcs1V1_5PrivateKeyFromJwk
@@ -1849,10 +1803,7 @@ rsaPssTestsHelper secureContext label { modulusLength, hash } =
                                 )
                                 "Importing the exported key with the same hash"
                                 (\importedKey ->
-                                    test "When importing the key with the same hash, succeeds"
-                                        (\_ ->
-                                            Expect.equal importedKey publicKey
-                                        )
+                                    sameJwk Crypto.exportRsaPssPublicKeyAsJwk importedKey publicKey "When importing the key with the same hash, succeeds"
                                 )
                         )
                     , await
@@ -1869,10 +1820,7 @@ rsaPssTestsHelper secureContext label { modulusLength, hash } =
                                     )
                                     "Importing the exported key with the same hash"
                                     (\importedKey ->
-                                        test "When importing the key with the same hash, succeeds"
-                                            (\_ ->
-                                                Expect.equal importedKey publicKey
-                                            )
+                                        sameJwk Crypto.exportRsaPssPublicKeyAsJwk importedKey publicKey "When importing the key with the same hash, succeeds"
                                     )
                                 , awaitError
                                     (Crypto.importRsaPssPublicKeyFromJwk
@@ -1938,10 +1886,7 @@ rsaPssTestsHelper secureContext label { modulusLength, hash } =
                                     )
                                     "Importing the exported key with the same hash"
                                     (\importedKey ->
-                                        test "When importing the key with the same hash, succeeds"
-                                            (\_ ->
-                                                Expect.equal importedKey publicKey
-                                            )
+                                        sameJwk Crypto.exportRsaPssPublicKeyAsJwk importedKey publicKey "When importing the key with the same hash, succeeds"
                                     )
                             )
                         , await
@@ -1957,10 +1902,7 @@ rsaPssTestsHelper secureContext label { modulusLength, hash } =
                                         )
                                         "Importing the exported key with the same hash"
                                         (\importedKey ->
-                                            test "When importing the key with the same hash, succeeds"
-                                                (\_ ->
-                                                    Expect.equal importedKey publicKey
-                                                )
+                                            sameJwk Crypto.exportRsaPssPublicKeyAsJwk importedKey publicKey "When importing the key with the same hash, succeeds"
                                         )
                                     , awaitError
                                         (Crypto.importRsaPssPublicKeyFromJwk
@@ -1992,10 +1934,7 @@ rsaPssTestsHelper secureContext label { modulusLength, hash } =
                                     )
                                     "Importing the exported key with the same hash"
                                     (\importedKey ->
-                                        test "When importing the key with the same hash, succeeds"
-                                            (\_ ->
-                                                Expect.equal importedKey privateKey
-                                            )
+                                        sameJwk Crypto.exportRsaPssPrivateKeyAsJwk importedKey privateKey "When importing the key with the same hash, succeeds"
                                     )
                             )
                         , await
@@ -2013,10 +1952,7 @@ rsaPssTestsHelper secureContext label { modulusLength, hash } =
                                         )
                                         "Importing the exported key with the same hash"
                                         (\importedKey ->
-                                            test "When importing the key with the same hash, succeeds"
-                                                (\_ ->
-                                                    Expect.equal importedKey privateKey
-                                                )
+                                            sameJwk Crypto.exportRsaPssPrivateKeyAsJwk importedKey privateKey "When importing the key with the same hash, succeeds"
                                         )
                                     , awaitError
                                         (Crypto.importRsaPssPrivateKeyFromJwk
@@ -2177,10 +2113,7 @@ ecdsaTestsHelper secureContext label { namedCurve, digestAlgorithm } =
                                     )
                                     "Importing the exported key with the same named curve"
                                     (\importedKey ->
-                                        test "Imported key equals the original key"
-                                            (\_ ->
-                                                Expect.equal importedKey publicKey
-                                            )
+                                        sameJwk Crypto.exportEcdsaPublicKeyAsJwk importedKey publicKey "Imported key equals the original key"
                                     )
                                 , awaitError
                                     (Crypto.importEcdsaPublicKeyFromRaw
@@ -2210,10 +2143,7 @@ ecdsaTestsHelper secureContext label { namedCurve, digestAlgorithm } =
                                     )
                                     "Importing the exported key with the same named curve"
                                     (\importedKey ->
-                                        test "Imported key equals the original key"
-                                            (\_ ->
-                                                Expect.equal importedKey publicKey
-                                            )
+                                        sameJwk Crypto.exportEcdsaPublicKeyAsJwk importedKey publicKey "Imported key equals the original key"
                                     )
                                 , awaitError
                                     (Crypto.importEcdsaPublicKeyFromSpki
@@ -2243,10 +2173,7 @@ ecdsaTestsHelper secureContext label { namedCurve, digestAlgorithm } =
                                     )
                                     "Importing the exported key with the same named curve"
                                     (\importedKey ->
-                                        test "Imported key equals the original key"
-                                            (\_ ->
-                                                Expect.equal importedKey publicKey
-                                            )
+                                        sameJwk Crypto.exportEcdsaPublicKeyAsJwk importedKey publicKey "Imported key equals the original key"
                                     )
                                 , awaitError
                                     (Crypto.importEcdsaPublicKeyFromJwk
@@ -2310,10 +2237,7 @@ ecdsaTestsHelper secureContext label { namedCurve, digestAlgorithm } =
                                     )
                                     "Importing the exported key with the same named curve"
                                     (\importedKey ->
-                                        test "Imported key equals the original key"
-                                            (\_ ->
-                                                Expect.equal importedKey publicKey
-                                            )
+                                        sameJwk Crypto.exportEcdsaPublicKeyAsJwk importedKey publicKey "Imported key equals the original key"
                                     )
                                 , awaitError
                                     (Crypto.importEcdsaPublicKeyFromRaw
@@ -2343,10 +2267,7 @@ ecdsaTestsHelper secureContext label { namedCurve, digestAlgorithm } =
                                     )
                                     "Importing the exported key with the same named curve"
                                     (\importedKey ->
-                                        test "Imported key equals the original key"
-                                            (\_ ->
-                                                Expect.equal importedKey publicKey
-                                            )
+                                        sameJwk Crypto.exportEcdsaPublicKeyAsJwk importedKey publicKey "Imported key equals the original key"
                                     )
                                 , awaitError
                                     (Crypto.importEcdsaPublicKeyFromSpki
@@ -2376,10 +2297,7 @@ ecdsaTestsHelper secureContext label { namedCurve, digestAlgorithm } =
                                     )
                                     "Importing the exported key with the same named curve"
                                     (\importedKey ->
-                                        test "Imported key equals the original key"
-                                            (\_ ->
-                                                Expect.equal importedKey publicKey
-                                            )
+                                        sameJwk Crypto.exportEcdsaPublicKeyAsJwk importedKey publicKey "Imported key equals the original key"
                                     )
                                 , awaitError
                                     (Crypto.importEcdsaPublicKeyFromJwk
@@ -2410,10 +2328,7 @@ ecdsaTestsHelper secureContext label { namedCurve, digestAlgorithm } =
                                     )
                                     "Importing the exported key with the same named curve"
                                     (\importedKey ->
-                                        test "Imported key equals the original key"
-                                            (\_ ->
-                                                Expect.equal importedKey privateKey
-                                            )
+                                        sameJwk Crypto.exportEcdsaPrivateKeyAsJwk importedKey privateKey "Imported key equals the original key"
                                     )
                                 , awaitError
                                     (Crypto.importEcdsaPrivateKeyFromPkcs8
@@ -2445,10 +2360,7 @@ ecdsaTestsHelper secureContext label { namedCurve, digestAlgorithm } =
                                     )
                                     "Importing the exported key with the same named curve"
                                     (\importedKey ->
-                                        test "Imported key equals the original key"
-                                            (\_ ->
-                                                Expect.equal importedKey privateKey
-                                            )
+                                        sameJwk Crypto.exportEcdsaPrivateKeyAsJwk importedKey privateKey "Imported key equals the original key"
                                     )
                                 , awaitError
                                     (Crypto.importEcdsaPrivateKeyFromJwk
@@ -2554,10 +2466,7 @@ ed25519SupportedTests secureContext { publicKey, privateKey } =
                         )
                         "Importing the exported key"
                         (\importedKey ->
-                            test "Imported key equals the original key"
-                                (\_ ->
-                                    Expect.equal importedKey publicKey
-                                )
+                            sameJwk Crypto.exportEd25519PublicKeyAsJwk importedKey publicKey "Imported key equals the original key"
                         )
                 )
             , await
@@ -2571,10 +2480,7 @@ ed25519SupportedTests secureContext { publicKey, privateKey } =
                         )
                         "Importing the exported key"
                         (\importedKey ->
-                            test "Imported key equals the original key"
-                                (\_ ->
-                                    Expect.equal importedKey publicKey
-                                )
+                            sameJwk Crypto.exportEd25519PublicKeyAsJwk importedKey publicKey "Imported key equals the original key"
                         )
                 )
             , await
@@ -2588,10 +2494,7 @@ ed25519SupportedTests secureContext { publicKey, privateKey } =
                         )
                         "Importing the exported key"
                         (\importedKey ->
-                            test "Imported key equals the original key"
-                                (\_ ->
-                                    Expect.equal importedKey publicKey
-                                )
+                            sameJwk Crypto.exportEd25519PublicKeyAsJwk importedKey publicKey "Imported key equals the original key"
                         )
                 )
             , awaitError
@@ -2650,10 +2553,7 @@ ed25519SupportedTests secureContext { publicKey, privateKey } =
                                 )
                                 "Importing the exported key"
                                 (\importedKey ->
-                                    test "Imported key equals the original key"
-                                        (\_ ->
-                                            Expect.equal importedKey extractableKey.publicKey
-                                        )
+                                    sameJwk Crypto.exportEd25519PublicKeyAsJwk importedKey extractableKey.publicKey "Imported key equals the original key"
                                 )
                         )
                     , await
@@ -2667,10 +2567,7 @@ ed25519SupportedTests secureContext { publicKey, privateKey } =
                                 )
                                 "Importing the exported key"
                                 (\importedKey ->
-                                    test "Imported key equals the original key"
-                                        (\_ ->
-                                            Expect.equal importedKey extractableKey.publicKey
-                                        )
+                                    sameJwk Crypto.exportEd25519PublicKeyAsJwk importedKey extractableKey.publicKey "Imported key equals the original key"
                                 )
                         )
                     , await
@@ -2684,10 +2581,7 @@ ed25519SupportedTests secureContext { publicKey, privateKey } =
                                 )
                                 "Importing the exported key"
                                 (\importedKey ->
-                                    test "Imported key equals the original key"
-                                        (\_ ->
-                                            Expect.equal importedKey extractableKey.publicKey
-                                        )
+                                    sameJwk Crypto.exportEd25519PublicKeyAsJwk importedKey extractableKey.publicKey "Imported key equals the original key"
                                 )
                         )
                     , await
@@ -2702,10 +2596,7 @@ ed25519SupportedTests secureContext { publicKey, privateKey } =
                                 )
                                 "Importing the exported key"
                                 (\importedKey ->
-                                    test "Imported key equals the original key"
-                                        (\_ ->
-                                            Expect.equal importedKey extractableKey.privateKey
-                                        )
+                                    sameJwk Crypto.exportEd25519PrivateKeyAsJwk importedKey extractableKey.privateKey "Imported key equals the original key"
                                 )
                         )
                     , await
@@ -2720,10 +2611,7 @@ ed25519SupportedTests secureContext { publicKey, privateKey } =
                                 )
                                 "Importing the exported key"
                                 (\importedKey ->
-                                    test "Imported key equals the original key"
-                                        (\_ ->
-                                            Expect.equal importedKey extractableKey.privateKey
-                                        )
+                                    sameJwk Crypto.exportEd25519PrivateKeyAsJwk importedKey extractableKey.privateKey "Imported key equals the original key"
                                 )
                         )
                     , await
@@ -2925,10 +2813,7 @@ generateHmacTestsHelper secureContext label { length, digestAlgorithm } =
                                 )
                                 "Importing the key"
                                 (\importedKey ->
-                                    test "The imported key matches the original key"
-                                        (\_ ->
-                                            Expect.equal importedKey key
-                                        )
+                                    sameJwk Crypto.exportHmacKeyAsJwk importedKey key "The imported key matches the original key"
                                 )
                         )
                     , await
@@ -2945,10 +2830,7 @@ generateHmacTestsHelper secureContext label { length, digestAlgorithm } =
                                 )
                                 "Importing the key"
                                 (\importedKey ->
-                                    test "The imported key matches the original key"
-                                        (\_ ->
-                                            Expect.equal importedKey key
-                                        )
+                                    sameJwk Crypto.exportHmacKeyAsJwk importedKey key "The imported key matches the original key"
                                 )
                         )
                     , await

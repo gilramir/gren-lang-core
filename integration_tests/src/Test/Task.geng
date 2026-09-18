@@ -10,7 +10,8 @@ import Math
 import Maybe exposing (Maybe(..))
 import Process
 import Task exposing (Task)
-import Test.Runner.Effectful exposing (await, awaitError, concat, describe, fuzz, run, test)
+import Test.Runner.Effectful exposing (concat, describe, fuzz, run, test)
+import Await exposing (await, awaitError)
 import Time
 
 
@@ -26,7 +27,7 @@ sleep ms =
 
 {-| Use in assertions to allow some startup time.
 -}
-leeway : number
+leeway : Int64
 leeway =
     800
 
@@ -289,7 +290,8 @@ type alias Duration a =
     }
 
 
-duration : Duration a -> Int
+{-| An `Int64`, since that is what `Time.posixToMillis` answers. -}
+duration : Duration a -> Int64
 duration d =
     Time.posixToMillis d.end - Time.posixToMillis d.start
 

@@ -1,0 +1,60 @@
+module Await exposing (await, awaitError, sameJwk, differentJwk)
+
+{-| `await` and `awaitError` with the task first and the description second, and
+two comparisons of keys.
+
+These tests were written against `blaix/gren-effectful-tests-node` 5.0.0, whose
+`await` took its arguments in that order. The package ported to Geng is
+`blaix/gren-effectful-tests` 6.0.0, which takes the description first, and
+these two keep the old order so that the tests read as they were written.
+
+They also ask nothing of the task's types. The package's `await` shows a failed
+task's error with `inspect`, and most of `Crypto`'s tasks cannot fail, so their
+error is a type variable nothing fixes and no instance can be picked for; the
+package's `awaitError` shows an unexpected success, and here that is a key,
+which has no `Inspect`. So a failure says only that it happened, which is what
+stock's `Debug.toString` printed of a key anyway.
+-}
+
+import Expect
+import Json.Encode
+import Task exposing (Task)
+import Test.Runner.Effectful as Effectful
+
+
+await : Task error a -> String -> (a -> Effectful.Test) -> Effectful.Test
+await task description callback =
+    Effectful.await description (Task.mapError (\_ -> "the task failed") task) callback
+
+
+awaitError : Task error a -> String -> (error -> Effectful.Test) -> Effectful.Test
+awaitError task description callback =
+    Effectful.awaitError description (Task.map (\_ -> "the task succeeded") task) callback
+
+
+{-| Two keys are one key when they export the same JWK, which carries the key
+material and the algorithm's parameters.
+
+Stock compared the keys themselves with `==`, which walked the wrapper's fields:
+the parameters, and the WebCrypto `CryptoKey` object, whose properties are
+getters on its prototype, so any two keys compared equal there and the
+parameters decided. A `Key` is opaque and has no `Eq` in Geng, and one that
+compared only the parameters would say two different keys are the same. The
+export is the stronger question, and it still says no when only the hash
+differs, since a JWK's `alg` names it.
+-}
+sameJwk : (k -> Task e Json.Encode.Value) -> k -> k -> String -> Effectful.Test
+sameJwk export a b name =
+    await (both export a b) "Exporting both keys as JWK" <| \jwks ->
+        Effectful.test name (\_ -> Expect.equal jwks.first jwks.second)
+
+
+differentJwk : (k -> Task e Json.Encode.Value) -> k -> k -> String -> Effectful.Test
+differentJwk export a b name =
+    await (both export a b) "Exporting both keys as JWK" <| \jwks ->
+        Effectful.test name (\_ -> Expect.notEqual jwks.first jwks.second)
+
+
+both : (k -> Task e Json.Encode.Value) -> k -> k -> Task e { first : String, second : String }
+both export a b =
+    Task.map2 (\x y -> { first = Json.Encode.encode 0 x, second = Json.Encode.encode 0 y }) (export a) (export b)

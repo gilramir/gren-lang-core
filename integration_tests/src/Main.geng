@@ -1,0 +1,30 @@
+module Main exposing (main)
+
+{-| A set of effectful tests that must be run in a different program than the
+main tests.
+
+`Task`'s go first, where upstream ran them second: several of them hold the
+scheduler to a wall-clock bound, and after `Crypto`'s thousand keys the same
+million concurrent sleeps took 2.4 to 3.3 seconds instead of 1.4, which is the
+collector's time and not the scheduler's (geng-lang `m1b-test.md` §TS10.6).
+-}
+
+import Node
+import Task exposing (Task)
+import Test.Crypto as Crypto
+import Test.Runner.Effectful exposing (concat)
+import Test.Task as Task
+
+
+main : Task Never {}
+main =
+    Node.getEnvironment
+        |> Task.andThen
+            (\env ->
+                Test.Runner.Effectful.run env
+                    (concat
+                        [ Task.tests
+                        , Crypto.tests
+                        ]
+                    )
+            )
