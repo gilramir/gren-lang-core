@@ -10,7 +10,6 @@ module Bitwise exposing
 -}
 
 import Basics exposing (Int, Int64, UInt32, UInt64, Bool, Num, Ord, (<), (>=))
-import Gren.Kernel.Bitwise
 
 
 {-| The types you can do bitwise arithmetic on: `Int`, and D2's other three
@@ -389,6 +388,5 @@ instance Bits UInt64 where
     countLeadingZeros 0xFFFF == 16
 
 -}
+@prim("i32_clz")
 countLeadingZeros : Int -> Int
-countLeadingZeros =
-    Gren.Kernel.Bitwise.countLeadingZeros
