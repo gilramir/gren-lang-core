@@ -1,0 +1,147 @@
+module Int16 exposing
+    ( minValue, maxValue
+    , toInt
+    , fromInt, fromIntWrap, fromIntChecked
+    , toFloat
+    )
+
+{-| The bounds and the conversions of an 16-bit signed integer.
+
+The **type** is [Basics.Int16](Basics#Int16), so `+`, `//`, `modBy` and
+`Bitwise.shiftLeftBy` all work on one with no import, and wrap at its width
+(`docs/arithmetic.md` A6). A literal says it is one with the suffix `i16`:
+`32767i16`.
+
+**When to use one.** For a signed 16-bit field of a binary format, or a C `int16_t` or a Java `short` across an extern. It is not smaller in memory than an `Int`
+anywhere but inside a `Bytes`, and it is not faster: every operation is `Int`'s
+and a wrap (`docs/arithmetic.md` A12).
+
+**It converts through `Int` and nothing else** (D342). An `Int64` becomes one
+through [Int64.toInt](Int64#toInt) first, and a `Float` through
+[Math.round](Math#round) or its siblings.
+
+
+## Bounds
+
+@docs minValue, maxValue
+
+
+## To an `Int`
+
+Every `Int16` is an `Int`, so this has one name and no variants.
+
+@docs toInt
+
+
+## From an `Int`
+
+A10's three names: saturating, the low bits, and `Maybe`.
+
+@docs fromInt, fromIntWrap, fromIntChecked
+
+
+## To a float
+
+@docs toFloat
+
+-}
+
+import Basics exposing (Float, Int, Int16, Num, Ord, (<), (>))
+import Maybe exposing (Maybe(..))
+
+
+-- BOUNDS
+
+
+{-| `-32768`.
+-}
+minValue : Int16
+minValue =
+    -32768
+
+
+{-| `32767`.
+-}
+maxValue : Int16
+maxValue =
+    32767
+
+
+
+-- TO AN INT
+
+
+{-| Widen to an `Int`. Exact.
+
+    Int16.toInt Int16.maxValue == 32767
+
+-}
+@prim("i16_to_i32")
+toInt : Int16 -> Int
+
+
+
+-- FROM AN INT
+
+
+{-| Narrow an `Int`, **saturating** at both of this type's bounds.
+
+    Int16.fromInt 42 == 42i16
+
+    Int16.fromInt -32769 == Int16.minValue
+
+    Int16.fromInt 100000 == Int16.maxValue
+
+-}
+fromInt : Int -> Int16
+fromInt n =
+    if n < -32768 then
+        minValue
+
+    else if n > 32767 then
+        maxValue
+
+    else
+        fromIntWrap n
+
+
+{-| Narrow an `Int` by keeping its **low 16 bits**, read as signed.
+
+    Int16.fromIntWrap 32768 == Int16.minValue
+
+-}
+@prim("i32_to_i16")
+fromIntWrap : Int -> Int16
+
+
+{-| Narrow an `Int`, or `Nothing` when it does not fit.
+
+    Int16.fromIntChecked 42 == Just 42i16
+
+    Int16.fromIntChecked 32768 == Nothing
+
+-}
+fromIntChecked : Int -> Maybe Int16
+fromIntChecked n =
+    if n < -32768 then
+        Nothing
+
+    else if n > 32767 then
+        Nothing
+
+    else
+        Just (fromIntWrap n)
+
+
+
+-- TO A FLOAT
+
+
+{-| Convert to a `Float`. Exact.
+
+    Int16.toFloat Int16.maxValue == 32767.0
+
+-}
+toFloat : Int16 -> Float
+toFloat n =
+    Basics.toFloat (toInt n)

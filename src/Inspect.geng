@@ -28,9 +28,13 @@ import Array exposing (Array)
 import Basics exposing (..)
 import Bitwise
 import Char exposing (Char)
+import Int16
+import Int8
 import Maybe exposing (Maybe(..))
 import Result exposing (Result(..))
 import String exposing (String)
+import UInt16
+import UInt8
 import Unicode.Lookup
 
 
@@ -179,6 +183,29 @@ instance Inspect UInt32 where
 instance Inspect UInt64 where
     inspect n =
         String.fromUInt64 n ++ "u64"
+
+
+-- D342's four, suffixed as R5 asks, through `Int`: every narrow value is one.
+
+
+instance Inspect Int8 where
+    inspect n =
+        String.fromInt (Int8.toInt n) ++ "i8"
+
+
+instance Inspect UInt8 where
+    inspect n =
+        String.fromInt (UInt8.toInt n) ++ "u8"
+
+
+instance Inspect Int16 where
+    inspect n =
+        String.fromInt (Int16.toInt n) ++ "i16"
+
+
+instance Inspect UInt16 where
+    inspect n =
+        String.fromInt (UInt16.toInt n) ++ "u16"
 
 
 {-| R5: bare, always a decimal point, and `nan` / `infinity` / `-infinity` for

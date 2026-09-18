@@ -9,11 +9,11 @@ module Bitwise exposing
 
 -}
 
-import Basics exposing (Int, Int64, UInt32, UInt64, Bool, Num, Ord, (<), (>=))
+import Basics exposing (Int, Int64, UInt32, UInt64, Int8, UInt8, Int16, UInt16, Bool, Num, Ord, (<), (>=))
 
 
-{-| The types you can do bitwise arithmetic on: `Int`, and D2's other three
-integer types.
+{-| The types you can do bitwise arithmetic on: `Int`, D2's other three
+integer types, and D342's four narrow ones.
 
 A fourth closed class beside `Num`, `Integral` and `Fractional`
 (`docs/arithmetic.md` A5), and it exists because D2 gives Gren four integer
@@ -390,3 +390,230 @@ instance Bits UInt64 where
 -}
 @prim("i32_clz")
 countLeadingZeros : Int -> Int
+
+
+-- D342'S FOUR NARROW TYPES
+--
+-- `Int`'s primitives on the widened operands and the wrap back, as in
+-- `Basics` (`docs/m1b-narrow-int.md` §NI4), with A4's clamp at 8 or 16. The
+-- logical operations need the wrap for their type and not for their value,
+-- except `complement` at an unsigned type, where the complement of a
+-- zero-extended byte is a negative `Int` and the wrap is what masks it back.
+-- `shiftRightZfBy` at a signed type shifts the *pattern*, so the value is
+-- masked to its width before the logical shift and wrapped after it.
+
+
+@prim("i8_to_i32")
+int8ToInt : Int8 -> Int
+
+
+@prim("i32_to_i8")
+intToInt8 : Int -> Int8
+
+
+instance Bits Int8 where
+    and a b =
+        intToInt8 (andInt (int8ToInt a) (int8ToInt b))
+
+    or a b =
+        intToInt8 (orInt (int8ToInt a) (int8ToInt b))
+
+    xor a b =
+        intToInt8 (xorInt (int8ToInt a) (int8ToInt b))
+
+    complement a =
+        intToInt8 (complementInt (int8ToInt a))
+
+    shiftLeftBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 8 then
+            0
+
+        else
+            intToInt8 (shlInt (int8ToInt value) offset)
+
+    shiftRightBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 8 then
+            if value < 0 then
+                -1
+
+            else
+                0
+
+        else
+            intToInt8 (shrInt (int8ToInt value) offset)
+
+    shiftRightZfBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 8 then
+            0
+
+        else
+            intToInt8 (ushrInt (andInt (int8ToInt value) 255) offset)
+
+
+@prim("u8_to_i32")
+uint8ToInt : UInt8 -> Int
+
+
+@prim("i32_to_u8")
+intToUInt8 : Int -> UInt8
+
+
+instance Bits UInt8 where
+    and a b =
+        intToUInt8 (andInt (uint8ToInt a) (uint8ToInt b))
+
+    or a b =
+        intToUInt8 (orInt (uint8ToInt a) (uint8ToInt b))
+
+    xor a b =
+        intToUInt8 (xorInt (uint8ToInt a) (uint8ToInt b))
+
+    complement a =
+        intToUInt8 (complementInt (uint8ToInt a))
+
+    shiftLeftBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 8 then
+            0
+
+        else
+            intToUInt8 (shlInt (uint8ToInt value) offset)
+
+    shiftRightBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 8 then
+            0
+
+        else
+            intToUInt8 (ushrInt (uint8ToInt value) offset)
+
+    shiftRightZfBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 8 then
+            0
+
+        else
+            intToUInt8 (ushrInt (uint8ToInt value) offset)
+
+
+@prim("i16_to_i32")
+int16ToInt : Int16 -> Int
+
+
+@prim("i32_to_i16")
+intToInt16 : Int -> Int16
+
+
+instance Bits Int16 where
+    and a b =
+        intToInt16 (andInt (int16ToInt a) (int16ToInt b))
+
+    or a b =
+        intToInt16 (orInt (int16ToInt a) (int16ToInt b))
+
+    xor a b =
+        intToInt16 (xorInt (int16ToInt a) (int16ToInt b))
+
+    complement a =
+        intToInt16 (complementInt (int16ToInt a))
+
+    shiftLeftBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 16 then
+            0
+
+        else
+            intToInt16 (shlInt (int16ToInt value) offset)
+
+    shiftRightBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 16 then
+            if value < 0 then
+                -1
+
+            else
+                0
+
+        else
+            intToInt16 (shrInt (int16ToInt value) offset)
+
+    shiftRightZfBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 16 then
+            0
+
+        else
+            intToInt16 (ushrInt (andInt (int16ToInt value) 65535) offset)
+
+
+@prim("u16_to_i32")
+uint16ToInt : UInt16 -> Int
+
+
+@prim("i32_to_u16")
+intToUInt16 : Int -> UInt16
+
+
+instance Bits UInt16 where
+    and a b =
+        intToUInt16 (andInt (uint16ToInt a) (uint16ToInt b))
+
+    or a b =
+        intToUInt16 (orInt (uint16ToInt a) (uint16ToInt b))
+
+    xor a b =
+        intToUInt16 (xorInt (uint16ToInt a) (uint16ToInt b))
+
+    complement a =
+        intToUInt16 (complementInt (uint16ToInt a))
+
+    shiftLeftBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 16 then
+            0
+
+        else
+            intToUInt16 (shlInt (uint16ToInt value) offset)
+
+    shiftRightBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 16 then
+            0
+
+        else
+            intToUInt16 (ushrInt (uint16ToInt value) offset)
+
+    shiftRightZfBy offset value =
+        if offset < 1 then
+            value
+
+        else if offset >= 16 then
+            0
+
+        else
+            intToUInt16 (ushrInt (uint16ToInt value) offset)

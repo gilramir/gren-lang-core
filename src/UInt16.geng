@@ -1,0 +1,147 @@
+module UInt16 exposing
+    ( minValue, maxValue
+    , toInt
+    , fromInt, fromIntWrap, fromIntChecked
+    , toFloat
+    )
+
+{-| The bounds and the conversions of an 16-bit unsigned integer.
+
+The **type** is [Basics.UInt16](Basics#UInt16), so `+`, `//`, `modBy` and
+`Bitwise.shiftLeftBy` all work on one with no import, and wrap at its width
+(`docs/arithmetic.md` A6). A literal says it is one with the suffix `u16`:
+`65535u16`.
+
+**When to use one.** For an unsigned 16-bit field of a binary format -- a port, a length -- or a C `uint16_t` across an extern. It is not smaller in memory than an `Int`
+anywhere but inside a `Bytes`, and it is not faster: every operation is `Int`'s
+and a wrap (`docs/arithmetic.md` A12).
+
+**It converts through `Int` and nothing else** (D342). An `Int64` becomes one
+through [Int64.toInt](Int64#toInt) first, and a `Float` through
+[Math.round](Math#round) or its siblings.
+
+
+## Bounds
+
+@docs minValue, maxValue
+
+
+## To an `Int`
+
+Every `UInt16` is an `Int`, so this has one name and no variants.
+
+@docs toInt
+
+
+## From an `Int`
+
+A10's three names: saturating, the low bits, and `Maybe`.
+
+@docs fromInt, fromIntWrap, fromIntChecked
+
+
+## To a float
+
+@docs toFloat
+
+-}
+
+import Basics exposing (Float, Int, UInt16, Num, Ord, (<), (>))
+import Maybe exposing (Maybe(..))
+
+
+-- BOUNDS
+
+
+{-| `0`.
+-}
+minValue : UInt16
+minValue =
+    0
+
+
+{-| `65535`.
+-}
+maxValue : UInt16
+maxValue =
+    65535
+
+
+
+-- TO AN INT
+
+
+{-| Widen to an `Int`. Exact.
+
+    UInt16.toInt UInt16.maxValue == 65535
+
+-}
+@prim("u16_to_i32")
+toInt : UInt16 -> Int
+
+
+
+-- FROM AN INT
+
+
+{-| Narrow an `Int`, **saturating** at both of this type's bounds.
+
+    UInt16.fromInt 42 == 42u16
+
+    UInt16.fromInt -1 == UInt16.minValue
+
+    UInt16.fromInt 100000 == UInt16.maxValue
+
+-}
+fromInt : Int -> UInt16
+fromInt n =
+    if n < 0 then
+        minValue
+
+    else if n > 65535 then
+        maxValue
+
+    else
+        fromIntWrap n
+
+
+{-| Narrow an `Int` by keeping its **low 16 bits**.
+
+    UInt16.fromIntWrap -1 == UInt16.maxValue
+
+-}
+@prim("i32_to_u16")
+fromIntWrap : Int -> UInt16
+
+
+{-| Narrow an `Int`, or `Nothing` when it does not fit.
+
+    UInt16.fromIntChecked 42 == Just 42u16
+
+    UInt16.fromIntChecked 65536 == Nothing
+
+-}
+fromIntChecked : Int -> Maybe UInt16
+fromIntChecked n =
+    if n < 0 then
+        Nothing
+
+    else if n > 65535 then
+        Nothing
+
+    else
+        Just (fromIntWrap n)
+
+
+
+-- TO A FLOAT
+
+
+{-| Convert to a `Float`. Exact.
+
+    UInt16.toFloat UInt16.maxValue == 65535.0
+
+-}
+toFloat : UInt16 -> Float
+toFloat n =
+    Basics.toFloat (toInt n)

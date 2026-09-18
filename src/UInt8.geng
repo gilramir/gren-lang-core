@@ -1,0 +1,147 @@
+module UInt8 exposing
+    ( minValue, maxValue
+    , toInt
+    , fromInt, fromIntWrap, fromIntChecked
+    , toFloat
+    )
+
+{-| The bounds and the conversions of an 8-bit unsigned integer, a byte.
+
+The **type** is [Basics.UInt8](Basics#UInt8), so `+`, `//`, `modBy` and
+`Bitwise.shiftLeftBy` all work on one with no import, and wrap at its width
+(`docs/arithmetic.md` A6). A literal says it is one with the suffix `u8`:
+`255u8`.
+
+**When to use one.** For one byte of a binary format, or a C `uint8_t` across an extern. It is not smaller in memory than an `Int`
+anywhere but inside a `Bytes`, and it is not faster: every operation is `Int`'s
+and a wrap (`docs/arithmetic.md` A12).
+
+**It converts through `Int` and nothing else** (D342). An `Int64` becomes one
+through [Int64.toInt](Int64#toInt) first, and a `Float` through
+[Math.round](Math#round) or its siblings.
+
+
+## Bounds
+
+@docs minValue, maxValue
+
+
+## To an `Int`
+
+Every `UInt8` is an `Int`, so this has one name and no variants.
+
+@docs toInt
+
+
+## From an `Int`
+
+A10's three names: saturating, the low bits, and `Maybe`.
+
+@docs fromInt, fromIntWrap, fromIntChecked
+
+
+## To a float
+
+@docs toFloat
+
+-}
+
+import Basics exposing (Float, Int, UInt8, Num, Ord, (<), (>))
+import Maybe exposing (Maybe(..))
+
+
+-- BOUNDS
+
+
+{-| `0`.
+-}
+minValue : UInt8
+minValue =
+    0
+
+
+{-| `255`.
+-}
+maxValue : UInt8
+maxValue =
+    255
+
+
+
+-- TO AN INT
+
+
+{-| Widen to an `Int`. Exact.
+
+    UInt8.toInt UInt8.maxValue == 255
+
+-}
+@prim("u8_to_i32")
+toInt : UInt8 -> Int
+
+
+
+-- FROM AN INT
+
+
+{-| Narrow an `Int`, **saturating** at both of this type's bounds.
+
+    UInt8.fromInt 42 == 42u8
+
+    UInt8.fromInt -1 == UInt8.minValue
+
+    UInt8.fromInt 100000 == UInt8.maxValue
+
+-}
+fromInt : Int -> UInt8
+fromInt n =
+    if n < 0 then
+        minValue
+
+    else if n > 255 then
+        maxValue
+
+    else
+        fromIntWrap n
+
+
+{-| Narrow an `Int` by keeping its **low 8 bits**.
+
+    UInt8.fromIntWrap -1 == UInt8.maxValue
+
+-}
+@prim("i32_to_u8")
+fromIntWrap : Int -> UInt8
+
+
+{-| Narrow an `Int`, or `Nothing` when it does not fit.
+
+    UInt8.fromIntChecked 42 == Just 42u8
+
+    UInt8.fromIntChecked 256 == Nothing
+
+-}
+fromIntChecked : Int -> Maybe UInt8
+fromIntChecked n =
+    if n < 0 then
+        Nothing
+
+    else if n > 255 then
+        Nothing
+
+    else
+        Just (fromIntWrap n)
+
+
+
+-- TO A FLOAT
+
+
+{-| Convert to a `Float`. Exact.
+
+    UInt8.toFloat UInt8.maxValue == 255.0
+
+-}
+toFloat : UInt8 -> Float
+toFloat n =
+    Basics.toFloat (toInt n)

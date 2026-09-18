@@ -3,6 +3,7 @@ module Basics exposing
     , Integral, (//)
     , Float, Fractional, (/), toFloat
     , Int64, UInt32, UInt64, Float32
+    , Int8, UInt8, Int16, UInt16
     , Eq, (==), (/=)
     , Ord, (<), (>), (<=), (>=), max, min, clamp, Order(..)
     , Bool(..), not, (&&), (||), xor
@@ -42,6 +43,17 @@ the same classes `Int` or `Float` is, so the operators do not change; the
 module named after each type holds its bounds and its conversions.
 
 @docs Int64, UInt32, UInt64, Float32
+
+
+## The narrow integer types
+
+Four more, for a field of a binary protocol or a foreign function's argument
+that is eight or sixteen bits wide (`docs/arithmetic.md` A12). They are members
+of `Num`, `Integral` and `Bitwise.Bits` as the other integer types are, and
+arithmetic wraps at their width. They convert through `Int` and nothing else:
+`Int8.toInt` widens, and `Int8.fromInt` narrows, saturating.
+
+@docs Int8, UInt8, Int16, UInt16
 
 
 ## Equality
@@ -227,6 +239,30 @@ JavaScript a `Float32` is a `Float` with a rounding step after every operation.
 -}
 type Float32
     = Float32 -- NOTE: The compiler provides the real implementation.
+
+
+{-| An 8-bit signed integer: `-128` to `127`. The literal suffix is `i8`.
+-}
+type Int8
+    = Int8 -- NOTE: The compiler provides the real implementation.
+
+
+{-| An 8-bit unsigned integer, a byte: `0` to `255`. The literal suffix is `u8`.
+-}
+type UInt8
+    = UInt8 -- NOTE: The compiler provides the real implementation.
+
+
+{-| A 16-bit signed integer: `-32768` to `32767`. The literal suffix is `i16`.
+-}
+type Int16
+    = Int16 -- NOTE: The compiler provides the real implementation.
+
+
+{-| A 16-bit unsigned integer: `0` to `65535`. The literal suffix is `u16`.
+-}
+type UInt16
+    = UInt16 -- NOTE: The compiler provides the real implementation.
 
 
 {-| The types arithmetic works on: `Int` and `Float`.
@@ -969,6 +1005,338 @@ instance Integral UInt64 where
 
 
 
+-- D342'S FOUR NARROW TYPES
+--
+-- `docs/arithmetic.md` A12 and `docs/m1b-narrow-int.md`. Each is stored as a
+-- canonical `Int` -- sign-extended from its width if it is signed,
+-- zero-extended if not -- so every operation is `Int`'s primitive on the
+-- widened operands and one wrap back (`i32_to_i8` and its siblings, §NI3). The
+-- widening is the identity on every backend, as `Char`'s is; the wrap is the
+-- whole of what a narrow type costs.
+--
+-- The wrap is on every result, including the ones whose value cannot leave the
+-- range -- a remainder, an unsigned quotient -- because a result has to have
+-- the narrow *type*, and the wrap is the only way into it. A6 at the minimum
+-- falls out: `negate -128i8` is the wrap of `128`, which is `-128`, and so is
+-- `-128i8 // -1`.
+
+
+-- INT8
+
+
+@prim("i8_to_i32")
+int8ToInt : Int8 -> Int
+
+
+@prim("i32_to_i8")
+intToInt8 : Int -> Int8
+
+
+divInt8 : Int8 -> Int8 -> Int8
+divInt8 a b =
+    intToInt8 (divInt (int8ToInt a) (int8ToInt b))
+
+
+remInt8 : Int8 -> Int8 -> Int8
+remInt8 a b =
+    intToInt8 (remInt (int8ToInt a) (int8ToInt b))
+
+
+instance Num Int8 where
+    add a b =
+        intToInt8 (addInt (int8ToInt a) (int8ToInt b))
+
+    sub a b =
+        intToInt8 (subInt (int8ToInt a) (int8ToInt b))
+
+    mul a b =
+        intToInt8 (mulInt (int8ToInt a) (int8ToInt b))
+
+    negate a =
+        intToInt8 (negateInt (int8ToInt a))
+
+    pow a b =
+        powIntegral divInt8 remInt8 a b
+
+    fromInt a =
+        intToInt8 a
+
+
+instance Integral Int8 where
+    idiv n d =
+        if eq d 0 then
+            0
+
+        else
+            divInt8 n d
+
+    divFloor d n =
+        if eq d 0 then
+            0
+
+        else
+            let
+                q =
+                    divInt (int8ToInt n) (int8ToInt d)
+            in
+            if signsDisagree (remInt (int8ToInt n) (int8ToInt d)) (int8ToInt d) then
+                intToInt8 (subInt q 1)
+
+            else
+                intToInt8 q
+
+    remainderBy d n =
+        if eq d 0 then
+            n
+
+        else
+            remInt8 n d
+
+    modBy d n =
+        if eq d 0 then
+            n
+
+        else
+            let
+                r =
+                    remInt (int8ToInt n) (int8ToInt d)
+            in
+            if signsDisagree r (int8ToInt d) then
+                intToInt8 (addInt r (int8ToInt d))
+
+            else
+                intToInt8 r
+
+
+-- UINT8
+
+
+@prim("u8_to_i32")
+uint8ToInt : UInt8 -> Int
+
+
+@prim("i32_to_u8")
+intToUInt8 : Int -> UInt8
+
+
+divUInt8 : UInt8 -> UInt8 -> UInt8
+divUInt8 a b =
+    intToUInt8 (divInt (uint8ToInt a) (uint8ToInt b))
+
+
+remUInt8 : UInt8 -> UInt8 -> UInt8
+remUInt8 a b =
+    intToUInt8 (remInt (uint8ToInt a) (uint8ToInt b))
+
+
+instance Num UInt8 where
+    add a b =
+        intToUInt8 (addInt (uint8ToInt a) (uint8ToInt b))
+
+    sub a b =
+        intToUInt8 (subInt (uint8ToInt a) (uint8ToInt b))
+
+    mul a b =
+        intToUInt8 (mulInt (uint8ToInt a) (uint8ToInt b))
+
+    negate a =
+        intToUInt8 (negateInt (uint8ToInt a))
+
+    pow a b =
+        powIntegral divUInt8 remUInt8 a b
+
+    fromInt a =
+        intToUInt8 a
+
+
+instance Integral UInt8 where
+    idiv n d =
+        if eq d 0 then
+            0
+
+        else
+            divUInt8 n d
+
+    divFloor d n =
+        if eq d 0 then
+            0
+
+        else
+            divUInt8 n d
+
+    remainderBy d n =
+        if eq d 0 then
+            n
+
+        else
+            remUInt8 n d
+
+    modBy d n =
+        if eq d 0 then
+            n
+
+        else
+            remUInt8 n d
+
+
+-- INT16
+
+
+@prim("i16_to_i32")
+int16ToInt : Int16 -> Int
+
+
+@prim("i32_to_i16")
+intToInt16 : Int -> Int16
+
+
+divInt16 : Int16 -> Int16 -> Int16
+divInt16 a b =
+    intToInt16 (divInt (int16ToInt a) (int16ToInt b))
+
+
+remInt16 : Int16 -> Int16 -> Int16
+remInt16 a b =
+    intToInt16 (remInt (int16ToInt a) (int16ToInt b))
+
+
+instance Num Int16 where
+    add a b =
+        intToInt16 (addInt (int16ToInt a) (int16ToInt b))
+
+    sub a b =
+        intToInt16 (subInt (int16ToInt a) (int16ToInt b))
+
+    mul a b =
+        intToInt16 (mulInt (int16ToInt a) (int16ToInt b))
+
+    negate a =
+        intToInt16 (negateInt (int16ToInt a))
+
+    pow a b =
+        powIntegral divInt16 remInt16 a b
+
+    fromInt a =
+        intToInt16 a
+
+
+instance Integral Int16 where
+    idiv n d =
+        if eq d 0 then
+            0
+
+        else
+            divInt16 n d
+
+    divFloor d n =
+        if eq d 0 then
+            0
+
+        else
+            let
+                q =
+                    divInt (int16ToInt n) (int16ToInt d)
+            in
+            if signsDisagree (remInt (int16ToInt n) (int16ToInt d)) (int16ToInt d) then
+                intToInt16 (subInt q 1)
+
+            else
+                intToInt16 q
+
+    remainderBy d n =
+        if eq d 0 then
+            n
+
+        else
+            remInt16 n d
+
+    modBy d n =
+        if eq d 0 then
+            n
+
+        else
+            let
+                r =
+                    remInt (int16ToInt n) (int16ToInt d)
+            in
+            if signsDisagree r (int16ToInt d) then
+                intToInt16 (addInt r (int16ToInt d))
+
+            else
+                intToInt16 r
+
+
+-- UINT16
+
+
+@prim("u16_to_i32")
+uint16ToInt : UInt16 -> Int
+
+
+@prim("i32_to_u16")
+intToUInt16 : Int -> UInt16
+
+
+divUInt16 : UInt16 -> UInt16 -> UInt16
+divUInt16 a b =
+    intToUInt16 (divInt (uint16ToInt a) (uint16ToInt b))
+
+
+remUInt16 : UInt16 -> UInt16 -> UInt16
+remUInt16 a b =
+    intToUInt16 (remInt (uint16ToInt a) (uint16ToInt b))
+
+
+instance Num UInt16 where
+    add a b =
+        intToUInt16 (addInt (uint16ToInt a) (uint16ToInt b))
+
+    sub a b =
+        intToUInt16 (subInt (uint16ToInt a) (uint16ToInt b))
+
+    mul a b =
+        intToUInt16 (mulInt (uint16ToInt a) (uint16ToInt b))
+
+    negate a =
+        intToUInt16 (negateInt (uint16ToInt a))
+
+    pow a b =
+        powIntegral divUInt16 remUInt16 a b
+
+    fromInt a =
+        intToUInt16 a
+
+
+instance Integral UInt16 where
+    idiv n d =
+        if eq d 0 then
+            0
+
+        else
+            divUInt16 n d
+
+    divFloor d n =
+        if eq d 0 then
+            0
+
+        else
+            divUInt16 n d
+
+    remainderBy d n =
+        if eq d 0 then
+            n
+
+        else
+            remUInt16 n d
+
+    modBy d n =
+        if eq d 0 then
+            n
+
+        else
+            remUInt16 n d
+
+
 -- FLOAT32
 --
 -- A8: every operation rounds to single precision, which on JavaScript is
@@ -1177,6 +1545,30 @@ instance Eq Float32 where
             (and (isNaNFloat32 a) (isNaNFloat32 b))
 
 
+-- D342's four compare as their widened values do, since a canonical value is
+-- equal to another exactly when its `Int` is (A12 item 2).
+
+
+instance Eq Int8 where
+    eq a b =
+        eqInt (int8ToInt a) (int8ToInt b)
+
+
+instance Eq UInt8 where
+    eq a b =
+        eqInt (uint8ToInt a) (uint8ToInt b)
+
+
+instance Eq Int16 where
+    eq a b =
+        eqInt (int16ToInt a) (int16ToInt b)
+
+
+instance Eq UInt16 where
+    eq a b =
+        eqInt (uint16ToInt a) (uint16ToInt b)
+
+
 
 -- COMPARISONS
 
@@ -1304,6 +1696,58 @@ instance Ord UInt64 where
             LT
 
         else if ltUInt64 b a then
+            GT
+
+        else
+            EQ
+
+
+-- D342's four order as their widened values do: a zero-extended `UInt8` is a
+-- non-negative `Int`, so `i32_lt` is the unsigned comparison too.
+
+
+instance Ord Int8 where
+    compare a b =
+        if ltInt (int8ToInt a) (int8ToInt b) then
+            LT
+
+        else if ltInt (int8ToInt b) (int8ToInt a) then
+            GT
+
+        else
+            EQ
+
+
+instance Ord UInt8 where
+    compare a b =
+        if ltInt (uint8ToInt a) (uint8ToInt b) then
+            LT
+
+        else if ltInt (uint8ToInt b) (uint8ToInt a) then
+            GT
+
+        else
+            EQ
+
+
+instance Ord Int16 where
+    compare a b =
+        if ltInt (int16ToInt a) (int16ToInt b) then
+            LT
+
+        else if ltInt (int16ToInt b) (int16ToInt a) then
+            GT
+
+        else
+            EQ
+
+
+instance Ord UInt16 where
+    compare a b =
+        if ltInt (uint16ToInt a) (uint16ToInt b) then
+            LT
+
+        else if ltInt (uint16ToInt b) (uint16ToInt a) then
             GT
 
         else
