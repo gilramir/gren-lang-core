@@ -1312,8 +1312,8 @@ hexChar n =
     primSlice "0123456789abcdef" n (n + 1)
 
 
-{-| ECMAScript's `Number::toString` layout over Ryu's digits, which is what
-`JSON.stringify` writes: `100`, `1.5`, `1e+21`, `1e-7`. `NaN` and the
+{-| ECMAScript's `Number::toString` layout over the shortest digits, which is
+what `JSON.stringify` writes: `100`, `1.5`, `1e+21`, `1e-7`. `NaN` and the
 infinities are `null`, and `-0` is `0`.
 -}
 number : Float -> String
@@ -1336,17 +1336,17 @@ number f =
                 else
                     ""
 
-            { mantissa, exponent } =
-                Ryu.decimal (Math.abs f)
+            shortest =
+                splitShortest (shortestDigits (Math.abs f))
 
             ds =
-                String.fromUInt64 mantissa
+                shortest.digits
 
             k =
                 primEnd ds
 
             n =
-                exponent + k
+                shortest.exponent + 1
         in
         if k <= n && n <= 21 then
             sign ++ ds ++ String.repeat (n - k) "0"
@@ -1372,6 +1372,44 @@ number f =
             else
                 sign ++ primSlice ds 0 1 ++ "." ++ primSlice ds 1 k ++ "e" ++ expo
 
+
+
+
+{-| `shortestDigits`' `15e-7` as its digits and the exponent of the first of
+them. The text is ASCII, so an offset is an index.
+-}
+splitShortest : String -> { digits : String, exponent : Int }
+splitShortest normalized =
+    when String.firstIndexOf "e" normalized is
+        Just at ->
+            { digits = primSlice normalized 0 at
+            , exponent =
+                String.toInt (primSlice normalized (at + 1) (primEnd normalized))
+                    |> Maybe.withDefault 0
+            }
+
+        Nothing ->
+            { digits = normalized, exponent = 0 }
+
+
+{-| `String.shortestDigits`, declared a second time so that `Json` reaches the
+same row without `String` exposing it (D341, `docs/m1b-ryu.md` §Y16.9): one
+JavaScript function, `toExponential()` less its point and plus sign, and the
+same Geng body, Ryu, for every backend without a `js` row.
+`accept/json-encode-floats`, on the `geng-hs-bodies` target, holds the two to
+each other.
+-}
+@externPure(js, "String", "shortestDigits")
+shortestDigits : Float -> String
+shortestDigits f =
+    let
+        { mantissa, exponent } =
+            Ryu.decimal f
+
+        ds =
+            String.fromUInt64 mantissa
+    in
+    ds ++ "e" ++ String.fromInt (exponent + String.count ds - 1)
 
 
 -- THE HOST
