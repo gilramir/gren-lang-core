@@ -1,6 +1,7 @@
 module Inspect exposing
     ( Inspect
     , ctor, record, arg
+    , Proxy, none
     )
 
 {-| Turning a value into a string a person can read.
@@ -21,6 +22,17 @@ than deriving one (`classes.md` §2.5), and these three are how it produces
 R5's shapes without restating them.
 
 @docs ctor, record, arg
+
+
+## Numbers with a width
+
+A number of a type other than `Int` and `Float` is written as the annotation
+that would type it, `(42 : Int64)`, and an array of them is annotated once,
+`([1, 2] : Array UInt8)` (D360). An instance for a type with no width answers
+`none` from `inspectAnnotation`, and an array of it is written as its elements
+are.
+
+@docs Proxy, none
 
 -}
 
@@ -47,6 +59,78 @@ is a compile error rather than the `<function>` stock Gren prints.
 -}
 class Inspect a where
     inspect : a -> String
+    inspectAnnotation : Proxy a -> Maybe String
+
+
+{-| A type, with no value: what `inspectAnnotation` is asked about.
+
+The annotation an array gets is a fact about its element *type*, so it has to
+be answerable with no element to ask. `[[], [1, 2]]` at `Array (Array UInt8)`
+is annotated once, and its first element is an array with nothing in it.
+
+-}
+type Proxy a
+    = Proxy
+
+
+{-| What `inspectAnnotation` answers for a type with no width: every type but
+the eight sized numeric types and an array of one.
+-}
+none : Maybe String
+none =
+    Nothing
+
+
+proxyOf : a -> Proxy a
+proxyOf _ =
+    Proxy
+
+
+element : Proxy (Array a) -> Proxy a
+element _ =
+    Proxy
+
+
+{-| `(42 : Int64)`: a number and the type that would make it one. -}
+annotated : String -> String -> String
+annotated tipe digits =
+    "(" ++ digits ++ " : " ++ tipe ++ ")"
+
+
+{-| What `annotated` wrapped, given the type it wrapped it with: an element of
+an annotated array, written bare because the array's annotation already types
+it. A rendering that is not wrapped, `nan` or an empty array's `[]`, is
+returned as it is.
+
+This undoes the element's own `inspect` rather than asking the class for a
+bare rendering, because a record's witness is built inline at every use
+(§G38): a second method that renders the fields would carry each field's
+witness twice, and a record nested n deep would carry 2^n copies.
+
+-}
+unannotated : Maybe String -> String -> String
+unannotated tipe rendered =
+    when tipe is
+        Just t ->
+            let
+                suffix =
+                    " : " ++ t ++ ")"
+            in
+            if String.startsWith "(" rendered && String.endsWith suffix rendered then
+                rendered
+                    |> String.dropFirst 1
+                    |> String.dropLast (String.count suffix)
+
+            else
+                rendered
+
+        Nothing ->
+            rendered
+
+
+brackets : (a -> String) -> Array a -> String
+brackets render xs =
+    "[" ++ String.join ", " (Array.map render xs) ++ "]"
 
 
 
@@ -157,55 +241,81 @@ hasTopLevelSpace depth quote chars =
 
 -- THE PRIMITIVES
 --
--- R5's scalar table, one instance per row. `Int` and `Float` print bare and
--- the sized numeric types are suffixed.
+-- R5's scalar table, one instance per row. `Int` and `Float` print bare, and
+-- the sized numeric types print as the annotation that would type them (D360).
+-- Inside an annotated array the annotation is taken off again ('unannotated'),
+-- which leaves the digits.
 
 
 instance Inspect Int where
     inspect n =
         String.fromInt n
 
+    inspectAnnotation _ =
+        Nothing
 
-{-| R5: `42i64`, sign and all, and the suffix is `syntax.md` S5's literal read
-back -- `inspect` at any of D2's widths produces a string the parser accepts as
-a literal of that same width.
+
+{-| R5 as D360 amends it: `(42 : Int64)`, sign inside, which is the annotation
+that would type the literal, so `inspect` at any of the sized widths produces
+source that reads back as the same value at the same width.
 -}
 instance Inspect Int64 where
     inspect n =
-        String.fromInt64 n ++ "i64"
+        annotated "Int64" (String.fromInt64 n)
+
+    inspectAnnotation _ =
+        Just "Int64"
 
 
 instance Inspect UInt32 where
     inspect n =
-        String.fromUInt32 n ++ "u32"
+        annotated "UInt32" (String.fromUInt32 n)
+
+    inspectAnnotation _ =
+        Just "UInt32"
 
 
 instance Inspect UInt64 where
     inspect n =
-        String.fromUInt64 n ++ "u64"
+        annotated "UInt64" (String.fromUInt64 n)
+
+    inspectAnnotation _ =
+        Just "UInt64"
 
 
--- D342's four, suffixed as R5 asks, through `Int`: every narrow value is one.
+-- D342's four, through `Int`: every narrow value is one.
 
 
 instance Inspect Int8 where
     inspect n =
-        String.fromInt (Int8.toInt n) ++ "i8"
+        annotated "Int8" (String.fromInt (Int8.toInt n))
+
+    inspectAnnotation _ =
+        Just "Int8"
 
 
 instance Inspect UInt8 where
     inspect n =
-        String.fromInt (UInt8.toInt n) ++ "u8"
+        annotated "UInt8" (String.fromInt (UInt8.toInt n))
+
+    inspectAnnotation _ =
+        Just "UInt8"
 
 
 instance Inspect Int16 where
     inspect n =
-        String.fromInt (Int16.toInt n) ++ "i16"
+        annotated "Int16" (String.fromInt (Int16.toInt n))
+
+    inspectAnnotation _ =
+        Just "Int16"
 
 
 instance Inspect UInt16 where
     inspect n =
-        String.fromInt (UInt16.toInt n) ++ "u16"
+        annotated "UInt16" (String.fromInt (UInt16.toInt n))
+
+    inspectAnnotation _ =
+        Just "UInt16"
 
 
 {-| R5: bare, always a decimal point, and `nan` / `infinity` / `-infinity` for
@@ -237,25 +347,40 @@ instance Inspect Float where
         else
             String.fromFloat f
 
+    inspectAnnotation _ =
+        Nothing
 
-{-| R5: `1.5f32`, over digits that are the shortest to round-trip **as a
-single** -- `String.fromFloat32`'s, which is Ryu at 24 bits of mantissa
-(`docs/m1b-ryu.md` §Y14). This instance waited for that function rather than
-widening, because `inspect (0.1 : Float32)` through the double's digits would
-be `"0.10000000149011612f32"`: a true statement about the value and the wrong
-string, pinned into a corpus case.
 
-**The three non-finite spellings carry no suffix** (D156). `nan`, `infinity`
-and `-infinity` are what R5 pins at both widths, because a suffix is a literal
-read back and these are not literals at any width -- A1 gives every backend the
-same three values and no way to write one down. `-0.0f32` does have the suffix,
-because it is a literal and because that is the value the suffix was invented
-for: a narrow zero and a wide one look alike everywhere else.
+{-| R5 as D360 amends it: `(1.5 : Float32)`, over digits that are the shortest
+to round-trip **as a single** -- `String.fromFloat32`'s, which is Ryu at 24
+bits of mantissa (`docs/m1b-ryu.md` §Y14). Through the double's digits
+`inspect (0.1 : Float32)` would be `(0.10000000149011612 : Float32)`: a true
+statement about the value and the wrong string, pinned into a corpus case.
+
+**The three non-finite spellings are not annotated** (D156, which D360 keeps).
+`nan`, `infinity` and `-infinity` are what R5 pins at both widths, because an
+annotation is a literal's type and these are not literals at any width -- A1
+gives every backend the same three values and no way to write one down.
+`(-0.0 : Float32)` is annotated, because it is a literal and because that is
+the value the annotation matters most for: a narrow zero and a wide one look
+alike everywhere else.
 
 -}
 instance Inspect Float32 where
     inspect f =
-        if isNaN f then
+        if isNaN f || isInfinite f then
+            float32Digits f
+
+        else
+            annotated "Float32" (float32Digits f)
+
+    inspectAnnotation _ =
+        Just "Float32"
+
+
+float32Digits : Float32 -> String
+float32Digits f =
+    if isNaN f then
             "nan"
 
         else if isInfinite f then
@@ -266,10 +391,10 @@ instance Inspect Float32 where
                 "infinity"
 
         else if isNegativeZero32 f then
-            "-0.0f32"
+            "-0.0"
 
         else
-            String.fromFloat32 f ++ "f32"
+            String.fromFloat32 f
 
 
 {-| `1.0 / f` is the only thing that tells the two zeros apart, and it has to be
@@ -308,15 +433,24 @@ instance Inspect Bool where
         else
             "False"
 
+    inspectAnnotation _ =
+        Nothing
+
 
 instance Inspect Char where
     inspect c =
         "'" ++ escape '\'' c ++ "'"
 
+    inspectAnnotation _ =
+        Nothing
+
 
 instance Inspect String where
     inspect s =
         "\"" ++ String.join "" (Array.map (\c -> escape '"' c) (String.toArray s)) ++ "\""
+
+    inspectAnnotation _ =
+        Nothing
 
 
 {-| One character, escaped for whichever quote encloses it.
@@ -402,6 +536,9 @@ instance Inspect Order where
             GT ->
                 "GT"
 
+    inspectAnnotation _ =
+        Nothing
+
 
 instance Inspect a => Inspect (Maybe a) where
     inspect m =
@@ -411,6 +548,9 @@ instance Inspect a => Inspect (Maybe a) where
 
             Nothing ->
                 "Nothing"
+
+    inspectAnnotation _ =
+        Nothing
 
 
 instance (Inspect error, Inspect value) => Inspect (Result error value) where
@@ -422,10 +562,42 @@ instance (Inspect error, Inspect value) => Inspect (Result error value) where
             Err error ->
                 ctor "Err" [ arg (inspect error) ]
 
+    inspectAnnotation _ =
+        Nothing
+
 
 {-| R5: `[1, 2, 3]` and `[]`. An element is **not** parenthesized, because a
 bracket already delimits it.
+
+D360: an array whose element type has a width is annotated once, at the
+outermost array whose type has one, and everything inside it is bare --
+`([[], [1, 2]] : Array (Array UInt8))`. The width is read from the element
+**type** through `Proxy`, so an empty inner array is no obstacle. An empty
+array on its own is `[]`, annotated or not: there is no number in it to
+misread.
+
 -}
 instance Inspect a => Inspect (Array a) where
     inspect xs =
-        "[" ++ String.join ", " (Array.map (\x -> inspect x) xs) ++ "]"
+        if Array.isEmpty xs then
+            "[]"
+
+        else
+            when inspectAnnotation (proxyOf xs) is
+                Just tipe ->
+                    let
+                        inner =
+                            inspectAnnotation (element (proxyOf xs))
+                    in
+                    annotated tipe (brackets (\x -> unannotated inner (inspect x)) xs)
+
+                Nothing ->
+                    brackets (\x -> inspect x) xs
+
+    inspectAnnotation proxy =
+        when inspectAnnotation (element proxy) is
+            Just tipe ->
+                Just ("Array " ++ arg tipe)
+
+            Nothing ->
+                Nothing

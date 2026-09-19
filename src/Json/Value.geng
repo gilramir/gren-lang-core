@@ -75,6 +75,9 @@ instance Inspect Value where
     inspect v =
         encode 0 v
 
+    inspectAnnotation _ =
+        Inspect.none
+
 
 @prim("str_end")
 primEnd : String -> Int

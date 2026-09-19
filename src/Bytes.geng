@@ -106,6 +106,9 @@ instance Inspect Bytes where
     inspect bytes =
         Inspect.ctor "Bytes" [ inspect (toArray bytes) ]
 
+    inspectAnnotation _ =
+        Inspect.none
+
 
 toArray : Bytes -> Array Int
 toArray bytes =

@@ -304,3 +304,6 @@ instance Eq a => Eq (Set a) where
 instance Inspect a => Inspect (Set a) where
     inspect members =
         Inspect.ctor "Set" [ inspect (toArray members) ]
+
+    inspectAnnotation _ =
+        Inspect.none

@@ -846,3 +846,6 @@ instance (Inspect k, Inspect v) => Inspect (Dict k v) where
                     |> Array.Builder.toArray
                 )
             ]
+
+    inspectAnnotation _ =
+        Inspect.none
