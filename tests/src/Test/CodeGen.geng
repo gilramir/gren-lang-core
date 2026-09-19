@@ -74,11 +74,11 @@ tests =
             describe "Hex"
                 [ test "0xFFFFFFFF" <|
                     \{} ->
-                        0xFFFFFFFFu32
+                        (0xFFFFFFFF : UInt32)
                             |> Expect.equal 4294967295
                 , test "0xD066F00D" <|
                     \{} ->
-                        0xD066F00Du32
+                        (0xD066F00D : UInt32)
                             |> Expect.equal 3496407053
                 , test "0x00" <|
                     \{} ->

@@ -18,19 +18,19 @@ tests : Test
 tests =
     describe "Sized integers"
         [ describe "toFloat"
-            [ test "Int16 at its least" <| \{} -> Expect.equal -32768.0 (Int16.toFloat -32768i16)
-            , test "Int16 at its greatest" <| \{} -> Expect.equal 32767.0 (Int16.toFloat 32767i16)
-            , test "UInt8 at its greatest" <| \{} -> Expect.equal 255.0 (UInt8.toFloat 255u8)
-            , test "UInt8 zero" <| \{} -> Expect.equal 0.0 (UInt8.toFloat 0u8)
+            [ test "Int16 at its least" <| \{} -> Expect.equal -32768.0 (Int16.toFloat (-32768 : Int16))
+            , test "Int16 at its greatest" <| \{} -> Expect.equal 32767.0 (Int16.toFloat (32767 : Int16))
+            , test "UInt8 at its greatest" <| \{} -> Expect.equal 255.0 (UInt8.toFloat (255 : UInt8))
+            , test "UInt8 zero" <| \{} -> Expect.equal 0.0 (UInt8.toFloat (0 : UInt8))
             ]
         , describe "UInt64.fromIntChecked"
-            [ test "zero" <| \{} -> Expect.equal (Just 0u64) (UInt64.fromIntChecked 0)
-            , test "Int's greatest" <| \{} -> Expect.equal (Just 2147483647u64) (UInt64.fromIntChecked 2147483647)
+            [ test "zero" <| \{} -> Expect.equal (Just (0 : UInt64)) (UInt64.fromIntChecked 0)
+            , test "Int's greatest" <| \{} -> Expect.equal (Just (2147483647 : UInt64)) (UInt64.fromIntChecked 2147483647)
             , test "a negative Int is Nothing" <| \{} -> Expect.equal Nothing (UInt64.fromIntChecked -1)
             ]
         , describe "UInt64.toIntChecked"
-            [ test "Int's greatest fits" <| \{} -> Expect.equal (Just 2147483647) (UInt64.toIntChecked 2147483647u64)
-            , test "one past it does not" <| \{} -> Expect.equal Nothing (UInt64.toIntChecked 2147483648u64)
-            , test "UInt64's greatest does not" <| \{} -> Expect.equal Nothing (UInt64.toIntChecked 18446744073709551615u64)
+            [ test "Int's greatest fits" <| \{} -> Expect.equal (Just 2147483647) (UInt64.toIntChecked (2147483647 : UInt64))
+            , test "one past it does not" <| \{} -> Expect.equal Nothing (UInt64.toIntChecked (2147483648 : UInt64))
+            , test "UInt64's greatest does not" <| \{} -> Expect.equal Nothing (UInt64.toIntChecked (18446744073709551615 : UInt64))
             ]
         ]
