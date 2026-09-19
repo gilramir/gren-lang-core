@@ -9,7 +9,7 @@ it answers with a mantissa and a power of ten, and `String.fromFloat` lays
 those out per R5.
 
 [decimal32](#decimal32) is the same algorithm at single precision, which R5
-needs for `1.5f32` and which `docs/m1b-ryu.md` §Y14 is.
+needs for `(1.5 : Float32)` and which `docs/m1b-ryu.md` §Y14 is.
 
 **Not exposed.** `gren.json` does not list it, because what a program should
 call is `String.fromFloat` or `String.fromFloat32`.
@@ -60,10 +60,10 @@ decimal f =
 
 
 {-| The shortest decimal for a **finite, non-zero** `Float32`, in the record
-`decimal` answers with: `decimal32 1.5f32` is `{ mantissa = 15, exponent = -1 }`.
+`decimal` answers with: `decimal32 (1.5 : Float32)` is `{ mantissa = 15, exponent = -1 }`.
 
 The digits are not the double's, which is the whole reason this exists.
-`0.1f32` is the binary32 nearest a tenth, and widened it is the `Float`
+`(0.1 : Float32)` is the binary32 nearest a tenth, and widened it is the `Float`
 `0.10000000149011612`; the shortest decimal that reads back as *that single* is
 `0.1` again, because no other single is nearer. Rendering a `Float32` through
 [decimal](#decimal) would print the widening instead, which is the wrong string

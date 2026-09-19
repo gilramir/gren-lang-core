@@ -776,7 +776,7 @@ step (Generator generator) seed =
 
     seed0 : Random.Seed
     seed0 =
-      Random.initialSeed 42u32
+      Random.initialSeed (42 : UInt32)
 
 If you hard-code your `Seed` like this, every run will be the same. This can
 be useful if you are testing a game with randomness and want it to be easy to

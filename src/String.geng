@@ -53,8 +53,8 @@ number of code points, and an index counts them.
 D2's three sized integer types render their decimal digits here rather than
 through [fromInt](#fromInt), because none of them fits in an `Int`: a `UInt32`
 runs to `4294967295` and the two 64-bit widths run far past that. These are
-what [Inspect](Inspect#Inspect) writes R5's `42i64` over, and what a program
-that wants the digits without the suffix calls directly.
+what [Inspect](Inspect#Inspect) writes R5's `(42 : Int64)` over, and what a program
+that wants the digits without the annotation calls directly.
 
 @docs fromInt64, fromUInt32, fromUInt64
 
@@ -955,9 +955,9 @@ intDigits n =
 
 {-| Convert an `Int64` to a `String`.
 
-    String.fromInt64 9223372036854775807i64 == "9223372036854775807"
+    String.fromInt64 (9223372036854775807 : Int64) == "9223372036854775807"
 
-    String.fromInt64 -42i64 == "-42"
+    String.fromInt64 (-42 : Int64) == "-42"
 
 -}
 fromInt64 : Int64 -> String
@@ -995,7 +995,7 @@ int64Digits n =
 
 {-| Convert a `UInt32` to a `String`.
 
-    String.fromUInt32 4294967295u32 == "4294967295"
+    String.fromUInt32 (4294967295 : UInt32) == "4294967295"
 
 -}
 fromUInt32 : UInt32 -> String
@@ -1016,7 +1016,7 @@ fromUInt32 n =
 
 {-| Convert a `UInt64` to a `String`.
 
-    String.fromUInt64 18446744073709551615u64 == "18446744073709551615"
+    String.fromUInt64 (18446744073709551615 : UInt64) == "18446744073709551615"
 
 -}
 fromUInt64 : UInt64 -> String
@@ -1237,14 +1237,14 @@ shortestDigits number =
 
 {-| Convert a `Float32` to a `String`.
 
-    String.fromFloat32 1.5f32 == "1.5"
+    String.fromFloat32 (1.5 : Float32) == "1.5"
 
-    String.fromFloat32 0.1f32 == "0.1"
+    String.fromFloat32 (0.1 : Float32) == "0.1"
 
 [`fromFloat`](#fromFloat) at the other width, and the same R5 layout over the
 same thresholds -- what differs is the digits, which are the shortest that read
 back **as a single**. That is not the same set as the double's and the second
-line above is why: `0.1f32` is not the `Float` `0.1`, it is the binary32 nearest
+line above is why: `(0.1 : Float32)` is not the `Float` `0.1`, it is the binary32 nearest
 it, and widening that to a `Float` and printing it gives
 `"0.10000000149011612"`. Both strings name the same `Float32`; this one is the
 shortest that does.

@@ -241,25 +241,25 @@ type Float32
     = Float32 -- NOTE: The compiler provides the real implementation.
 
 
-{-| An 8-bit signed integer: `-128` to `127`. The literal suffix is `i8`.
+{-| An 8-bit signed integer: `-128` to `127`.
 -}
 type Int8
     = Int8 -- NOTE: The compiler provides the real implementation.
 
 
-{-| An 8-bit unsigned integer, a byte: `0` to `255`. The literal suffix is `u8`.
+{-| An 8-bit unsigned integer, a byte: `0` to `255`.
 -}
 type UInt8
     = UInt8 -- NOTE: The compiler provides the real implementation.
 
 
-{-| A 16-bit signed integer: `-32768` to `32767`. The literal suffix is `i16`.
+{-| A 16-bit signed integer: `-32768` to `32767`.
 -}
 type Int16
     = Int16 -- NOTE: The compiler provides the real implementation.
 
 
-{-| A 16-bit unsigned integer: `0` to `65535`. The literal suffix is `u16`.
+{-| A 16-bit unsigned integer: `0` to `65535`.
 -}
 type UInt16
     = UInt16 -- NOTE: The compiler provides the real implementation.
@@ -1017,8 +1017,8 @@ instance Integral UInt64 where
 -- The wrap is on every result, including the ones whose value cannot leave the
 -- range -- a remainder, an unsigned quotient -- because a result has to have
 -- the narrow *type*, and the wrap is the only way into it. A6 at the minimum
--- falls out: `negate -128i8` is the wrap of `128`, which is `-128`, and so is
--- `-128i8 // -1`.
+-- falls out: `negate (-128 : Int8)` is the wrap of `128`, which is `-128`, and so is
+-- `(-128 : Int8) // -1`.
 
 
 -- INT8

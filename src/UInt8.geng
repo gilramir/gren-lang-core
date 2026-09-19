@@ -9,8 +9,8 @@ module UInt8 exposing
 
 The **type** is [Basics.UInt8](Basics#UInt8), so `+`, `//`, `modBy` and
 `Bitwise.shiftLeftBy` all work on one with no import, and wrap at its width
-(`docs/arithmetic.md` A6). A literal says it is one with the suffix `u8`:
-`255u8`.
+(`docs/arithmetic.md` A6). A literal is given the type by an annotation:
+`(255 : UInt8)`.
 
 **When to use one.** For one byte of a binary format, or a C `uint8_t` across an extern. It is not smaller in memory than an `Int`
 anywhere but inside a `Bytes`, and it is not faster: every operation is `Int`'s
@@ -86,7 +86,7 @@ toInt : UInt8 -> Int
 
 {-| Narrow an `Int`, **saturating** at both of this type's bounds.
 
-    UInt8.fromInt 42 == 42u8
+    UInt8.fromInt 42 == (42 : UInt8)
 
     UInt8.fromInt -1 == UInt8.minValue
 
@@ -116,7 +116,7 @@ fromIntWrap : Int -> UInt8
 
 {-| Narrow an `Int`, or `Nothing` when it does not fit.
 
-    UInt8.fromIntChecked 42 == Just 42u8
+    UInt8.fromIntChecked 42 == Just (42 : UInt8)
 
     UInt8.fromIntChecked 256 == Nothing
 

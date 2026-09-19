@@ -9,8 +9,8 @@ module Int16 exposing
 
 The **type** is [Basics.Int16](Basics#Int16), so `+`, `//`, `modBy` and
 `Bitwise.shiftLeftBy` all work on one with no import, and wrap at its width
-(`docs/arithmetic.md` A6). A literal says it is one with the suffix `i16`:
-`32767i16`.
+(`docs/arithmetic.md` A6). A literal is given the type by an annotation:
+`(32767 : Int16)`.
 
 **When to use one.** For a signed 16-bit field of a binary format, or a C `int16_t` or a Java `short` across an extern. It is not smaller in memory than an `Int`
 anywhere but inside a `Bytes`, and it is not faster: every operation is `Int`'s
@@ -86,7 +86,7 @@ toInt : Int16 -> Int
 
 {-| Narrow an `Int`, **saturating** at both of this type's bounds.
 
-    Int16.fromInt 42 == 42i16
+    Int16.fromInt 42 == (42 : Int16)
 
     Int16.fromInt -32769 == Int16.minValue
 
@@ -116,7 +116,7 @@ fromIntWrap : Int -> Int16
 
 {-| Narrow an `Int`, or `Nothing` when it does not fit.
 
-    Int16.fromIntChecked 42 == Just 42i16
+    Int16.fromIntChecked 42 == Just (42 : Int16)
 
     Int16.fromIntChecked 32768 == Nothing
 

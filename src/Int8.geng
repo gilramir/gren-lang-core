@@ -9,8 +9,8 @@ module Int8 exposing
 
 The **type** is [Basics.Int8](Basics#Int8), so `+`, `//`, `modBy` and
 `Bitwise.shiftLeftBy` all work on one with no import, and wrap at its width
-(`docs/arithmetic.md` A6). A literal says it is one with the suffix `i8`:
-`127i8`.
+(`docs/arithmetic.md` A6). A literal is given the type by an annotation:
+`(127 : Int8)`.
 
 **When to use one.** For a signed byte in a binary format, or a C `int8_t` or a Java `byte` across an extern. It is not smaller in memory than an `Int`
 anywhere but inside a `Bytes`, and it is not faster: every operation is `Int`'s
@@ -86,7 +86,7 @@ toInt : Int8 -> Int
 
 {-| Narrow an `Int`, **saturating** at both of this type's bounds.
 
-    Int8.fromInt 42 == 42i8
+    Int8.fromInt 42 == (42 : Int8)
 
     Int8.fromInt -129 == Int8.minValue
 
@@ -116,7 +116,7 @@ fromIntWrap : Int -> Int8
 
 {-| Narrow an `Int`, or `Nothing` when it does not fit.
 
-    Int8.fromIntChecked 42 == Just 42i8
+    Int8.fromIntChecked 42 == Just (42 : Int8)
 
     Int8.fromIntChecked 128 == Nothing
 
