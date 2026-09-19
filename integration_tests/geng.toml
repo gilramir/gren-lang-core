@@ -11,7 +11,7 @@ source-directories = ["src"]
 "github.com/geng-language/stream" = "0.1.0 <= v < 0.2.0"
 
 [sources]
-"github.com/blaix/gren-effectful-tests" = { path = "../../../../packages/effectful-tests" }
+"github.com/blaix/gren-effectful-tests" = { path = "../../../blaix/gren-effectful-tests" }
 "github.com/geng-language/crypto" = { path = "../../../../packages/crypto" }
 "github.com/geng-language/node" = { path = "../../node" }
 "github.com/geng-language/test" = { path = "../../test" }
