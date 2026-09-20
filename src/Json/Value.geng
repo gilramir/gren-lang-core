@@ -714,7 +714,28 @@ afterEscapedKey s end k closing =
 
 stringProblem : String -> Int -> Int -> { offset : Int, reason : String }
 stringProblem s end open =
-    when scan s end "" (open + 1) (open + 1) is
+    let
+        -- `primNext` and not `open + 1`. Where a string really is here, `open`
+        -- is its opening quote and the two are the same offset. On the path
+        -- that reaches this with no string at all -- an object key that is not
+        -- quoted, whose `closing` is -1 for that reason rather than for an
+        -- unterminated one -- `open` is whatever character was there, and
+        -- `open + 1` is *inside* it wherever an offset is a byte and not a
+        -- code unit (`m1b-str-prim.md` §Z3). JavaScript reads a lone surrogate
+        -- there and carries on; a UTF-8 backend has nothing to decode.
+        --
+        -- What this answers is discarded on that path -- `escapedKey` and
+        -- `afterEscapedKey` both drop a `ScanFailed`, and the object goes to
+        -- `keyProblem` for its message -- so this is about the offset being a
+        -- character and not about the answer.
+        after =
+            if open < end then
+                primNext s open
+
+            else
+                open + 1
+    in
+    when scan s end "" after after is
         ScanFailed problem ->
             problem
 
