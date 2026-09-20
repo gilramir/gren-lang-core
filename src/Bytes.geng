@@ -205,6 +205,7 @@ getHostEndianness =
 
 
 @extern(js, "Bytes", "hostEndianness")
+@extern(erlang, "geng_core_bytes", "hostEndianness")
 hostEndianness : endianness -> endianness -> Task x endianness
 
 

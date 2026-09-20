@@ -879,4 +879,5 @@ seedFromEntropy =
 
 
 @extern(js, "Random", "entropy")
+@extern(erlang, "geng_core_random", "entropy")
 entropyWith : (UInt32 -> UInt32 -> seed) -> Task x seed

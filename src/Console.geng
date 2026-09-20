@@ -29,6 +29,7 @@ writes comes before what the next one does, and before the program ends.
 
 -}
 @extern(js, "Console", "write")
+@extern(erlang, "geng_core_console", "write")
 write : String -> Task x {}
 
 
@@ -41,4 +42,5 @@ write : String -> Task x {}
 
 -}
 @extern(js, "Console", "writeErr")
+@extern(erlang, "geng_core_console", "writeErr")
 writeErr : String -> Task x {}
