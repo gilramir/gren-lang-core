@@ -21,18 +21,58 @@ here(Build, Succeed, _Fail) ->
     Succeed(Build(offset_minutes())),
     none.
 
-%% The BEAM has no tz-database name to ask for: OTP's own time-zone support is
-%% the `TZ` environment variable and nothing else. So the name is `TZ` when the
-%% environment sets one, and otherwise the offset, whose sign is the opposite
-%% of `here`'s because `ZoneName`'s documentation says it is
-%% `getTimezoneOffset()`'s.
+%% OTP exposes no tz-database name -- its own time-zone support is the `TZ`
+%% environment variable and nothing else -- but the *host* knows one, and so
+%% does JavaScript's `Intl.DateTimeFormat().resolvedOptions().timeZone`, which
+%% reads the same place. So this asks the host the three ways a Unix host
+%% answers, in the order a Unix host means them, and falls back to the offset
+%% when none of them says anything -- whose sign is the opposite of `here`'s,
+%% because `ZoneName`'s documentation says it is `getTimezoneOffset()`'s.
+%%
+%% The fallback is not dead code waiting for a defect: it is what a host with
+%% no zoneinfo answers, Windows among them, and `ZoneName` has the constructor
+%% for exactly that reason.
 getZoneName(Name, Offset, Succeed, _Fail) ->
-    Succeed(case os:getenv("TZ") of
-                false -> Offset(-offset_minutes());
-                "" -> Offset(-offset_minutes());
-                Zone -> Name(unicode:characters_to_binary(Zone, utf8))
+    Succeed(case zone_name() of
+                none -> Offset(-offset_minutes());
+                Zone -> Name(Zone)
             end),
     none.
+
+zone_name() ->
+    case os:getenv("TZ") of
+        false -> from_host();
+        "" -> from_host();
+        %% POSIX lets `TZ` carry a leading colon, and `:America/Chicago` names
+        %% the same zone as `America/Chicago`.
+        [$: | Zone] -> unicode:characters_to_binary(Zone, utf8);
+        Zone -> unicode:characters_to_binary(Zone, utf8)
+    end.
+
+%% `/etc/localtime` is a symlink into the zoneinfo tree on most Unix hosts and
+%% `/etc/timezone` is a one-line file on Debian's; either names the zone.
+from_host() ->
+    case file:read_link("/etc/localtime") of
+        {ok, Path} -> after_zoneinfo(Path);
+        _ ->
+            case file:read_file("/etc/timezone") of
+                {ok, Bin} -> first_line(Bin);
+                _ -> none
+            end
+    end.
+
+after_zoneinfo(Path) ->
+    Bin = unicode:characters_to_binary(Path, utf8),
+    case binary:match(Bin, <<"zoneinfo/">>) of
+        nomatch -> none;
+        {At, Len} -> binary:part(Bin, At + Len, byte_size(Bin) - At - Len)
+    end.
+
+first_line(Bin) ->
+    case string:trim(hd(binary:split(Bin, <<"\n">>))) of
+        <<>> -> none;
+        Line -> Line
+    end.
 
 %% Each tick emits the time it fired at into the caller's source (D71), built
 %% by the Geng function this is handed. `Ticks` is F4's handle — the `emit` and
