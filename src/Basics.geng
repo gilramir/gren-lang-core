@@ -86,7 +86,6 @@ derives or writes an instance for.
 
 -}
 
-import Gren.Kernel.Basics
 
 
 
@@ -675,15 +674,788 @@ instance Fractional Float where
         a
 
 
--- A9 keeps `pow` out of the primitive set: V8, glibc, musl and Erlang already
--- disagree in the last bits of `Math.pow`, so the float case is destined for
--- the fdlibm port and is one kernel call until it arrives. The `Int` case never
--- had a machine instruction to lose -- it is `powInt` above.
+-- FDLIBM'S POW
+--
+-- A9 keeps `pow` out of the primitive set: V8, glibc, musl and Erlang
+-- disagree in the last bits of `Math.pow`. The `Int` case never had a machine
+-- instruction to lose -- it is `powInt` above. `Float`'s `^` is fdlibm 5.3's
+-- `e_pow.c` (A9, D394, `m2-fdlibm.md` §FD13). It
+-- is here rather than in `Math.Fdlibm` with the other nine because this module
+-- imports nothing, and `instance Num Float` is here (§FD4). So it is written
+-- over this section's own primitives, not `Bitwise`'s methods or
+-- `Math.Fdlibm`'s words: the bit operations are the raw `i32` ones, whose
+-- precondition is a shift count in `[0, 32)`, and every shift below is a
+-- constant or a count the code has already bounded (each says where). The
+-- names carry a `pow` prefix, since `xor` is this module's `Bool` operation.
+--
+-- **It is written in calls, not operators.** `+`, `==` and the rest are
+-- declared at the top of this module as `infix` names for `add`, `eq` and the
+-- other methods, and are not in scope inside it, which is why `powIntegral`
+-- above says `eq exponent 0`. So `a + b * c` is `add a (mul b c)` below, and
+-- `-z` is `negate z`. It was transcribed with operators, the way
+-- `Math.Fdlibm` reads, and rewritten by a script that knows only the `infix`
+-- table's precedences; the port is held to `StrictMath` either way.
+--
+-- `scalbn` and `copysign` are `Math.Fdlibm`'s again, for the same reason.
+-- What the C does that Geng says differently is `Math.Fdlibm`'s list: a
+-- reassigned variable is a new name, a `return` in a block is a branch, and
+-- fdlibm's `unsigned` words are `Int`s, compared by their bits.
 
 
+@prim("f64_high_word")
+powHighWord : Float -> Int
+
+
+@prim("f64_low_word")
+powLowWord : Float -> Int
+
+
+@prim("f64_from_words")
+powFromWords : Int -> Int -> Float
+
+
+@prim("f64_sqrt")
+powSqrt : Float -> Float
+
+
+@prim("i32_and")
+powAnd : Int -> Int -> Int
+
+
+@prim("i32_or")
+powOr : Int -> Int -> Int
+
+
+@prim("i32_xor")
+powXor : Int -> Int -> Int
+
+
+@prim("i32_not")
+powComplement : Int -> Int
+
+
+@prim("i32_shl")
+powShlRaw : Int -> Int -> Int
+
+
+@prim("i32_shr")
+powShrRaw : Int -> Int -> Int
+
+
+@prim("i32_ushr")
+powUshrRaw : Int -> Int -> Int
+
+
+-- The raw shifts take the value first; these take the count first, as
+-- `Bitwise`'s do, so that the code below reads in `Bitwise`'s order.
+
+
+powShl : Int -> Int -> Int
+powShl count value =
+    powShlRaw value count
+
+
+powShr : Int -> Int -> Int
+powShr count value =
+    powShrRaw value count
+
+
+powUshr : Int -> Int -> Int
+powUshr count value =
+    powUshrRaw value count
+
+
+{-| `__HI(x) = hi`. -}
+powWithHigh : Int -> Float -> Float
+powWithHigh hi x =
+    powFromWords hi (powLowWord x)
+
+
+{-| `__LO(x) = 0`. -}
+powZeroLow : Float -> Float
+powZeroLow x =
+    powFromWords (powHighWord x) 0
+
+
+powTwo53 : Float
+powTwo53 =
+    9007199254740992.0
+
+
+powHuge : Float
+powHuge =
+    1.0e300
+
+
+powTiny : Float
+powTiny =
+    1.0e-300
+
+
+{-| `__ieee754_pow(x, y)`: `x` to the power `y`.
+
+fdlibm's method: `log2(x)` to about 64 bits as a pair `t1 + t2`, times `y`
+split so the product is exact, and `2^` of that, with the integer part put
+into the exponent. The special cases are fdlibm's, which Java's `StrictMath`
+specifies: `x ^ 0` is `1` even for a `NaN` `x`, but `1 ^ NaN` is `NaN`, where
+C99 says `1`; a negative `x` to a non-integer power is `NaN`; and an odd
+integer power keeps a negative `x`'s sign.
+
+-}
 powFloat : Float -> Float -> Float
-powFloat =
-    Gren.Kernel.Basics.pow
+powFloat x y =
+    let
+        hx =
+            powHighWord x
+
+        lx =
+            powLowWord x
+
+        hy =
+            powHighWord y
+
+        ly =
+            powLowWord y
+
+        ix =
+            powAnd hx 0x7FFFFFFF
+
+        iy =
+            powAnd hy 0x7FFFFFFF
+    in
+    if eq (powOr iy ly) 0 then
+        -- y==zero: x**0 = 1
+        1.0
+
+    else if or (gt ix 0x7FF00000) (or (and (eq ix 0x7FF00000) (notEqual lx 0)) (or (gt iy 0x7FF00000) (and (eq iy 0x7FF00000) (notEqual ly 0)))) then
+        -- +-NaN return x+y
+        add x y
+
+    else
+        let
+            -- 0: y is not an integer, 1: an odd one, 2: an even one; only
+            -- asked when x < 0
+            yisint =
+                if lt hx 0 then
+                    powYIsInt iy ly
+
+                else
+                    0
+        in
+        if and (eq ly 0) (eq iy 0x7FF00000) then
+            -- y is +-inf
+            if eq (powOr (sub ix 0x3FF00000) lx) 0 then
+                -- inf**+-1 is NaN
+                sub y y
+
+            else if ge ix 0x3FF00000 then
+                -- (|x|>1)**+-inf = inf,0
+                if ge hy 0 then
+                    y
+
+                else
+                    0.0
+
+            else if lt hy 0 then
+                -- (|x|<1)**-,+inf = inf,0
+                negate y
+
+            else
+                0.0
+
+        else if and (eq ly 0) (eq iy 0x3FF00000) then
+            -- y is  +-1
+            if lt hy 0 then
+                fdiv 1.0 x
+
+            else
+                x
+
+        else if and (eq ly 0) (eq hy 0x40000000) then
+            -- y is  2
+            mul x x
+
+        else if and (eq ly 0) (and (eq hy 0x3FE00000) (ge hx 0)) then
+            -- y is  0.5, x >= +0
+            powSqrt x
+
+        else
+            let
+                ax =
+                    powWithHigh ix x
+            in
+            if and (eq lx 0) (or (eq ix 0x7FF00000) (or (eq ix 0) (eq ix 0x3FF00000))) then
+                -- x is +-0,+-inf,+-1
+                let
+                    -- z = (1/|x|)
+                    z =
+                        if lt hy 0 then
+                            fdiv 1.0 ax
+
+                        else
+                            ax
+                in
+                if lt hx 0 then
+                    if eq (powOr (sub ix 0x3FF00000) yisint) 0 then
+                        -- (-1)**non-int is NaN
+                        fdiv (sub z z) (sub z z)
+
+                    else if eq yisint 1 then
+                        -- (x<0)**odd = -(|x|**odd)
+                        negate z
+
+                    else
+                        z
+
+                else
+                    z
+
+            else
+                let
+                    n =
+                        add (powShr 31 hx) 1
+                in
+                if eq (powOr n yisint) 0 then
+                    -- (x<0)**(non-int) is NaN
+                    fdiv (sub x x) (sub x x)
+
+                else
+                    let
+                        -- s (sign of result -ve**odd) = -1 else = 1
+                        s =
+                            if eq (powOr n (sub yisint 1)) 0 then
+                                -1.0
+
+                            else
+                                1.0
+                    in
+                    if gt iy 0x41E00000 then
+                        -- if |y| > 2**31
+                        powHugeY ix iy hy s ax y
+
+                    else
+                        powExp y s (powLog2 ix ax)
+
+
+{-| `yisint` for a negative `x`. The shifts are by `52-k` with `k` in
+`(20, 52]` and by `20-k` with `k` in `[0, 20]`, since `iy >= 0x3ff00000` and
+`iy < 0x43400000` bound the exponent.
+-}
+powYIsInt : Int -> Int -> Int
+powYIsInt iy ly =
+    if ge iy 0x43400000 then
+        -- even integer y
+        2
+
+    else if ge iy 0x3FF00000 then
+        let
+            -- exponent
+            k =
+                sub (powShr 20 iy) 0x03FF
+        in
+        if gt k 20 then
+            let
+                j =
+                    powUshr (sub 52 k) ly
+            in
+            if eq (powShl (sub 52 k) j) ly then
+                sub 2 (powAnd j 1)
+
+            else
+                0
+
+        else if eq ly 0 then
+            let
+                j =
+                    powShr (sub 20 k) iy
+            in
+            if eq (powShl (sub 20 k) j) iy then
+                sub 2 (powAnd j 1)
+
+            else
+                0
+
+        else
+            0
+
+    else
+        0
+
+
+{-| `|y| > 2^31`: over or underflow unless `x` is within `2^-20` of one, and
+there `log2(x)` is `x-x^2/2+x^3/3-x^4/4` over `ln 2`.
+-}
+powHugeY : Int -> Int -> Int -> Float -> Float -> Float -> Float
+powHugeY ix iy hy s ax y =
+    if and (gt iy 0x43F00000) (le ix 0x3FEFFFFF) then
+        -- if |y| > 2**64, must o/uflow
+        if lt hy 0 then
+            mul powHuge powHuge
+
+        else
+            mul powTiny powTiny
+
+    else if and (gt iy 0x43F00000) (ge ix 0x3FF00000) then
+        if gt hy 0 then
+            mul powHuge powHuge
+
+        else
+            mul powTiny powTiny
+
+    else if lt ix 0x3FEFFFFF then
+        -- over/underflow if x is not close to one
+        if lt hy 0 then
+            mul (mul s powHuge) powHuge
+
+        else
+            mul (mul s powTiny) powTiny
+
+    else if gt ix 0x3FF00000 then
+        if gt hy 0 then
+            mul (mul s powHuge) powHuge
+
+        else
+            mul (mul s powTiny) powTiny
+
+    else
+        let
+            -- t has 20 trailing zeros
+            t =
+                sub ax 1.0
+
+            w =
+                mul (mul t t) (sub 0.5 (mul t (sub 0.3333333333333333333333 (mul t 0.25))))
+
+            -- ivln2_h has 21 sig. bits
+            u =
+                mul powIvln2H t
+
+            v =
+                sub (mul t powIvln2L) (mul w powIvln2)
+
+            t1 =
+                powZeroLow (add u v)
+
+            t2 =
+                sub v (sub t1 u)
+        in
+        powExp y s { t1 = t1, t2 = t2 }
+
+
+{-| `log2(|x|)` as `t1 + t2`, for `|y| <= 2^31`.
+-}
+powLog2 : Int -> Float -> { t1 : Float, t2 : Float }
+powLog2 ix0 ax0 =
+    let
+        -- take care subnormal number
+        { ax1, ix1, n0 } =
+            if lt ix0 0x00100000 then
+                let
+                    scaled =
+                        mul ax0 powTwo53
+                in
+                { ax1 = scaled, ix1 = powHighWord scaled, n0 = -53 }
+
+            else
+                { ax1 = ax0, ix1 = ix0, n0 = 0 }
+
+        j =
+            powAnd ix1 0x000FFFFF
+
+        -- determine interval
+        { k, n, ix } =
+            if le j 0x0003988E then
+                -- |x|<sqrt(3/2)
+                { k = 0, n = add n0 (sub (powShr 20 ix1) 0x03FF), ix = powOr j 0x3FF00000 }
+
+            else if lt j 0x000BB67A then
+                -- |x|<sqrt(3)
+                { k = 1, n = add n0 (sub (powShr 20 ix1) 0x03FF), ix = powOr j 0x3FF00000 }
+
+            else
+                { k = 0, n = add (add n0 (sub (powShr 20 ix1) 0x03FF)) 1, ix = sub (powOr j 0x3FF00000) 0x00100000 }
+
+        ax =
+            powWithHigh ix ax1
+
+        bp =
+            if eq k 0 then
+                1.0
+
+            else
+                1.5
+
+        dpH =
+            if eq k 0 then
+                0.0
+
+            else
+                5.84962487220764160156e-1
+
+        dpL =
+            if eq k 0 then
+                0.0
+
+            else
+                1.35003920212974897128e-8
+
+        -- compute ss = s_h+s_l = (x-1)/(x+1) or (x-1.5)/(x+1.5)
+        u0 =
+            sub ax bp
+
+        v0 =
+            fdiv 1.0 (add ax bp)
+
+        ss =
+            mul u0 v0
+
+        sH =
+            powZeroLow ss
+
+        -- t_h=ax+bp[k] High
+        tH0 =
+            powFromWords (add (add (powOr (powShr 1 ix) 0x20000000) 0x00080000) (powShl 18 k)) 0
+
+        tL0 =
+            sub ax (sub tH0 bp)
+
+        sL =
+            mul v0 (sub (sub u0 (mul sH tH0)) (mul sH tL0))
+
+        -- compute log(ax)
+        s2a =
+            mul ss ss
+
+        r =
+            add (mul (mul s2a s2a) (add powL1 (mul s2a (add powL2 (mul s2a (add powL3 (mul s2a (add powL4 (mul s2a (add powL5 (mul s2a powL6))))))))))) (mul sL (add sH ss))
+
+        s2 =
+            mul sH sH
+
+        tH =
+            powZeroLow (add (add 3.0 s2) r)
+
+        tL =
+            sub r (sub (sub tH 3.0) s2)
+
+        -- u+v = ss*(1+...)
+        u =
+            mul sH tH
+
+        v =
+            add (mul sL tH) (mul tL ss)
+
+        -- 2/(3log2)*(ss+...)
+        pH =
+            powZeroLow (add u v)
+
+        pL =
+            sub v (sub pH u)
+
+        -- cp_h+cp_l = 2/(3*log2)
+        zH =
+            mul powCpH pH
+
+        zL =
+            add (add (mul powCpL pH) (mul pL powCp)) dpL
+
+        -- log2(ax) = (ss+..)*2/(3*log2) = n + dp_h + z_h + z_l
+        t =
+            toFloat n
+
+        t1 =
+            powZeroLow (add (add (add zH zL) dpH) t)
+    in
+    { t1 = t1, t2 = sub zL (sub (sub (sub t1 t) dpH) zH) }
+
+
+{-| `y * (t1 + t2)`, split so the product is exact, then `2^` of it, with the
+overflow and underflow checks on the way.
+-}
+powExp : Float -> Float -> { t1 : Float, t2 : Float } -> Float
+powExp y s { t1, t2 } =
+    let
+        -- split up y into y1+y2 and compute (y1+y2)*(t1+t2)
+        y1 =
+            powZeroLow y
+
+        pL =
+            add (mul (sub y y1) t1) (mul y t2)
+
+        pH0 =
+            mul y1 t1
+
+        z0 =
+            add pL pH0
+
+        j =
+            powHighWord z0
+
+        i =
+            powLowWord z0
+    in
+    if and (ge j 0x40900000) (or (notEqual (powOr (sub j 0x40900000) i) 0) (gt (add pL powOvt) (sub z0 pH0))) then
+        -- z >= 1024: overflow
+        mul (mul s powHuge) powHuge
+
+    else if and (lt j 0x40900000) (and (ge (powAnd j 0x7FFFFFFF) 0x4090CC00) (or (notEqual (powOr (add j 1064252416) i) 0) (le pL (sub z0 pH0)))) then
+        -- z <= -1075: underflow. The C subtracts `0xc090cc00`, an unsigned
+        -- constant, and `j + 1064252416` is the same 32 bits.
+        mul (mul s powTiny) powTiny
+
+    else
+        let
+            ia =
+                powAnd j 0x7FFFFFFF
+
+            -- if |z| > 0.5, set n = [z+0.5]. `k` is in [-1, 10] here, so
+            -- `k+1` is a count; the new `k` is in [0, 10].
+            { n, pH } =
+                if gt ia 0x3FE00000 then
+                    let
+                        k0 =
+                            sub (powShr 20 ia) 0x03FF
+
+                        n0 =
+                            add j (powShr (add k0 1) 0x00100000)
+
+                        -- new k for n
+                        k =
+                            sub (powShr 20 (powAnd n0 0x7FFFFFFF)) 0x03FF
+
+                        -- the integer part of z, as fdlibm's __HI(t)
+                        tn =
+                            powFromWords (powAnd n0 (powComplement (powShr k 0x000FFFFF))) 0
+
+                        n1 =
+                            powShr (sub 20 k) (powOr (powAnd n0 0x000FFFFF) 0x00100000)
+                    in
+                    { n =
+                        if lt j 0 then
+                            negate n1
+
+                        else
+                            n1
+                    , pH = sub pH0 tn
+                    }
+
+                else
+                    { n = 0, pH = pH0 }
+
+            t =
+                powZeroLow (add pL pH)
+
+            u =
+                mul t powLg2H
+
+            v =
+                add (mul (sub pL (sub t pH)) powLg2) (mul t powLg2L)
+
+            z =
+                add u v
+
+            w =
+                sub v (sub z u)
+
+            tt =
+                mul z z
+
+            t1a =
+                sub z (mul tt (add powP1 (mul tt (add powP2 (mul tt (add powP3 (mul tt (add powP4 (mul tt powP5)))))))))
+
+            r =
+                sub (fdiv (mul z t1a) (sub t1a 2.0)) (add w (mul z w))
+
+            z1 =
+                sub 1.0 (sub r z)
+
+            jz =
+                add (powHighWord z1) (powShl 20 n)
+        in
+        if le (powShr 20 jz) 0 then
+            -- subnormal output
+            mul s (powScalbn z1 n)
+
+        else
+            mul s (powWithHigh jz z1)
+
+
+powOvt : Float
+powOvt =
+    -- -(1024-log2(ovfl+.5ulp))
+    8.0085662595372944372e-17
+
+
+powL1 : Float
+powL1 =
+    5.99999999999994648725e-1
+
+
+powL2 : Float
+powL2 =
+    4.28571428578550184252e-1
+
+
+powL3 : Float
+powL3 =
+    3.33333329818377432918e-1
+
+
+powL4 : Float
+powL4 =
+    2.72728123808534006489e-1
+
+
+powL5 : Float
+powL5 =
+    2.30660745775561754067e-1
+
+
+powL6 : Float
+powL6 =
+    2.06975017800338417784e-1
+
+
+powP1 : Float
+powP1 =
+    1.66666666666666019037e-1
+
+
+powP2 : Float
+powP2 =
+    -2.77777777770155933842e-3
+
+
+powP3 : Float
+powP3 =
+    6.61375632143793436117e-5
+
+
+powP4 : Float
+powP4 =
+    -1.65339022054652515390e-6
+
+
+powP5 : Float
+powP5 =
+    4.13813679705723846039e-8
+
+
+powLg2 : Float
+powLg2 =
+    6.93147180559945286227e-1
+
+
+powLg2H : Float
+powLg2H =
+    6.93147182464599609375e-1
+
+
+powLg2L : Float
+powLg2L =
+    -1.90465429995776804525e-9
+
+
+powCp : Float
+powCp =
+    -- 2/(3ln2)
+    9.61796693925975554329e-1
+
+
+powCpH : Float
+powCpH =
+    -- (float)cp
+    9.61796700954437255859e-1
+
+
+powCpL : Float
+powCpL =
+    -- tail of cp_h
+    -7.02846165095275826516e-9
+
+
+powIvln2 : Float
+powIvln2 =
+    -- 1/ln2
+    1.44269504088896338700e0
+
+
+powIvln2H : Float
+powIvln2H =
+    -- 24b 1/ln2
+    1.44269502162933349609e0
+
+
+powIvln2L : Float
+powIvln2L =
+    -- 1/ln2 tail
+    1.92596299112661746887e-8
+
+
+{-| `s_scalbn.c`, as `Math.Fdlibm.scalbn` is. -}
+powScalbn : Float -> Int -> Float
+powScalbn x0 n =
+    let
+        hx0 =
+            powHighWord x0
+
+        k0 =
+            powShr 20 (powAnd hx0 0x7FF00000)
+    in
+    if eq k0 0 then
+        -- 0 or subnormal x
+        if eq (powOr (powLowWord x0) (powAnd hx0 0x7FFFFFFF)) 0 then
+            x0
+
+        else
+            let
+                x =
+                    mul x0 1.80143985094819840000e16
+
+                hx =
+                    powHighWord x
+            in
+            if lt n -50000 then
+                mul powTiny x
+
+            else
+                powScalbnNormal x hx (sub (powShr 20 (powAnd hx 0x7FF00000)) 54) n
+
+    else
+        powScalbnNormal x0 hx0 k0 n
+
+
+powScalbnNormal : Float -> Int -> Int -> Int -> Float
+powScalbnNormal x hx k0 n =
+    if eq k0 0x07FF then
+        add x x
+
+    else
+        let
+            k =
+                add k0 n
+        in
+        if gt k 0x07FE then
+            mul powHuge (powCopysign powHuge x)
+
+        else if gt k 0 then
+            powWithHigh (powOr (powAnd hx -2146435073) (powShl 20 k)) x
+
+        else if le k -54 then
+            if gt n 50000 then
+                mul powHuge (powCopysign powHuge x)
+
+            else
+                mul powTiny (powCopysign powTiny x)
+
+        else
+            mul (powWithHigh (powOr (powAnd hx -2146435073) (powShl 20 (add k 54))) x) (5.55111512312578270212e-17)
+
+
+{-| `s_copysign.c`. -}
+powCopysign : Float -> Float -> Float
+powCopysign x y =
+    powWithHigh (powOr (powAnd (powHighWord x) 0x7FFFFFFF) (powAnd (powHighWord y) -2147483648)) x
 
 
 -- D2'S FOUR SIZED NUMERIC TYPES
