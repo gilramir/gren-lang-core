@@ -1,6 +1,6 @@
 module Task exposing
     ( Task
-    , andThen, await, succeed, fail, sequence, concurrent, race
+    , andThen, await, succeed, fail, sequence, concurrent, parallel, race
     , map, map2, map3, andMap
     , onError, mapError
     , bracket, finally
@@ -15,7 +15,7 @@ HTTP requests or writing to a database.
 
 ## Chains
 
-@docs andThen, await, succeed, fail, sequence, concurrent, race
+@docs andThen, await, succeed, fail, sequence, concurrent, parallel, race
 
 
 ## Maps
@@ -237,17 +237,34 @@ You might want to do these sequentially rather than all at once to avoid overwhe
 
 **A note on concurrency and parallelism**:
 
-Why is there only `concurrent` and not `parallel`? Because JavaScript is single-threaded, it's not possible currently to have true parallelism in gren.
-
-- A parallel task   : multiple subtasks can be run at exactly the same time on multiple processors or CPU cores.
 - A concurrent task : multiple subtasks can be in progress at the same time but not executing at exactly the same time.
+- A parallel task   : multiple subtasks can be run at exactly the same time on multiple processors or CPU cores.
 
-In practice this means CPU bound tasks (e.g. generate a cryptographic hash) won't see a speed boost from `concurrent`.
+`concurrent` runs its tasks in one thread, so CPU bound tasks (e.g. generate a cryptographic hash) won't see a speed boost from it.
 IO bound tasks however (e.g. make a HTTP request and wait until the response comes back) may get a noticable speed boost from `concurrent`.
+For CPU bound tasks there is [`parallel`](#parallel).
 
 -}
 @prim("task_concurrent")
 concurrent : Array (Task x a) -> Task x (Array a)
+
+
+{-| [`concurrent`](#concurrent), with each task allowed a CPU core of its own.
+
+    Task.parallel [ Task.succeed 1, Task.succeed 2 ] == Task.succeed [ 1, 2 ]
+
+It means exactly what `concurrent` means: the results come back in the order the tasks were given, the first failure
+cancels the rest, and the failure is not the answer until every cancelled task's release handlers have run. What differs
+is only where the tasks run, which is a promise about cost and not about meaning.
+
+On the BEAM each task runs in an Erlang process of its own, so CPU bound tasks can use as many cores as there are, and
+what a task captures and what it answers is copied between processes. That copy is the price: reach for `parallel`
+when each task has enough work to do to pay for it, and `concurrent` otherwise. On JavaScript, which has one thread to
+give, `parallel` is `concurrent`.
+
+-}
+@prim("task_parallel")
+parallel : Array (Task x a) -> Task x (Array a)
 
 
 {-| Run tasks at the same time and take whichever one finishes first. The
