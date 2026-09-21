@@ -25,10 +25,10 @@
 var _Math_cos = Math.cos;
 var _Math_sin = Math.sin;
 var _Math_tan = Math.tan;
-var _Math_acos = Math.acos;
-var _Math_asin = Math.asin;
-var _Math_atan = Math.atan;
-var _Math_atan2 = F2(Math.atan2);
+
+// `acos`, `asin`, `atan` and `atan2` were here, and are fdlibm's `e_acos.c`,
+// `e_asin.c`, `s_atan.c` and `e_atan2.c` in `Math.Fdlibm` since D391's third
+// step (`m2-fdlibm.md` §FD11).
 
 // `log` and `log10` were here. They are fdlibm's `e_log.c` and `e_log10.c` in
 // Geng since D391, in `Math.Fdlibm`, so they give the same bits on every

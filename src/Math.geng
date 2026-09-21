@@ -462,7 +462,7 @@ tan =
 -}
 acos : Float -> Float
 acos =
-    Gren.Kernel.Math.acos
+    Math.Fdlibm.acos
 
 
 {-| Figure out the arcsine for `opposite / hypotenuse` in radians:
@@ -472,7 +472,7 @@ acos =
 -}
 asin : Float -> Float
 asin =
-    Gren.Kernel.Math.asin
+    Math.Fdlibm.asin
 
 
 {-| This helps you find the angle (in radians) to an `(x,y)` coordinate, but
@@ -499,7 +499,7 @@ for figuring out angles in any sort of visualization, so again, check out
 -}
 atan : Float -> Float
 atan =
-    Gren.Kernel.Math.atan
+    Math.Fdlibm.atan
 
 
 {-| This helps you find the angle (in radians) to an `(x,y)` coordinate.
@@ -517,7 +517,7 @@ range of angles:
 -}
 atan2 : Float -> Float -> Float
 atan2 =
-    Gren.Kernel.Math.atan2
+    Math.Fdlibm.atan2
 
 
 -- BITS
