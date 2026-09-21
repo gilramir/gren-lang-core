@@ -1,4 +1,4 @@
-module Math.Fdlibm exposing (log, log10, atan, atan2, asin, acos)
+module Math.Fdlibm exposing (log, log10, atan, atan2, asin, acos, sin, cos, tan)
 
 {-| fdlibm: the transcendental functions, the same bits on every backend.
 
@@ -13,12 +13,14 @@ nothing else should: `Float`'s `^` is fdlibm's `e_pow.c` too, but it lives in
 **Not exposed.** `geng.toml` does not list it, because what a program should
 call is `Math.logBase` and its neighbours.
 
-@docs log, log10, atan, atan2, asin, acos
+@docs log, log10, atan, atan2, asin, acos, sin, cos, tan
 
 -}
 
+import Array exposing (Array)
 import Basics exposing (..)
 import Bitwise
+import Maybe exposing (Maybe(..))
 
 
 
@@ -975,3 +977,1195 @@ acos x =
                 (r.p / r.q) * s + c
         in
         2.0 * (df + w)
+
+
+
+-- THE LIBRARY FUNCTIONS THE REDUCTION NEEDS
+--
+-- C's `floor` and its `(int)` on a value already known to fit are the
+-- primitives `Math.floor` and `Math.truncate` are built over, without their
+-- saturation, which nothing here can reach: every value truncated below is
+-- finite and under 2^24 in magnitude.
+
+
+@prim("f64_floor")
+floorFloat : Float -> Float
+
+
+@prim("f64_to_i32_trunc")
+truncateInt : Float -> Int
+
+
+-- s_copysign.c
+
+
+copysign : Float -> Float -> Float
+copysign x y =
+    withHighWord
+        (Bitwise.or (Bitwise.and (highWord x) 0x7FFFFFFF) (Bitwise.and (highWord y) -2147483648))
+        x
+
+
+-- s_scalbn.c
+
+
+twom54 : Float
+twom54 =
+    5.55111512312578270212e-17
+
+
+huge : Float
+huge =
+    1.0e300
+
+
+{-| `scalbn(x, n)`: `x * 2^n`, by adding `n` to the exponent rather than
+multiplying, so it is exact until the result is subnormal.
+-}
+scalbn : Float -> Int -> Float
+scalbn x0 n =
+    let
+        hx0 =
+            highWord x0
+
+        k0 =
+            Bitwise.shiftRightBy 20 (Bitwise.and hx0 0x7FF00000)
+    in
+    if k0 == 0 then
+        -- 0 or subnormal x
+        if Bitwise.or (lowWord x0) (Bitwise.and hx0 0x7FFFFFFF) == 0 then
+            -- +-0
+            x0
+
+        else
+            let
+                x =
+                    x0 * two54
+
+                hx =
+                    highWord x
+            in
+            if n < -50000 then
+                -- underflow
+                tiny * x
+
+            else
+                scalbnNormal x hx (Bitwise.shiftRightBy 20 (Bitwise.and hx 0x7FF00000) - 54) n
+
+    else
+        scalbnNormal x0 hx0 k0 n
+
+
+scalbnNormal : Float -> Int -> Int -> Int -> Float
+scalbnNormal x hx k0 n =
+    if k0 == 0x07FF then
+        -- NaN or Inf
+        x + x
+
+    else
+        let
+            k =
+                k0 + n
+        in
+        if k > 0x07FE then
+            -- overflow
+            huge * copysign huge x
+
+        else if k > 0 then
+            -- normal result
+            withHighWord (Bitwise.or (Bitwise.and hx -2146435073) (Bitwise.shiftLeftBy 20 k)) x
+
+        else if k <= -54 then
+            if n > 50000 then
+                -- in case integer overflow in n+k
+                huge * copysign huge x
+
+            else
+                -- underflow
+                tiny * copysign tiny x
+
+        else
+            -- subnormal result
+            withHighWord (Bitwise.or (Bitwise.and hx -2146435073) (Bitwise.shiftLeftBy 20 (k + 54))) x * twom54
+
+
+
+-- k_sin.c
+
+
+{-| `__kernel_sin(x, y, iy)`: `sin` on `[-pi/4, pi/4]`, where `x + y` is the
+reduced argument and `iy` is 0 when `y` is known to be zero.
+-}
+kernelSin : Float -> Float -> Int -> Float
+kernelSin x y iy =
+    if Bitwise.and (highWord x) 0x7FFFFFFF < 0x3E400000 then
+        -- |x| < 2**-27, where fdlibm raises inexact and answers x
+        x
+
+    else
+        let
+            z =
+                x * x
+
+            v =
+                z * x
+
+            r =
+                sinS2 + z * (sinS3 + z * (sinS4 + z * (sinS5 + z * sinS6)))
+        in
+        if iy == 0 then
+            x + v * (sinS1 + z * r)
+
+        else
+            x - ((z * (0.5 * y - v * r) - y) - v * sinS1)
+
+
+sinS1 : Float
+sinS1 =
+    -1.66666666666666324348e-1
+
+
+sinS2 : Float
+sinS2 =
+    8.33333333332248946124e-3
+
+
+sinS3 : Float
+sinS3 =
+    -1.98412698298579493134e-4
+
+
+sinS4 : Float
+sinS4 =
+    2.75573137070700676789e-6
+
+
+sinS5 : Float
+sinS5 =
+    -2.50507602534068634195e-8
+
+
+sinS6 : Float
+sinS6 =
+    1.58969099521155010221e-10
+
+
+
+-- k_cos.c
+
+
+{-| `__kernel_cos(x, y)`: `cos` on `[-pi/4, pi/4]`, where `x + y` is the
+reduced argument.
+-}
+kernelCos : Float -> Float -> Float
+kernelCos x y =
+    let
+        ix =
+            Bitwise.and (highWord x) 0x7FFFFFFF
+    in
+    if ix < 0x3E400000 then
+        -- if x < 2**27, where fdlibm raises inexact and answers one
+        1.0
+
+    else
+        let
+            z =
+                x * x
+
+            r =
+                z * (cosC1 + z * (cosC2 + z * (cosC3 + z * (cosC4 + z * (cosC5 + z * cosC6)))))
+        in
+        if ix < 0x3FD33333 then
+            -- if |x| < 0.3
+            1.0 - (0.5 * z - (z * r - x * y))
+
+        else
+            let
+                qx =
+                    if ix > 0x3FE90000 then
+                        -- x > 0.78125
+                        0.28125
+
+                    else
+                        -- x/4
+                        fromWords (ix - 0x00200000) 0
+
+                hz =
+                    0.5 * z - qx
+
+                a =
+                    1.0 - qx
+            in
+            a - (hz - (z * r - x * y))
+
+
+cosC1 : Float
+cosC1 =
+    4.16666666666666019037e-2
+
+
+cosC2 : Float
+cosC2 =
+    -1.38888888888741095749e-3
+
+
+cosC3 : Float
+cosC3 =
+    2.48015872894767294178e-5
+
+
+cosC4 : Float
+cosC4 =
+    -2.75573143513906633035e-7
+
+
+cosC5 : Float
+cosC5 =
+    2.08757232129817482790e-9
+
+
+cosC6 : Float
+cosC6 =
+    -1.13596475577881948265e-11
+
+
+
+-- k_tan.c
+
+
+{-| `__kernel_tan(x, y, k)`: `tan` on `[-pi/4, pi/4]` when `k` is 1, and
+`-1/tan` when it is -1.
+-}
+kernelTan : Float -> Float -> Int -> Float
+kernelTan x0 y0 iy =
+    let
+        hx =
+            highWord x0
+
+        ix =
+            Bitwise.and hx 0x7FFFFFFF
+    in
+    if ix < 0x3E300000 then
+        -- x < 2**-28; fdlibm's `(int) x == 0` is always true here
+        if Bitwise.or (Bitwise.or ix (lowWord x0)) (iy + 1) == 0 then
+            1.0 / fabs x0
+
+        else if iy == 1 then
+            x0
+
+        else
+            -- compute -1 / (x+y) carefully
+            let
+                w =
+                    x0 + y0
+
+                z =
+                    fromWords (highWord w) 0
+
+                v =
+                    y0 - (z - x0)
+
+                a =
+                    -1.0 / w
+
+                t =
+                    fromWords (highWord a) 0
+
+                s =
+                    1.0 + t * z
+            in
+            t + a * (s + t * v)
+
+    else
+        let
+            big =
+                ix >= 0x3FE59428
+
+            -- |x| >= 0.6744
+            { x, y } =
+                if big then
+                    let
+                        xs =
+                            if hx < 0 then
+                                -x0
+
+                            else
+                                x0
+
+                        ys =
+                            if hx < 0 then
+                                -y0
+
+                            else
+                                y0
+                    in
+                    { x = (pio4 - xs) + (pio4lo - ys), y = 0.0 }
+
+                else
+                    { x = x0, y = y0 }
+
+            z =
+                x * x
+
+            w =
+                z * z
+
+            -- Break x^5*(T[1]+x^2*T[2]+...) into
+            -- x^5(T[1]+x^4*T[3]+...+x^20*T[11]) +
+            -- x^5(x^2*(T[2]+x^4*T[4]+...+x^22*[T12]))
+            r0 =
+                tanT1 + w * (tanT3 + w * (tanT5 + w * (tanT7 + w * (tanT9 + w * tanT11))))
+
+            v =
+                z * (tanT2 + w * (tanT4 + w * (tanT6 + w * (tanT8 + w * (tanT10 + w * tanT12)))))
+
+            s =
+                z * x
+
+            r =
+                (y + z * (s * (r0 + v) + y)) + tanT0 * s
+
+            sum =
+                x + r
+        in
+        if big then
+            let
+                fy =
+                    toFloat iy
+            in
+            toFloat (1 - Bitwise.and (Bitwise.shiftRightBy 30 hx) 2)
+                * (fy - 2.0 * (x - (sum * sum / (sum + fy) - r)))
+
+        else if iy == 1 then
+            sum
+
+        else
+            -- compute -1.0 / (x+r) accurately
+            let
+                z2 =
+                    fromWords (highWord sum) 0
+
+                -- z+v = r+x
+                v2 =
+                    r - (z2 - x)
+
+                a =
+                    -1.0 / sum
+
+                t =
+                    fromWords (highWord a) 0
+
+                s2t =
+                    1.0 + t * z2
+            in
+            t + a * (s2t + t * v2)
+
+
+pio4 : Float
+pio4 =
+    7.85398163397448278999e-1
+
+
+pio4lo : Float
+pio4lo =
+    3.06161699786838301793e-17
+
+
+tanT0 : Float
+tanT0 =
+    3.33333333333334091986e-1
+
+
+tanT1 : Float
+tanT1 =
+    1.33333333333201242699e-1
+
+
+tanT2 : Float
+tanT2 =
+    5.39682539762260521377e-2
+
+
+tanT3 : Float
+tanT3 =
+    2.18694882948595424599e-2
+
+
+tanT4 : Float
+tanT4 =
+    8.86323982359930005737e-3
+
+
+tanT5 : Float
+tanT5 =
+    3.59207910759131235356e-3
+
+
+tanT6 : Float
+tanT6 =
+    1.45620945432529025516e-3
+
+
+tanT7 : Float
+tanT7 =
+    5.88041240820264096874e-4
+
+
+tanT8 : Float
+tanT8 =
+    2.46463134818469906812e-4
+
+
+tanT9 : Float
+tanT9 =
+    7.81794442939557092300e-5
+
+
+tanT10 : Float
+tanT10 =
+    7.14072491382608190305e-5
+
+
+tanT11 : Float
+tanT11 =
+    -1.85586374855275456654e-5
+
+
+tanT12 : Float
+tanT12 =
+    2.59073051863633712884e-5
+
+
+
+-- s_sin.c, s_cos.c and s_tan.c
+
+
+{-| `sin(x)`. `x` is reduced to `[-pi/4, pi/4]` by `remPio2`, and the
+quadrant picks the kernel and the sign. `sin` of an infinity or `NaN` is
+`NaN`.
+-}
+sin : Float -> Float
+sin x =
+    let
+        ix =
+            Bitwise.and (highWord x) 0x7FFFFFFF
+    in
+    if ix <= 0x3FE921FB then
+        -- |x| ~< pi/4
+        kernelSin x 0.0 0
+
+    else if ix >= 0x7FF00000 then
+        -- sin(Inf or NaN) is NaN
+        x - x
+
+    else
+        let
+            r =
+                remPio2 x
+        in
+        when Bitwise.and r.n 3 is
+            0 ->
+                kernelSin r.y0 r.y1 1
+
+            1 ->
+                kernelCos r.y0 r.y1
+
+            2 ->
+                -(kernelSin r.y0 r.y1 1)
+
+            _ ->
+                -(kernelCos r.y0 r.y1)
+
+
+{-| `cos(x)`, as [sin](#sin) is, a quadrant over.
+-}
+cos : Float -> Float
+cos x =
+    let
+        ix =
+            Bitwise.and (highWord x) 0x7FFFFFFF
+    in
+    if ix <= 0x3FE921FB then
+        -- |x| ~< pi/4
+        kernelCos x 0.0
+
+    else if ix >= 0x7FF00000 then
+        -- cos(Inf or NaN) is NaN
+        x - x
+
+    else
+        let
+            r =
+                remPio2 x
+        in
+        when Bitwise.and r.n 3 is
+            0 ->
+                kernelCos r.y0 r.y1
+
+            1 ->
+                -(kernelSin r.y0 r.y1 1)
+
+            2 ->
+                -(kernelCos r.y0 r.y1)
+
+            _ ->
+                kernelSin r.y0 r.y1 1
+
+
+{-| `tan(x)`: the reduced argument's tangent, or minus its cotangent in an odd
+quadrant.
+-}
+tan : Float -> Float
+tan x =
+    let
+        ix =
+            Bitwise.and (highWord x) 0x7FFFFFFF
+    in
+    if ix <= 0x3FE921FB then
+        -- |x| ~< pi/4
+        kernelTan x 0.0 1
+
+    else if ix >= 0x7FF00000 then
+        -- tan(Inf or NaN) is NaN
+        x - x
+
+    else
+        let
+            r =
+                remPio2 x
+        in
+        -- 1 -- n even, -1 -- n odd
+        kernelTan r.y0 r.y1 (1 - Bitwise.shiftLeftBy 1 (Bitwise.and r.n 1))
+
+
+
+-- e_rem_pio2.c
+
+
+{-| `__ieee754_rem_pio2(x, y)`: `x - n*pi/2` as the pair `y0 + y1`, and `n`.
+
+Three ways, by size: one subtraction of `pi/2` near it, a Cody–Waite
+reduction with `pi/2` in three 33-bit pieces up to `2^19*pi/2`, and past that
+Payne–Hanek, which is [kernelRemPio2](#kernelRemPio2).
+-}
+remPio2 : Float -> { n : Int, y0 : Float, y1 : Float }
+remPio2 x =
+    let
+        hx =
+            highWord x
+
+        ix =
+            Bitwise.and hx 0x7FFFFFFF
+    in
+    if ix <= 0x3FE921FB then
+        -- |x| ~<= pi/4 , no need for reduction
+        { n = 0, y0 = x, y1 = 0.0 }
+
+    else if ix < 0x4002D97C then
+        -- |x| < 3pi/4, special case with n=+-1
+        if hx > 0 then
+            let
+                z =
+                    x - pio2_1
+            in
+            if ix /= 0x3FF921FB then
+                -- 33+53 bit pi is good enough
+                let
+                    y0 =
+                        z - pio2_1t
+                in
+                { n = 1, y0 = y0, y1 = (z - y0) - pio2_1t }
+
+            else
+                -- near pi/2, use 33+33+53 bit pi
+                let
+                    z2 =
+                        z - pio2_2
+
+                    y0 =
+                        z2 - pio2_2t
+                in
+                { n = 1, y0 = y0, y1 = (z2 - y0) - pio2_2t }
+
+        else
+            -- negative x
+            let
+                z =
+                    x + pio2_1
+            in
+            if ix /= 0x3FF921FB then
+                -- 33+53 bit pi is good enough
+                let
+                    y0 =
+                        z + pio2_1t
+                in
+                { n = -1, y0 = y0, y1 = (z - y0) + pio2_1t }
+
+            else
+                -- near pi/2, use 33+33+53 bit pi
+                let
+                    z2 =
+                        z + pio2_2
+
+                    y0 =
+                        z2 + pio2_2t
+                in
+                { n = -1, y0 = y0, y1 = (z2 - y0) + pio2_2t }
+
+    else if ix <= 0x413921FB then
+        -- |x| ~<= 2^19*(pi/2), medium size
+        let
+            t =
+                fabs x
+
+            n =
+                truncateInt (t * invpio2 + 0.5)
+
+            fn =
+                toFloat n
+
+            r =
+                t - fn * pio2_1
+
+            -- 1st round good to 85 bit
+            w =
+                fn * pio2_1t
+
+            reduced =
+                if n < 32 && ix /= npio2Hw (n - 1) then
+                    -- quick check no cancellation
+                    { r = r, w = w, y0 = r - w }
+
+                else
+                    remPio2Medium ix fn r w
+        in
+        let
+            y1 =
+                (reduced.r - reduced.y0) - reduced.w
+        in
+        if hx < 0 then
+            { n = -n, y0 = -reduced.y0, y1 = -y1 }
+
+        else
+            { n = n, y0 = reduced.y0, y1 = y1 }
+
+    else if ix >= 0x7FF00000 then
+        -- x is inf or NaN
+        { n = 0, y0 = x - x, y1 = x - x }
+
+    else
+        -- all other (large) arguments
+        let
+            -- e0 = ilogb(z)-23
+            e0 =
+                Bitwise.shiftRightBy 20 ix - 1046
+
+            -- set z = scalbn(|x|,ilogb(x)-23)
+            z0 =
+                fromWords (ix - Bitwise.shiftLeftBy 20 e0) (lowWord x)
+
+            tx0 =
+                toFloat (truncateInt z0)
+
+            z1 =
+                (z0 - tx0) * two24
+
+            tx1 =
+                toFloat (truncateInt z1)
+
+            tx2 =
+                (z1 - tx1) * two24
+
+            -- skip zero terms
+            tx =
+                if tx2 /= 0.0 then
+                    [ tx0, tx1, tx2 ]
+
+                else if tx1 /= 0.0 then
+                    [ tx0, tx1 ]
+
+                else
+                    [ tx0 ]
+
+            r =
+                kernelRemPio2 tx e0
+        in
+        if hx < 0 then
+            { n = -r.n, y0 = -r.y0, y1 = -r.y1 }
+
+        else
+            r
+
+
+{-| The medium case's second and third iterations, when the first lost too
+many bits to cancellation.
+-}
+remPio2Medium : Int -> Float -> Float -> Float -> { r : Float, w : Float, y0 : Float }
+remPio2Medium ix fn r1 w1 =
+    let
+        j =
+            Bitwise.shiftRightBy 20 ix
+
+        y01 =
+            r1 - w1
+
+        exponentOf y =
+            Bitwise.and (Bitwise.shiftRightBy 20 (highWord y)) 0x07FF
+    in
+    if j - exponentOf y01 > 16 then
+        -- 2nd iteration needed, good to 118
+        let
+            w2a =
+                fn * pio2_2
+
+            r2 =
+                r1 - w2a
+
+            w2 =
+                fn * pio2_2t - ((r1 - r2) - w2a)
+
+            y02 =
+                r2 - w2
+        in
+        if j - exponentOf y02 > 49 then
+            -- 3rd iteration need, 151 bits acc
+            let
+                w3a =
+                    fn * pio2_3
+
+                r3 =
+                    r2 - w3a
+
+                w3 =
+                    fn * pio2_3t - ((r2 - r3) - w3a)
+            in
+            { r = r3, w = w3, y0 = r3 - w3 }
+
+        else
+            { r = r2, w = w2, y0 = y02 }
+
+    else
+        { r = r1, w = w1, y0 = y01 }
+
+
+two24 : Float
+two24 =
+    1.67772160000000000000e7
+
+
+invpio2 : Float
+invpio2 =
+    6.36619772367581382433e-1
+
+
+pio2_1 : Float
+pio2_1 =
+    1.57079632673412561417e0
+
+
+pio2_1t : Float
+pio2_1t =
+    6.07710050650619224932e-11
+
+
+pio2_2 : Float
+pio2_2 =
+    6.07710050630396597660e-11
+
+
+pio2_2t : Float
+pio2_2t =
+    2.02226624879595063154e-21
+
+
+pio2_3 : Float
+pio2_3 =
+    2.02226624871116645580e-21
+
+
+pio2_3t : Float
+pio2_3t =
+    8.47842766036889956997e-32
+
+
+{-| `npio2_hw[i]`: the high word of `(i+1)*pi/2`, for the medium case's check
+that the first round cannot have cancelled.
+-}
+npio2Hw : Int -> Int
+npio2Hw i =
+    intAt i npio2HwTable
+
+
+npio2HwTable : Array Int
+npio2HwTable =
+    [ 0x3FF921FB, 0x400921FB, 0x4012D97C, 0x401921FB, 0x401F6A7A, 0x4022D97C
+    , 0x4025FDBB, 0x402921FB, 0x402C463A, 0x402F6A7A, 0x4031475C, 0x4032D97C
+    , 0x40346B9C, 0x4035FDBB, 0x40378FDB, 0x403921FB, 0x403AB41B, 0x403C463A
+    , 0x403DD85A, 0x403F6A7A, 0x40407E4C, 0x4041475C, 0x4042106C, 0x4042D97C
+    , 0x4043A28C, 0x40446B9C, 0x404534AC, 0x4045FDBB, 0x4046C6CB, 0x40478FDB
+    , 0x404858EB, 0x404921FB
+    ]
+
+
+{-| `two_over_pi[]`: 2/pi in 24-bit chunks, 396 hex digits of it.
+-}
+twoOverPi : Array Int
+twoOverPi =
+    [ 0x00A2F983, 0x006E4E44, 0x001529FC, 0x002757D1, 0x00F534DD, 0x00C0DB62
+    , 0x0095993C, 0x00439041, 0x00FE5163, 0x00ABDEBB, 0x00C561B7, 0x00246E3A
+    , 0x00424DD2, 0x00E00649, 0x002EEA09, 0x00D1921C, 0x00FE1DEB, 0x001CB129
+    , 0x00A73EE8, 0x008235F5, 0x002EBB44, 0x0084E99C, 0x007026B4, 0x005F7E41
+    , 0x003991D6, 0x00398353, 0x0039F49C, 0x00845F8B, 0x00BDF928, 0x003B1FF8
+    , 0x0097FFDE, 0x0005980F, 0x00EF2F11, 0x008B5A0A, 0x006D1F6D, 0x00367ECF
+    , 0x0027CB09, 0x00B74F46, 0x003F669E, 0x005FEA2D, 0x007527BA, 0x00C7EBE5
+    , 0x00F17B3D, 0x000739F7, 0x008A5292, 0x00EA6BFB, 0x005FB11F, 0x008D5D08
+    , 0x00560330, 0x0046FC7B, 0x006BABF0, 0x00CFBC20, 0x009AF436, 0x001DA9E3
+    , 0x0091615E, 0x00E61B08, 0x00659985, 0x005F14A0, 0x0068408D, 0x00FFD880
+    , 0x004D7327, 0x00310606, 0x001556CA, 0x0073A8C9, 0x0060E27B, 0x00C08C6B
+    ]
+
+
+
+-- k_rem_pio2.c
+--
+-- The C keeps five arrays and rewrites them in place, with a `goto recompute`
+-- when too few chunks of 2/pi were used. Two of the arrays are never really
+-- mutable: every write sets `f[i]` to `ipio2[jv-jx+i]`, and the first `q[i]` is
+-- the same sum whenever it is computed, so both are functions of `i` here. The
+-- `goto` is a call: everything after `recompute:` is a function of `jz`. The
+-- rest are `Array`s built in the order the C writes them. Only `prec == 2` is
+-- ported, which is the only precision `e_rem_pio2.c` asks for, so `jk` and
+-- `jp` are both 4.
+
+
+{-| `__kernel_rem_pio2(x, y, e0, nx, 2, two_over_pi)`: `n mod 8` and the
+double-double `y0 + y1` with `x*2^e0 = n*pi/2 + y0 + y1`, for `x` given as
+its 24-bit chunks in `tx`.
+-}
+kernelRemPio2 : Array Float -> Int -> { n : Int, y0 : Float, y1 : Float }
+kernelRemPio2 tx e0 =
+    let
+        jx =
+            Array.length tx - 1
+
+        -- determine jx,jv,q0, note that 3>q0
+        jv =
+            max 0 ((e0 - 3) // 24)
+
+        q0 =
+            e0 - 24 * (jv + 1)
+
+        -- f[i] = ipio2[jv-jx+i], zero below the table
+        f i =
+            let
+                j =
+                    jv - jx + i
+            in
+            if j < 0 then
+                0.0
+
+            else
+                toFloat (intAt j twoOverPi)
+
+        -- q[i] = sum over j of x[j]*f[jx+i-j], in the C's order
+        q i =
+            Array.foldl
+                (\xj { j, fw } -> { j = j + 1, fw = fw + xj * f (jx + i - j) })
+                { j = 0, fw = 0.0 }
+                tx
+                |> .fw
+    in
+    remPio2Recompute q q0 kRemJk
+
+
+kRemJk : Int
+kRemJk =
+    4
+
+
+remPio2Recompute : (Int -> Float) -> Int -> Int -> { n : Int, y0 : Float, y1 : Float }
+remPio2Recompute q q0 jz =
+    let
+        -- distill q[] into iq[] reversingly
+        distilled =
+            distill q jz jz (q jz) []
+
+        z1 =
+            scalbn distilled.z q0
+
+        -- trim off integer >= 8
+        z2 =
+            z1 - 8.0 * floorFloat (z1 * 0.125)
+
+        n0 =
+            truncateInt z2
+
+        z3 =
+            z2 - toFloat n0
+
+        -- need iq[jz-1] to determine n
+        { n1, iq1, ih } =
+            let
+                last =
+                    intAt (jz - 1) distilled.iq
+            in
+            if q0 > 0 then
+                let
+                    i =
+                        Bitwise.shiftRightBy (24 - q0) last
+
+                    trimmed =
+                        last - Bitwise.shiftLeftBy (24 - q0) i
+                in
+                { n1 = n0 + i
+                , iq1 = Array.set (jz - 1) trimmed distilled.iq
+                , ih = Bitwise.shiftRightBy (23 - q0) trimmed
+                }
+
+            else if q0 == 0 then
+                { n1 = n0, iq1 = distilled.iq, ih = Bitwise.shiftRightBy 23 last }
+
+            else if z3 >= 0.5 then
+                { n1 = n0, iq1 = distilled.iq, ih = 2 }
+
+            else
+                { n1 = n0, iq1 = distilled.iq, ih = 0 }
+
+        -- q > 0.5
+        { n, iq, z } =
+            if ih > 0 then
+                let
+                    -- compute 1-q
+                    complemented =
+                        Array.foldl
+                            (\j acc ->
+                                if acc.carry == 0 then
+                                    if j /= 0 then
+                                        { carry = 1, iq = Array.pushLast (0x01000000 - j) acc.iq }
+
+                                    else
+                                        { carry = 0, iq = Array.pushLast j acc.iq }
+
+                                else
+                                    { carry = acc.carry, iq = Array.pushLast (0x00FFFFFF - j) acc.iq }
+                            )
+                            { carry = 0, iq = [] }
+                            iq1
+
+                    -- rare case: chance is 1 in 12
+                    masked =
+                        when q0 is
+                            1 ->
+                                Array.set (jz - 1) (Bitwise.and (intAt (jz - 1) complemented.iq) 0x007FFFFF) complemented.iq
+
+                            2 ->
+                                Array.set (jz - 1) (Bitwise.and (intAt (jz - 1) complemented.iq) 0x003FFFFF) complemented.iq
+
+                            _ ->
+                                complemented.iq
+
+                    zc =
+                        if ih == 2 then
+                            if complemented.carry /= 0 then
+                                (1.0 - z3) - scalbn 1.0 q0
+
+                            else
+                                1.0 - z3
+
+                        else
+                            z3
+                in
+                { n = n1 + 1, iq = masked, z = zc }
+
+            else
+                { n = n1, iq = iq1, z = z3 }
+    in
+    -- check if recomputation is needed
+    if z == 0.0 && orFrom (jz - 1) kRemJk iq == 0 then
+        -- k = no. of terms needed
+        remPio2Recompute q q0 (jz + termsNeeded iq 1)
+
+    else
+        remPio2Finish n ih q0 jz iq z
+
+
+{-| The distilling loop: `iq[i] = (int)(z - two24*fw)` for `j` from `jz` down,
+with `z` carried into `q[j-1]`.
+-}
+distill : (Int -> Float) -> Int -> Int -> Float -> Array Int -> { iq : Array Int, z : Float }
+distill q jz j z iq =
+    if j > 0 then
+        let
+            fw =
+                toFloat (truncateInt (twon24 * z))
+        in
+        distill q jz (j - 1) (q (j - 1) + fw) (Array.pushLast (truncateInt (z - two24 * fw)) iq)
+
+    else
+        { iq = iq, z = z }
+
+
+{-| `j |= iq[i]` for `i` from `from` down to `to`.
+-}
+orFrom : Int -> Int -> Array Int -> Int
+orFrom from to iq =
+    if from >= to then
+        Bitwise.or (intAt from iq) (orFrom (from - 1) to iq)
+
+    else
+        0
+
+
+{-| `for(k=1;iq[jk-k]==0;k++);`
+-}
+termsNeeded : Array Int -> Int -> Int
+termsNeeded iq k =
+    if intAt (kRemJk - k) iq == 0 then
+        termsNeeded iq (k + 1)
+
+    else
+        k
+
+
+remPio2Finish : Int -> Int -> Int -> Int -> Array Int -> Float -> { n : Int, y0 : Float, y1 : Float }
+remPio2Finish n ih q0Start jzStart iqStart z =
+    let
+        -- chop off zero terms, or break z into 24-bit if necessary
+        { jz, q0, iq } =
+            if z == 0.0 then
+                chopZeros iqStart (jzStart - 1) (q0Start - 24)
+
+            else
+                let
+                    zs =
+                        scalbn z (negate q0Start)
+                in
+                if zs >= two24 then
+                    let
+                        fw =
+                            toFloat (truncateInt (twon24 * zs))
+                    in
+                    { jz = jzStart + 1
+                    , q0 = q0Start + 24
+                    , iq =
+                        iqStart
+                            |> Array.pushLast (truncateInt (zs - two24 * fw))
+                            |> Array.pushLast (truncateInt fw)
+                    }
+
+                else
+                    { jz = jzStart, q0 = q0Start, iq = Array.pushLast (truncateInt zs) iqStart }
+
+        -- convert integer "bit" chunk to floating-point value:
+        -- q[i] = 2^q0 * twon24^(jz-i) * iq[i], built from i = jz down
+        qs =
+            chunks iq jz (scalbn 1.0 q0) (Array.repeat (jz + 1) 0.0)
+
+        -- compute PIo2[0,...,jp]*q[jz,...,0]: fq[jz-i] for i from jz down
+        fq =
+            Array.initialize (jz + 1) 0 (\m -> piO2Times qs (jz - m) (min kRemJk m))
+
+        -- compress fq[] into y[]
+        fw1 =
+            sumDown fq jz 0.0
+
+        fw2 =
+            sumUp fq 1 jz (floatAt 0 fq - fw1)
+    in
+    if ih == 0 then
+        { n = Bitwise.and n 7, y0 = fw1, y1 = fw2 }
+
+    else
+        { n = Bitwise.and n 7, y0 = -fw1, y1 = -fw2 }
+
+
+chopZeros : Array Int -> Int -> Int -> { jz : Int, q0 : Int, iq : Array Int }
+chopZeros iq jz q0 =
+    if intAt jz iq == 0 then
+        chopZeros iq (jz - 1) (q0 - 24)
+
+    else
+        { jz = jz, q0 = q0, iq = iq }
+
+
+chunks : Array Int -> Int -> Float -> Array Float -> Array Float
+chunks iq i fw qs =
+    if i >= 0 then
+        chunks iq (i - 1) (fw * twon24) (Array.set i (fw * toFloat (intAt i iq)) qs)
+
+    else
+        qs
+
+
+{-| `for(fw=0.0,k=0;k<=jp&&k<=jz-i;k++) fw += PIo2[k]*q[i+k];`
+-}
+piO2Times : Array Float -> Int -> Int -> Float
+piO2Times qs i kMax =
+    piO2TimesFrom qs i kMax 0 0.0
+
+
+piO2TimesFrom : Array Float -> Int -> Int -> Int -> Float -> Float
+piO2TimesFrom qs i kMax k fw =
+    if k <= kMax then
+        piO2TimesFrom qs i kMax (k + 1) (fw + floatAt k piO2Chunks * floatAt (i + k) qs)
+
+    else
+        fw
+
+
+sumDown : Array Float -> Int -> Float -> Float
+sumDown fq i fw =
+    if i >= 0 then
+        sumDown fq (i - 1) (fw + floatAt i fq)
+
+    else
+        fw
+
+
+sumUp : Array Float -> Int -> Int -> Float -> Float
+sumUp fq i jz fw =
+    if i <= jz then
+        sumUp fq (i + 1) jz (fw + floatAt i fq)
+
+    else
+        fw
+
+
+twon24 : Float
+twon24 =
+    5.96046447753906250000e-8
+
+
+{-| `PIo2[]`: pi/2 in 24-bit chunks, each a double.
+-}
+piO2Chunks : Array Float
+piO2Chunks =
+    [ 1.57079625129699707031e0
+    , 7.54978941586159635335e-8
+    , 5.39030252995776476554e-15
+    , 3.28200341580791294123e-22
+    , 1.27065575308067607349e-29
+    , 1.22933308981111328932e-36
+    , 2.73370053816464559624e-44
+    , 2.16741683877804819444e-51
+    ]
+
+
+intAt : Int -> Array Int -> Int
+intAt i array =
+    when Array.get i array is
+        Just v ->
+            v
+
+        Nothing ->
+            0
+
+
+floatAt : Int -> Array Float -> Float
+floatAt i array =
+    when Array.get i array is
+        Just v ->
+            v
+
+        Nothing ->
+            0.0

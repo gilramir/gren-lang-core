@@ -57,7 +57,6 @@ changes no value, so the two directions are one operation and live together**
 -}
 
 import Basics exposing (Int, Float, UInt64, Num, Ord, Fractional, (==), (/), (*), (+), (-), (<), (<=), (>=))
-import Gren.Kernel.Math
 import Math.Fdlibm
 
 
@@ -420,7 +419,7 @@ minFloat =
 -}
 cos : Float -> Float
 cos =
-    Gren.Kernel.Math.cos
+    Math.Fdlibm.cos
 
 
 {-| Figure out the sine given an angle in radians.
@@ -436,7 +435,7 @@ cos =
 -}
 sin : Float -> Float
 sin =
-    Gren.Kernel.Math.sin
+    Math.Fdlibm.sin
 
 
 {-| Figure out the tangent given an angle in radians.
@@ -452,7 +451,7 @@ sin =
 -}
 tan : Float -> Float
 tan =
-    Gren.Kernel.Math.tan
+    Math.Fdlibm.tan
 
 
 {-| Figure out the arccosine for `adjacent / hypotenuse` in radians:
