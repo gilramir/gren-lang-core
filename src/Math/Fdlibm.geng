@@ -1,0 +1,331 @@
+module Math.Fdlibm exposing (log, log10)
+
+{-| fdlibm: the transcendental functions, the same bits on every backend.
+
+`docs/arithmetic.md` A9 asks for `sin`, `pow` and the rest to be written once,
+in Geng, as a port of fdlibm 5.3 — Sun's freely distributable math library, the
+one Java's `StrictMath` is specified to match — because no standard pins their
+last bits and the runtimes Geng targets disagree in them. `m2-fdlibm.md` is the
+survey and D391–D395 are what it decided. [Math](Math) calls this module, and
+nothing else should: `Float`'s `^` is fdlibm's `e_pow.c` too, but it lives in
+`Basics`, which cannot import anything (§FD4).
+
+**Not exposed.** `geng.toml` does not list it, because what a program should
+call is `Math.logBase` and its neighbours.
+
+@docs log, log10
+
+-}
+
+import Basics exposing (..)
+import Bitwise
+
+
+
+-- A DOUBLE'S WORDS
+--
+-- fdlibm takes a double apart as two 32-bit words, `__HI(x)` and `__LO(x)`,
+-- each an `int`, and puts one back with `__HI(x) = hx`. These are that, as
+-- D391's three primitives. They are declared here rather than taken from
+-- `Math`, which imports this module; `Math.toBits` reads the same bits as one
+-- `UInt64`, which is a `BigInt` on JavaScript and doubled the cost of a word
+-- there (`m2-fdlibm.md` §FD3).
+
+
+@prim("f64_high_word")
+highWord : Float -> Int
+
+
+@prim("f64_low_word")
+lowWord : Float -> Int
+
+
+@prim("f64_from_words")
+fromWords : Int -> Int -> Float
+
+
+{-| `__HI(x) = hi`: the double with this high word and `x`'s low one.
+-}
+withHighWord : Int -> Float -> Float
+withHighWord hi x =
+    fromWords hi (lowWord x)
+
+
+
+-- THE TRANSCRIPTION
+--
+-- Each function below is one fdlibm file, with its names, its constants and
+-- the shape of its branches, so that the two can be read side by side as
+-- `String.Ryu` and `d2s.c` can. What changes is only what Geng has to say
+-- differently: a C statement that reassigns `x` or `hx` partway through is a
+-- new name, or a helper taking the values that far, and a `return` in the
+-- middle of a block is a branch. The comments are fdlibm's where they explain
+-- the arithmetic.
+--
+-- What the transcription relies on. `Int` is fdlibm's `int`: 32 bits, two's
+-- complement, wrapping. `Bitwise.shiftRightBy` is C's `>>` on an `int`, which
+-- is arithmetic on every compiler fdlibm was built with, and
+-- `Bitwise.shiftRightZfBy` is `>>` on an `unsigned`. Every constant is written
+-- in fdlibm's own decimal, and each reads back as the hex fdlibm gives beside
+-- it; `accept/float-fdlibm` holds the results to `StrictMath`'s bits.
+
+
+two54 : Float
+two54 =
+    1.8014398509481984e16
+
+
+
+-- e_log.c
+
+
+ln2Hi : Float
+ln2Hi =
+    6.93147180369123816490e-1
+
+
+ln2Lo : Float
+ln2Lo =
+    1.90821492927058770002e-10
+
+
+{-| `__ieee754_log(x)`: the natural logarithm.
+
+fdlibm's method: reduce `x` to `2^k * (1 + f)` with `sqrt(2)/2 < 1 + f <
+sqrt(2)`, then `log(1 + f)` is `f - s*(f - R)` with `s = f / (2 + f)` and `R` a
+polynomial in `s*s`, and the answer is `k*ln2 + log(1 + f)`, with `ln2` split
+in two so that `k*ln2Hi` is exact.
+
+`log 0` is `-infinity`, `log` of a negative number is `NaN`, and `log` of
+`infinity` or `NaN` is itself.
+
+-}
+log : Float -> Float
+log x =
+    let
+        hx =
+            highWord x
+    in
+    if hx < 0x00100000 then
+        -- x < 2**-1022
+        if Bitwise.or (Bitwise.and hx 0x7FFFFFFF) (lowWord x) == 0 then
+            -- log(+-0) = -inf
+            -two54 / 0.0
+
+        else if hx < 0 then
+            -- log(-#) = NaN
+            (x - x) / 0.0
+
+        else
+            -- subnormal number, scale up x
+            let
+                scaled =
+                    x * two54
+            in
+            logNormal (highWord scaled) scaled -54
+
+    else
+        logNormal hx x 0
+
+
+logNormal : Int -> Float -> Int -> Float
+logNormal hx0 x0 k0 =
+    if hx0 >= 0x7FF00000 then
+        x0 + x0
+
+    else
+        let
+            hx =
+                Bitwise.and hx0 0x000FFFFF
+
+            i =
+                Bitwise.and (hx + 0x00095F64) 0x00100000
+
+            -- normalize x or x/2
+            x =
+                withHighWord (Bitwise.or hx (Bitwise.xor i 0x3FF00000)) x0
+
+            k =
+                k0 + (Bitwise.shiftRightBy 20 hx0 - 1023) + Bitwise.shiftRightBy 20 i
+
+            f =
+                x - 1.0
+
+            dk =
+                toFloat k
+        in
+        if Bitwise.and 0x000FFFFF (2 + hx) < 3 then
+            -- |f| < 2**-20
+            if f == 0.0 then
+                if k == 0 then
+                    0.0
+
+                else
+                    dk * ln2Hi + dk * ln2Lo
+
+            else
+                let
+                    r =
+                        f * f * (0.5 - 0.33333333333333333 * f)
+                in
+                if k == 0 then
+                    f - r
+
+                else
+                    dk * ln2Hi - ((r - dk * ln2Lo) - f)
+
+        else
+            let
+                s =
+                    f / (2.0 + f)
+
+                z =
+                    s * s
+
+                w =
+                    z * z
+
+                t1 =
+                    w * (lg2 + w * (lg4 + w * lg6))
+
+                t2 =
+                    z * (lg1 + w * (lg3 + w * (lg5 + w * lg7)))
+
+                r =
+                    t2 + t1
+
+                ij =
+                    Bitwise.or (hx - 0x0006147A) (0x0006B851 - hx)
+            in
+            if ij > 0 then
+                let
+                    hfsq =
+                        0.5 * f * f
+                in
+                if k == 0 then
+                    f - (hfsq - s * (hfsq + r))
+
+                else
+                    dk * ln2Hi - ((hfsq - (s * (hfsq + r) + dk * ln2Lo)) - f)
+
+            else if k == 0 then
+                f - s * (f - r)
+
+            else
+                dk * ln2Hi - ((s * (f - r) - dk * ln2Lo) - f)
+
+
+lg1 : Float
+lg1 =
+    6.666666666666735130e-1
+
+
+lg2 : Float
+lg2 =
+    3.999999999940941908e-1
+
+
+lg3 : Float
+lg3 =
+    2.857142874366239149e-1
+
+
+lg4 : Float
+lg4 =
+    2.222219843214978396e-1
+
+
+lg5 : Float
+lg5 =
+    1.818357216161805012e-1
+
+
+lg6 : Float
+lg6 =
+    1.531383769920937332e-1
+
+
+lg7 : Float
+lg7 =
+    1.479819860511658591e-1
+
+
+
+-- e_log10.c
+
+
+ivln10 : Float
+ivln10 =
+    4.34294481903251816668e-1
+
+
+log10Of2Hi : Float
+log10Of2Hi =
+    3.01029995663611771306e-1
+
+
+log10Of2Lo : Float
+log10Of2Lo =
+    3.69423907715893078616e-13
+
+
+{-| `__ieee754_log10(x)`: the base-ten logarithm.
+
+fdlibm's method: with `x = 2^n * y` and `y` in `[1, 2)`, the answer is
+`n*log10(2) + log10(y)`, and `log10(y)` is `ivln10 * log(y)`. When `n` is
+negative, `y` is taken from `[0.5, 1)` instead and `n` raised by one, so that
+`n*log10(2)` and `log10(y)` do not both carry a large error of opposite sign.
+Exact at every power of ten a double can hold.
+
+The special cases are [log](#log)'s.
+
+-}
+log10 : Float -> Float
+log10 x =
+    let
+        hx =
+            highWord x
+    in
+    if hx < 0x00100000 then
+        -- x < 2**-1022
+        if Bitwise.or (Bitwise.and hx 0x7FFFFFFF) (lowWord x) == 0 then
+            -- log(+-0) = -inf
+            -two54 / 0.0
+
+        else if hx < 0 then
+            -- log(-#) = NaN
+            (x - x) / 0.0
+
+        else
+            -- subnormal number, scale up x
+            let
+                scaled =
+                    x * two54
+            in
+            log10Normal (highWord scaled) scaled -54
+
+    else
+        log10Normal hx x 0
+
+
+log10Normal : Int -> Float -> Int -> Float
+log10Normal hx x k0 =
+    if hx >= 0x7FF00000 then
+        x + x
+
+    else
+        let
+            k =
+                k0 + (Bitwise.shiftRightBy 20 hx - 1023)
+
+            -- the sign bit of k: 1 when it is negative
+            i =
+                Bitwise.shiftRightZfBy 31 k
+
+            y =
+                toFloat (k + i)
+
+            z =
+                y * log10Of2Lo + ivln10 * log (withHighWord (Bitwise.or (Bitwise.and hx 0x000FFFFF) (Bitwise.shiftLeftBy 20 (0x03FF - i))) x)
+        in
+        z + y * log10Of2Hi

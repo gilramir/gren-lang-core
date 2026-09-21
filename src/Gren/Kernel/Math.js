@@ -30,7 +30,6 @@ var _Math_asin = Math.asin;
 var _Math_atan = Math.atan;
 var _Math_atan2 = F2(Math.atan2);
 
-// MORE MATH
-
-var _Math_log = Math.log;
-var _Math_log10 = Math.log10;
+// `log` and `log10` were here. They are fdlibm's `e_log.c` and `e_log10.c` in
+// Geng since D391, in `Math.Fdlibm`, so they give the same bits on every
+// backend (`m2-fdlibm.md` §FD9).
