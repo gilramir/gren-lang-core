@@ -30,6 +30,7 @@ runtime = "any"
     "Source",
     "Task",
     "Extern",
+    "Inbound",
 ]
 "Error Handling" = [
     "Maybe",

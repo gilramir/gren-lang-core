@@ -1,0 +1,50 @@
+module Inbound exposing (Inbound)
+
+{-| Checking a value that only Erlang could have supplied (geng-lang
+`m2-interop.md` D419, D422).
+
+An `erlang` extern whose result could be anything at all — a server's reply, a
+message — answers a `Handle`, and the Geng function around it turns the
+`Handle` into the type its caller asked for with `inbound`:
+
+    call : Inbound reply => Server request reply -> request -> Task CallError reply
+    call server request =
+        callExtern server request
+            |> Task.map (inbound "Beam.Server.call's reply")
+
+The constraint travels to every caller, so each use is checked at the type it
+is used at. A term that is not a value of that type is a boundary crash that
+names the first argument, the term, and what the type admits, where it comes
+in, rather than a failure somewhere later.
+
+Every type has an instance without asking, as every transparent type has
+`Eq`: the check is the one the compiler generates for an extern's declared
+type (`ffi.md` F3). A `Dict` and a `Set` arrive as Erlang maps and are built
+under their key's `Ord` (D420, D423).
+
+On JavaScript nothing is checked, as D200 has it for every `js` row (D419):
+the term is the value.
+
+@docs Inbound
+
+-}
+
+import Extern exposing (Handle)
+import String exposing (String)
+
+
+{-| Types a term from Erlang can be checked against. `inbound where term` is
+the term as a value of the type, or a boundary crash naming `where`.
+-}
+class Inbound a where
+    inbound : String -> Handle -> a
+
+
+{-| The check at the type of each use (D422, `m2-interop.md` §EI23). The
+compiler supplies every instance that `Dict` and `Set` do not write, as a
+reference to this row at the instance's type, and the BEAM backend generates
+the check for that type in its place, so its `erlang` row is never called.
+-}
+@externPure(js, "Inbound", "check")
+@externPure(erlang, "geng_core_inbound", "check")
+check : String -> Handle -> a
