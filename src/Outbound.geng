@@ -1,0 +1,49 @@
+module Outbound exposing (Outbound)
+
+{-| Handing a value to Erlang through a row that takes anything at all
+(geng-lang `m2-interop.md` D428).
+
+[`Inbound`](Inbound) is the way in: a row answers a `Handle` and the Geng
+function around it turns the `Handle` into the type its caller asked for. This
+is the way out, and it is needed for the same reason. A row whose argument
+could be anything — a message, a request — takes a `Handle`, so the backend
+has no declared type to convert the value from, and a `Dict` or a `Set` would
+leave as the tree Geng holds it as rather than as the Erlang map every other
+crossing makes of it (`ffi.md` F3, D425):
+
+    cast : Outbound request => Pid -> request -> Task x {}
+    cast server request =
+        castExtern server (outbound request)
+
+The constraint travels to every caller, so the value is converted at the type
+it is used at. Every type has an instance without asking, as it has
+[`Inbound`](Inbound): the conversion is the one the compiler generates for a
+declared type, and a type with nothing to convert in it converts to itself.
+
+On JavaScript nothing is converted, as D200 has it for every `js` row: the
+value is the term.
+
+@docs Outbound
+
+-}
+
+import Extern exposing (Handle)
+
+
+{-| Types a value can be handed to Erlang as. `outbound value` is the value
+in the shape every `beam` package is promised (D367): a record is a map, a
+custom type is a tuple headed by its constructor, and a `Dict` or a `Set` is
+an Erlang map.
+-}
+class Outbound a where
+    outbound : a -> Handle
+
+
+{-| The conversion at the type of each use (D428). The compiler supplies every
+instance as a reference to this row at the instance's type, and the BEAM
+backend generates the conversion for that type in its place, so its `erlang`
+row is never called.
+-}
+@externPure(js, "Outbound", "out")
+@externPure(erlang, "geng_core_outbound", "out")
+out : a -> Handle
