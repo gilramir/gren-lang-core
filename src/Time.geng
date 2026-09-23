@@ -590,7 +590,10 @@ into the [`Source`](Source#Source) you give, made a `msg` by the function you
 give.
 
 The source is yours: many timers may deliver into one, and closing it is yours
-too. The timer runs until it is [cancelled](#cancel).
+too. The timer runs until it is [cancelled](#cancel), or until its source
+ends: a source lasts as long as the tree that made it (see
+[`Source`](Source)), so on the BEAM a timer a `Beam.Server` keeps in its state
+stops when the server does.
 
     Task.bracket Source.new Source.close <| \ticks ->
         Time.every 1000 ticks Tick

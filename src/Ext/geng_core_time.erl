@@ -90,12 +90,18 @@ cancel(Handle, Succeed, _Fail) ->
     Succeed({}),
     none.
 
+%% The ticker ends when it is cancelled or when its source has ended, which
+%% `emit` answers `closed` for (D430): a source ends with the tree that owns
+%% it, so a timer left running in a server's state stops when the server does,
+%% rather than filling a queue nobody can read (geng-lang m2-interop.md §EI27.2).
 tick(Ms, Emit, Build) ->
     receive
         cancel -> ok
     after Ms ->
-        Emit(Build(os:system_time(millisecond))),
-        tick(Ms, Emit, Build)
+        case Emit(Build(os:system_time(millisecond))) of
+            closed -> ok;
+            _ -> tick(Ms, Emit, Build)
+        end
     end.
 
 %% A1 · a Geng `Float` is `float() | nan | infinity | neg_infinity`. A timer

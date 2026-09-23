@@ -47,6 +47,14 @@ takes events from the first rather than seeing a copy of them, the way a
 transient handed to two owners copies rather than complaining. Read a source
 from one process.
 
+**A source lasts as long as the tree that made it** (D430). On the BEAM that
+is the Erlang process running the outermost task — a `Beam.Server`, `main`'s,
+a `Beam.Worker`'s, or the Erlang process that called a library's function —
+and when that process ends the source ends with it, open or not: an event
+emitted into it afterwards is dropped, and a timer delivering into it stops.
+Every task that could read it has ended too. On JavaScript a program is one
+tree, so a source lasts as long as the program.
+
 @docs Source, new, next, close
 
 -}
