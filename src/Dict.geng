@@ -536,12 +536,65 @@ moveRedRight dict =
 -}
 update : Ord k => k -> (Maybe v -> Maybe v) -> Dict k v -> Dict k v
 update targetKey alter dictionary =
-    when alter (get targetKey dictionary) is
-        Just value ->
-            set targetKey value dictionary
+    -- One descent: `alter` runs where the key is, or where it would go, and
+    -- the path is rebuilt on the way back up (geng-lang m2-beam-toptier.md
+    -- §TT14.3). Only a removal walks the tree a second time.
+    when updateHelp targetKey alter dictionary is
+        Unchanged ->
+            dictionary
 
-        Nothing ->
+        Changed (RBNode_gren_builtin { color = Red, key, value, left, right }) ->
+            node Black key value left right
+
+        Changed changed ->
+            changed
+
+        Removed ->
             remove targetKey dictionary
+
+
+type Updated k v
+    = Unchanged
+    | Changed (Dict k v)
+    | Removed
+
+
+updateHelp : Ord k => k -> (Maybe v -> Maybe v) -> Dict k v -> Updated k v
+updateHelp key alter dict =
+    when dict is
+        RBEmpty_gren_builtin ->
+            when alter Nothing is
+                Just value ->
+                    Changed (node Red key value RBEmpty_gren_builtin RBEmpty_gren_builtin)
+
+                Nothing ->
+                    Unchanged
+
+        RBNode_gren_builtin { color = nColor, key = nKey, value = nValue, left = nLeft, right = nRight } ->
+            when compare key nKey is
+                LT ->
+                    when updateHelp key alter nLeft is
+                        Changed newLeft ->
+                            Changed (balance nColor nKey nValue newLeft nRight)
+
+                        other ->
+                            other
+
+                EQ ->
+                    when alter (Just nValue) is
+                        Just value ->
+                            Changed (node nColor nKey value nLeft nRight)
+
+                        Nothing ->
+                            Removed
+
+                GT ->
+                    when updateHelp key alter nRight is
+                        Changed newRight ->
+                            Changed (balance nColor nKey nValue nLeft newRight)
+
+                        other ->
+                            other
 
 
 {-| Same as [update](#update) but if the key doesn't exist in the dictionary, a default value
@@ -549,12 +602,16 @@ is passed to the provided update function instead of a `Maybe`.
 -}
 updateWithDefault : Ord k => k -> v -> (v -> v) -> Dict k v -> Dict k v
 updateWithDefault targetKey defaultValue alter dictionary =
-    when get targetKey dictionary is
-        Just value ->
-            set targetKey (alter value) dictionary
+    update targetKey
+        (\found ->
+            when found is
+                Just value ->
+                    Just (alter value)
 
-        Nothing ->
-            set targetKey (alter defaultValue) dictionary
+                Nothing ->
+                    Just (alter defaultValue)
+        )
+        dictionary
 
 
 {-| Create a dictionary with one key-value pair.

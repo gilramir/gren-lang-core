@@ -40,6 +40,40 @@ tests =
                     Expect.equal
                         (Dict.set "k" [ "v", "v" ] Dict.empty) 
                         (Dict.updateWithDefault "k" [] (\vs -> Array.pushLast "v" vs) (Dict.singleton "k" ["v"]))
+                , test "update inserts, replaces and removes over many keys" <| \{} ->
+                    let
+                        keys =
+                            Array.range 0 300 |> Array.map (\i -> modBy 101 (i * 37))
+
+                        bump found =
+                            when found is
+                                Just n ->
+                                    if n == 2 then
+                                        Nothing
+
+                                    else
+                                        Just (n + 1)
+
+                                Nothing ->
+                                    Just 0
+
+                        bySet k d =
+                            when Dict.get k d is
+                                Just n ->
+                                    if n == 2 then
+                                        Dict.remove k d
+
+                                    else
+                                        Dict.set k (n + 1) d
+
+                                Nothing ->
+                                    Dict.set k 0 d
+                        contents d =
+                            { keys = Dict.keys d, values = Dict.values d }
+                    in
+                    Expect.equal
+                        (contents (Array.foldl bySet Dict.empty keys))
+                        (contents (Array.foldl (\k d -> Dict.update k bump d) Dict.empty keys))
                 , test "remove" <| \{} -> Expect.equal Dict.empty (Dict.remove "k" (Dict.singleton "k" "v"))
                 , test "remove not found" <| \{} -> Expect.equal (Dict.singleton "k" "v") (Dict.remove "kk" (Dict.singleton "k" "v"))
                 ]

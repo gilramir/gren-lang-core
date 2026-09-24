@@ -273,6 +273,7 @@ you will get an array containing the original string.
     split "/" "home/evan/Desktop/" == [ "home", "evan", "Desktop", "" ]
 
 -}
+@externPure(erlang, "geng_core_string", "split")
 split : String -> String -> Array String
 split sep string =
     if primEq sep "" then
