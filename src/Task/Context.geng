@@ -1,0 +1,89 @@
+module Task.Context exposing
+    ( current, get
+    , with
+    )
+
+{-| A task's context: strings, by key, that a task and every task it starts
+carry with them, and that no other task sees — a request's id, a trace id, a
+tenant. It is what `Log.withFields` puts on every line a request logs.
+
+    handle : Request -> Task Never Response
+    handle request =
+        respond request
+            |> Task.Context.with (Dict.singleton "request" request.id)
+
+Inside `respond`, `Task.Context.get "request"` is the id, and so it is inside
+every task `respond` starts: a `Task.concurrent`, `Task.race` or
+`Task.parallel` child, or a `Process.spawn`. When `respond` ends, by
+succeeding, failing or being cancelled, the context is what it was before.
+
+Every value is a `String`, so no two libraries can disagree about what a key
+holds; a number goes in as its digits (geng-lang `m2-beam-toptier.md` D449).
+
+
+## Reading
+
+@docs current, get
+
+
+## Setting
+
+@docs with
+
+-}
+
+import Array exposing (Array)
+import Basics exposing (..)
+import Dict exposing (Dict)
+import Maybe exposing (Maybe)
+import String exposing (String)
+import Task exposing (Task)
+
+
+{-| The context the running task has: everything every `with` around it
+added, an inner one's key replacing an outer one's.
+-}
+current : Task x (Dict String String)
+current =
+    Task.map toDict entries
+
+
+{-| One key of the context, if something around the running task set it.
+-}
+get : String -> Task x (Maybe String)
+get key =
+    Task.map (Dict.get key) current
+
+
+{-| Run a task with these keys added to the context, and every task it starts
+with them too. A key already there is replaced for this task only.
+-}
+with : Dict String String -> Task x a -> Task x a
+with fields task =
+    entries
+        |> Task.andThen
+            (\before -> setEntries (fromDict (Dict.union fields (toDict before))) task)
+
+
+
+-- THE SCHEDULER'S HALF
+
+
+{-| The running process's context, as the scheduler keeps it (D449). -}
+@prim("task_context")
+entries : Task x (Array { key : String, value : String })
+
+
+{-| Run a task with this context, putting the one before back when it ends. -}
+@prim("task_with_context")
+setEntries : Array { key : String, value : String } -> Task x a -> Task x a
+
+
+toDict : Array { key : String, value : String } -> Dict String String
+toDict =
+    Array.foldl (\entry dict -> Dict.set entry.key entry.value dict) Dict.empty
+
+
+fromDict : Dict String String -> Array { key : String, value : String }
+fromDict =
+    Dict.foldl (\key value array -> Array.pushLast { key = key, value = value } array) []
