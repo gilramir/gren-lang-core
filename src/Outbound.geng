@@ -32,8 +32,9 @@ import Extern exposing (Handle)
 
 {-| Types a value can be handed to Erlang as. `outbound value` is the value
 in the shape every `beam` package is promised (D367): a record is a map, a
-custom type is a tuple headed by its constructor, and a `Dict` or a `Set` is
-an Erlang map.
+custom type is a tuple headed by its constructor — one flat tuple, the record's
+fields in alphabetical order, when its one field is a record (D443) — and a
+`Dict` or a `Set` is an Erlang map.
 -}
 class Outbound a where
     outbound : a -> Handle
