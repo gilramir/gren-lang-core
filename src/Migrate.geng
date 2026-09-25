@@ -1,0 +1,49 @@
+module Migrate exposing (Migrate)
+
+{-| Reading a value that an earlier build of the program made, across an
+upgrade that keeps a process's state (geng-lang `m2-beam-toptier.md` D458).
+
+When a running BEAM program is upgraded to a new build, a server's state is
+a value the old build's code made. The new build reads it with `migrate`, at
+the type the new build declares for it:
+
+    spec : Migrate state => { init : Init state, handleCall : ... } -> Spec state
+
+The check is `Inbound`'s, made over Geng's own representation rather than the
+shape a value crosses to Erlang in: a record keeps the fields its type
+declares and drops the rest, a custom type is one of its constructors at the
+constructor's arity, an `Array` is checked element by element, and a `Dict`
+or a `Set`, which Geng holds as a tree, is read as one and built again under
+the key's order in the new build. **A function or a `Task` is kept only when
+the upgrade reloads none of its code**: a reloaded module's old code is
+removed once the upgrade is done, and a function it made fails when it is
+called then, so the check fails where it meets one. A value
+the type cannot hold is a crash naming the first argument, the value, and
+what the type admits.
+
+Every type has an instance without asking, as it has [`Inbound`](Inbound).
+On JavaScript nothing is upgraded in place, and the value is the term.
+
+@docs Migrate
+
+-}
+
+import Extern exposing (Handle)
+import String exposing (String)
+
+
+{-| Types a value of an earlier build can be read as. `migrate where value`
+is the value as one of the type, or a crash naming `where`.
+-}
+class Migrate a where
+    migrate : String -> Handle -> a
+
+
+{-| The check at the type of each use (D458). The compiler supplies every
+instance as a reference to this row at the instance's type, and the BEAM
+backend generates the check for that type in its place, so its `erlang` row
+is never called.
+-}
+@externPure(js, "Migrate", "check")
+@externPure(erlang, "geng_core_migrate", "check")
+check : String -> Handle -> a

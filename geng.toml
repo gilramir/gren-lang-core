@@ -33,6 +33,7 @@ runtime = "any"
     "Extern",
     "Inbound",
     "Outbound",
+    "Migrate",
 ]
 "Error Handling" = [
     "Maybe",
