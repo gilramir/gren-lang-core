@@ -122,10 +122,8 @@ out what time it will be in one hour:
 [time]: Time
 
 -}
+@prim("task_map")
 map : (a -> b) -> Task x a -> Task x b
-map func taskA =
-    taskA
-        |> andThen (\a -> succeed (func a))
 
 
 {-| Put the results of two tasks together. For example, if we wanted to know
