@@ -19,6 +19,10 @@
 -module(geng_core_console).
 -export([write/3, writeErr/3]).
 
+%% D476 · these rows answer before they return in a tree of one, so it runs
+%% them in place (geng-lang m2-beam-toptier.md §TT46).
+-geng_direct([{write, 3}, {writeErr, 3}]).
+
 write(Text, Succeed, _Fail) ->
     io:put_chars(standard_io, Text),
     Succeed({}),

@@ -9,6 +9,10 @@
 -module(geng_core_process).
 -export([sleep/3]).
 
+%% D476 · these rows answer before they return in a tree of one, so it runs
+%% them in place (geng-lang m2-beam-toptier.md §TT46).
+-geng_direct([{sleep, 3}]).
+
 %% The runtime's sleep, which a tree of one makes in place, a `receive`
 %% with nothing else to wait on, and which is otherwise a timer process whose
 %% cancel this answers (geng-lang m2-beam-toptier.md D470).

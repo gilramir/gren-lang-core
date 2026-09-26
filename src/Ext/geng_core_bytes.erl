@@ -10,6 +10,10 @@
 -module(geng_core_bytes).
 -export([hostEndianness/4]).
 
+%% D476 · these rows answer before they return in a tree of one, so it runs
+%% them in place (geng-lang m2-beam-toptier.md §TT46).
+-geng_direct([{hostEndianness, 4}]).
+
 hostEndianness(Le, Be, Succeed, _Fail) ->
     Succeed(case <<1:32/native>> of
                 <<1, 0, 0, 0>> -> Le;

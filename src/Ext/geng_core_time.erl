@@ -8,6 +8,10 @@
 -module(geng_core_time).
 -export([now/3, here/3, getZoneName/4, every/5, cancel/3]).
 
+%% D476 · these rows answer before they return in a tree of one, so it runs
+%% them in place (geng-lang m2-beam-toptier.md §TT46).
+-geng_direct([{now, 3}, {here, 3}, {getZoneName, 4}, {every, 5}, {cancel, 3}]).
+
 %% `Posix` holds an `Int64` (int64-migration.md M3), which on the BEAM is an
 %% integer, so there is no conversion to write down as there is on JavaScript.
 now(Build, Succeed, _Fail) ->

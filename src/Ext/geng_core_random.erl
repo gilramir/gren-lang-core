@@ -8,6 +8,10 @@
 -module(geng_core_random).
 -export([entropy/3]).
 
+%% D476 · these rows answer before they return in a tree of one, so it runs
+%% them in place (geng-lang m2-beam-toptier.md §TT46).
+-geng_direct([{entropy, 3}]).
+
 %% D194 · a Geng function crosses as a plain n-ary fun, so the two words are
 %% one call and not a curried pair.
 entropy(Build, Succeed, _Fail) ->
