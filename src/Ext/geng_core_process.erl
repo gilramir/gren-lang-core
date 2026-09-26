@@ -9,13 +9,11 @@
 -module(geng_core_process).
 -export([sleep/3]).
 
+%% The runtime's sleep, which a tree of one makes in place, a `receive`
+%% with nothing else to wait on, and which is otherwise a timer process whose
+%% cancel this answers (geng-lang m2-beam-toptier.md D470).
 sleep(Ms, Succeed, _Fail) ->
-    Timer = spawn(fun() ->
-        receive cancel -> ok
-        after delay_ms(Ms) -> Succeed({})
-        end
-    end),
-    fun() -> Timer ! cancel, ok end.
+    geng_rt:sleep(delay_ms(Ms), fun() -> Succeed({}) end).
 
 %% A1 · a `Float` may be a sentinel. A sleep of infinity is one that never
 %% answers, which a `receive` with no `after` is exactly.
