@@ -25,10 +25,12 @@ function getZoneName(name, offset, succeed, fail) {
 
 // Each tick emits the time it fired at into the caller's source (D71), built
 // by the Geng function it is handed, as the effect manager read `now` when it
-// delivered one.
+// delivered one. It stops when the source is closed, which `emit` answers
+// (D486, geng-lang `pre-m3-js.md` §JS10), as `geng_core_time:tick/3` does on the
+// BEAM; before, the interval fired into a closed source until `main` ended.
 function every(interval, ticks, build, succeed, fail) {
   var id = setInterval(function () {
-    ticks.emit(build(BigInt(Date.now())));
+    if (ticks.emit(build(BigInt(Date.now()))) === "closed") clearInterval(id);
   }, interval);
   succeed(id);
 }
