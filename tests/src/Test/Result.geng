@@ -22,6 +22,13 @@ equalWithStringError =
     Expect.equal
 
 
+{-| A `Nothing` nothing else types has no element type, and `==` is chosen by
+one (`classes.md` §0). -}
+expectNothing : Maybe Int -> Expect.Expectation
+expectNothing =
+    Expect.equal Nothing
+
+
 toIntResult : String -> Result String Int
 toIntResult s =
     when String.toInt s is
@@ -45,7 +52,7 @@ tests =
     describe "Result"
         [ describe "firstOk"
             [ test "Ok" <| \{} -> Expect.equal (Just 5) (Result.firstOk [ Ok 5, Err 0, Ok 10 ])
-            , test "Err" <| \{} -> Expect.equal Nothing (Result.firstOk [ Err 1, Err 2, Err 3 ])
+            , test "Err" <| \{} -> expectNothing (Result.firstOk [ Err 1, Err 2, Err 3 ])
             ]
         , describe "allOk"
             [ test "Ok" <|

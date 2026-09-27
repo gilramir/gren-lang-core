@@ -12,6 +12,13 @@ isOdd n =
     remainderBy 2 n /= 0
 
 
+{-| A `Nothing` nothing else types has no element type, and `==` is chosen by
+one (`classes.md` §0). -}
+expectNothing : Maybe Int -> Expect.Expectation
+expectNothing =
+    Expect.equal Nothing
+
+
 tests : Test
 tests =
     describe "Maybe Tests"
@@ -165,13 +172,11 @@ tests =
                             (Maybe.andThen (\a -> Just a) (Just 1))
                 , test "failing chain (original Maybe failed)" <|
                     \{} ->
-                        Expect.equal
-                            Nothing
+                        expectNothing
                             (Maybe.andThen (\a -> Just a) Nothing)
                 , test "failing chain (chained function failed)" <|
                     \{} ->
-                        Expect.equal
-                            Nothing
+                        expectNothing
                             (Maybe.andThen (\a -> Nothing) (Just 1))
                 ]
             ]
