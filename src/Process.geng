@@ -91,6 +91,7 @@ delay work until later.
 -}
 @extern(js, "Process", "sleep")
 @extern(erlang, "geng_core_process", "sleep")
+@extern(c, "geng_core_process_sleep")
 sleep : Float -> Task x {}
 
 
