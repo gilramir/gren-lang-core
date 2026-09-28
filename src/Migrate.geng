@@ -42,8 +42,10 @@ class Migrate a where
 {-| The check at the type of each use (D458). The compiler supplies every
 instance as a reference to this row at the instance's type, and the BEAM
 backend generates the check for that type in its place, so its `erlang` row
-is never called.
+is never called. The C backend makes it `Inbound.check`'s (geng-lang
+`m3-native.md` D516), and its `c` row is never defined.
 -}
 @externPure(js, "Migrate", "check")
 @externPure(erlang, "geng_core_migrate", "check")
+@externPure(c, "geng_core_migrate_check")
 check : String -> Handle -> a

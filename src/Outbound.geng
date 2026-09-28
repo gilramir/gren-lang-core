@@ -43,8 +43,10 @@ class Outbound a where
 {-| The conversion at the type of each use (D428). The compiler supplies every
 instance as a reference to this row at the instance's type, and the BEAM
 backend generates the conversion for that type in its place, so its `erlang`
-row is never called.
+row is never called. The C backend does the same, boxing the value (geng-lang
+`m3-native.md` D516), and its `c` row is never defined.
 -}
 @externPure(js, "Outbound", "out")
 @externPure(erlang, "geng_core_outbound", "out")
+@externPure(c, "geng_core_outbound_out")
 out : a -> Handle

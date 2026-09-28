@@ -44,7 +44,10 @@ class Inbound a where
 compiler supplies every instance that `Dict` and `Set` do not write, as a
 reference to this row at the instance's type, and the BEAM backend generates
 the check for that type in its place, so its `erlang` row is never called.
+The C backend opens the `Handle` at the type's shape in its place (geng-lang
+`m3-native.md` D516), and its `c` row is never defined.
 -}
 @externPure(js, "Inbound", "check")
 @externPure(erlang, "geng_core_inbound", "check")
+@externPure(c, "geng_core_inbound_check")
 check : String -> Handle -> a
