@@ -116,34 +116,25 @@ instance Inspect Bytes where
         Inspect.none
 
 
-{-| The byte at an index, or `Nothing` outside the bytes. A negative index
-counts from the end, as [`Array.get`](Array#get)'s does.
+{-| The byte at an index, or `Nothing` outside the bytes, a negative index
+included.
 
     get 0 (fromString "abc") == Just 97
-    get -1 (fromString "abc") == Just 99
     get 3 (fromString "abc") == Nothing
+    get -1 (fromString "abc") == Nothing
 
-Reading bytes one at a time this way costs a bounds check and nothing else
-(geng-lang `m3-bytes-access.md`, D537–D539).
+Unlike [`Array.get`](Array#get), a negative index does not count from the end:
+that rule takes `get` past what the native inliner opens, and a byte read in a
+loop then allocates a `Just` a byte (geng-lang `m3-bytes-access.md` D543).
+[`slice`](#slice) keeps it.
 -}
 get : Int -> Bytes -> Maybe UInt8
 get index bytes =
-  let
-    count =
-      primLength bytes
-
-    actual =
-      if index < 0 then
-        count + index
-
-      else
-        index
-  in
-  if actual < 0 || actual >= count then
-    Nothing
+  if index >= 0 && index < primLength bytes then
+    Just (primGetU8 bytes index)
 
   else
-    Just (primI32ToU8 (primGetU8 bytes actual))
+    Nothing
 
 
 {-| The bytes from `start` up to, but not including, `end`, by
@@ -184,7 +175,7 @@ sliceBound index count =
 
 toArray : Bytes -> Array Int
 toArray bytes =
-    Array.initialize (primLength bytes) 0 (primGetU8 bytes)
+    Array.initialize (primLength bytes) 0 (\index -> primU8ToI32 (primGetU8 bytes index))
 
 
 {-| The sequence with exactly 0 bytes.
@@ -382,7 +373,11 @@ primLength : Bytes -> Int
 
 
 @prim("bytes_get_u8")
-primGetU8 : Bytes -> Int -> Int
+primGetU8 : Bytes -> Int -> UInt8
+
+
+@prim("u8_to_i32")
+primU8ToI32 : UInt8 -> Int
 
 
 -- `arr_get`, as `Array.unsafeGet` and `Array.Builder` declare it: `flatten`'s
@@ -394,6 +389,3 @@ primArrGet : Array Bytes -> Int -> Bytes
 @prim("bytes_slice")
 primSlice : Bytes -> Int -> Int -> Bytes
 
-
-@prim("i32_to_u8")
-primI32ToU8 : Int -> UInt8
