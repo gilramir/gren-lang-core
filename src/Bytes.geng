@@ -319,12 +319,24 @@ flatten arrayOfBytes =
     total =
       Array.foldl (\b sum -> sum + length b) 0 arrayOfBytes
   in
-  Array.foldl
-    (\b acc -> { t = primSetBytes acc.t acc.offset b, offset = acc.offset + length b })
-    { t = Bytes.Transient.new total, offset = 0 }
-    arrayOfBytes
-    |> .t
-    |> primToBytes
+  primToBytes (flattenFrom arrayOfBytes (Array.length arrayOfBytes) 0 0 (Bytes.Transient.new total))
+
+
+{-| Each piece copied in at its offset. A loop rather than a fold, so that the
+transient and the offset travel as two arguments and not as a record built
+for every piece (geng-lang `m3-bytes-access.md` §BA9).
+-}
+flattenFrom : Array Bytes -> Int -> Int -> Int -> Transient -> Transient
+flattenFrom pieces count index offset transient =
+  if index == count then
+    transient
+
+  else
+    let
+      piece =
+        primArrGet pieces index
+    in
+    flattenFrom pieces count (index + 1) (offset + primLength piece) (primSetBytes transient offset piece)
 
 
 -- PRIMITIVES
@@ -371,6 +383,12 @@ primLength : Bytes -> Int
 
 @prim("bytes_get_u8")
 primGetU8 : Bytes -> Int -> Int
+
+
+-- `arr_get`, as `Array.unsafeGet` and `Array.Builder` declare it: `flatten`'s
+-- index is below the array's length.
+@prim("arr_get")
+primArrGet : Array Bytes -> Int -> Bytes
 
 
 @prim("bytes_slice")
