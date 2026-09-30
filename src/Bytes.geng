@@ -11,6 +11,9 @@ module Bytes exposing
   , toString
   --
   , flatten
+  --
+  , get
+  , slice
   )
 
 
@@ -27,13 +30,16 @@ module Bytes exposing
 ## Combine
 @docs flatten
 
+## Reading
+@docs get, slice
+
 -}
 
 
 import Array exposing (Array)
 import Basics exposing (..)
 import Inspect exposing (Inspect)
-import Maybe exposing (Maybe)
+import Maybe exposing (Maybe(..))
 import String exposing (String)
 import Task exposing (Task)
 import Bytes.Transient exposing (Transient)
@@ -108,6 +114,72 @@ instance Inspect Bytes where
 
     inspectAnnotation _ =
         Inspect.none
+
+
+{-| The byte at an index, or `Nothing` outside the bytes. A negative index
+counts from the end, as [`Array.get`](Array#get)'s does.
+
+    get 0 (fromString "abc") == Just 97
+    get -1 (fromString "abc") == Just 99
+    get 3 (fromString "abc") == Nothing
+
+Reading bytes one at a time this way costs a bounds check and nothing else
+(geng-lang `m3-bytes-access.md`, D537–D539).
+-}
+get : Int -> Bytes -> Maybe UInt8
+get index bytes =
+  let
+    count =
+      primLength bytes
+
+    actual =
+      if index < 0 then
+        count + index
+
+      else
+        index
+  in
+  if actual < 0 || actual >= count then
+    Nothing
+
+  else
+    Just (primI32ToU8 (primGetU8 bytes actual))
+
+
+{-| The bytes from `start` up to, but not including, `end`, by
+[`Array.slice`](Array#slice)'s rule: a negative index counts from the end,
+each is clamped to the bytes, and an impossible slice is empty. A slice shares
+its bytes with what it was cut from, so it copies nothing.
+
+    slice 1 3 (fromString "abcd") == fromString "bc"
+    slice 0 -1 (fromString "abcd") == fromString "abc"
+-}
+slice : Int -> Int -> Bytes -> Bytes
+slice from to bytes =
+  let
+    count =
+      primLength bytes
+
+    start =
+      sliceBound from count
+
+    end =
+      sliceBound to count
+  in
+  if start < end then
+    primSlice bytes start end
+
+  else
+    empty
+
+
+sliceBound : Int -> Int -> Int
+sliceBound index count =
+  if index < 0 then
+    max 0 (count + index)
+
+  else
+    min count index
 
 
 toArray : Bytes -> Array Int
@@ -299,3 +371,11 @@ primLength : Bytes -> Int
 
 @prim("bytes_get_u8")
 primGetU8 : Bytes -> Int -> Int
+
+
+@prim("bytes_slice")
+primSlice : Bytes -> Int -> Int -> Bytes
+
+
+@prim("i32_to_u8")
+primI32ToU8 : Int -> UInt8
