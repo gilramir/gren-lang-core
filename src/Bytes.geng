@@ -9,6 +9,7 @@ module Bytes exposing
   --
   , fromString
   , toString
+  , toStringLossy
   --
   , flatten
   --
@@ -25,7 +26,7 @@ module Bytes exposing
 @docs Endianness, getHostEndianness
 
 ## Strings
-@docs fromString, toString
+@docs fromString, toString, toStringLossy
 
 ## Combine
 @docs flatten
@@ -37,6 +38,7 @@ module Bytes exposing
 
 
 import Array exposing (Array)
+import Array.Builder
 import Basics exposing (..)
 import Inspect exposing (Inspect)
 import Maybe exposing (Maybe(..))
@@ -297,6 +299,151 @@ toString bytes =
 
   else
     Maybe.Nothing
+
+
+{-| Convert `Bytes` to `String`, with U+FFFD in place of what is not UTF-8:
+one for each maximal subpart, Unicode's recommended practice (§3.9, "U+FFFD
+Substitution of Maximal Subparts"), and what WHATWG's decoder, and so
+JavaScript's `TextDecoder`, does. A lead byte and the continuation bytes that
+could still have been one character are one U+FFFD, so the bytes `E2 82`, the
+start of `€`, are one, and `ED A0 80`, which would be a surrogate, are three.
+
+This is for showing bytes that ought to be text, such as a file name or a
+program's argument, which the operating system does not promise is UTF-8. Two
+different `Bytes` can give the same `String`, so keep the bytes when they are
+to be handed back.
+
+    toStringLossy (fromString "café") == "café"
+-}
+toStringLossy : Bytes -> String
+toStringLossy bytes =
+  if primUtf8Valid bytes then
+    primFromUtf8 bytes
+
+  else
+    primFromUtf8 (flatten (lossyFrom bytes (primLength bytes) 0 0 (Array.Builder.empty 8)))
+
+
+{-| The pieces of the repaired bytes: each run that is UTF-8 as a slice, and
+U+FFFD's three bytes for each maximal subpart between two (geng-lang
+`m3-os.md` D547). `start` is where the current run began.
+-}
+lossyFrom : Bytes -> Int -> Int -> Int -> Array.Builder.Builder Bytes -> Array Bytes
+lossyFrom bytes count start index found =
+  if index >= count then
+    Array.Builder.toArray (Array.Builder.pushLast (primSlice bytes start count) found)
+
+  else
+    let
+      lead =
+        byteAt bytes index
+    in
+    if lead < 0x80 then
+      lossyFrom bytes count start (index + 1) found
+
+    else
+      let
+        needed =
+          sequenceLength lead
+      in
+      if needed == 0 then
+        replaced bytes count start index 1 found
+
+      else
+        let
+          taken =
+            continuations bytes count index needed 1 (secondLow lead) (secondHigh lead)
+        in
+        if taken == needed then
+          lossyFrom bytes count start (index + needed) found
+
+        else
+          replaced bytes count start index taken found
+
+
+{-| The run from `start` to `index` kept, and the `taken` bytes at `index`, a
+maximal subpart, replaced by one U+FFFD.
+-}
+replaced : Bytes -> Int -> Int -> Int -> Int -> Array.Builder.Builder Bytes -> Array Bytes
+replaced bytes count start index taken found =
+  lossyFrom bytes count (index + taken) (index + taken)
+    (found
+      |> Array.Builder.pushLast (primSlice bytes start index)
+      |> Array.Builder.pushLast replacementBytes
+    )
+
+
+{-| How many of the `needed` bytes of the character at `start` are there and
+in range, counting the lead: the second byte's range is the lead's (Unicode's
+Table 3-7), and every later one is `80` to `BF`.
+-}
+continuations : Bytes -> Int -> Int -> Int -> Int -> Int -> Int -> Int
+continuations bytes count start needed taken low high =
+  if taken == needed || start + taken >= count then
+    taken
+
+  else
+    let
+      byte =
+        byteAt bytes (start + taken)
+    in
+    if byte >= low && byte <= high then
+      continuations bytes count start needed (taken + 1) 0x80 0xBF
+
+    else
+      taken
+
+
+{-| How many bytes a character with this lead takes, and 0 for a byte that
+cannot lead one: a continuation byte, `C0`, `C1`, or `F5` and above.
+-}
+sequenceLength : Int -> Int
+sequenceLength lead =
+  if lead >= 0xC2 && lead <= 0xDF then
+    2
+
+  else if lead >= 0xE0 && lead <= 0xEF then
+    3
+
+  else if lead >= 0xF0 && lead <= 0xF4 then
+    4
+
+  else
+    0
+
+
+secondLow : Int -> Int
+secondLow lead =
+  if lead == 0xE0 then
+    0xA0
+
+  else if lead == 0xF0 then
+    0x90
+
+  else
+    0x80
+
+
+secondHigh : Int -> Int
+secondHigh lead =
+  if lead == 0xED then
+    0x9F
+
+  else if lead == 0xF4 then
+    0x8F
+
+  else
+    0xBF
+
+
+replacementBytes : Bytes
+replacementBytes =
+  primToUtf8 "\u{FFFD}"
+
+
+byteAt : Bytes -> Int -> Int
+byteAt bytes index =
+  primU8ToI32 (primGetU8 bytes index)
 
 
 -- COMBINE
