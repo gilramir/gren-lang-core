@@ -296,6 +296,7 @@ A negative index looks up an element in reverse from the end of the array.
     get -1 [ 1, 2, 3 ] == Just 3
 
 -}
+@inline
 get : Int -> Array a -> Maybe a
 get index array =
     let
