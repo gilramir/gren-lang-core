@@ -34,7 +34,7 @@ geng_cancel geng_core_time_here(void *build, geng_wait *wait) {
 }
 
 static geng_bytes *text(const char *s, size_t n) {
-    geng_bytes *b = geng_alloc(sizeof *b + n);
+    geng_bytes *b = geng_alloc(sizeof *b + n, GENG_HEADER_BYTES(sizeof *b + n));
     b->length = (int32_t) n;
     b->pad = 0;
     b->data = (uint8_t *) (b + 1);
@@ -97,7 +97,7 @@ static void tick(void *env) {
 }
 
 geng_cancel geng_core_time_every(double interval, void *source, void *build, geng_wait *wait) {
-    ticker *t = geng_alloc(sizeof *t);
+    ticker *t = geng_alloc(sizeof *t, GENG_HEADER_ANY(sizeof *t));
     t->interval = interval > 0 && !isinf(interval) ? round(interval) : 0;
     t->source = source;
     t->build = build;
