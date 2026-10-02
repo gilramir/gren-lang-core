@@ -39,6 +39,7 @@ static geng_bytes *text(const char *s, size_t n) {
     b->pad = 0;
     b->data = (uint8_t *) (b + 1);
     b->buffer = NULL;
+    b->block = NULL;
     memcpy(b->data, s, n);
     return b;
 }
