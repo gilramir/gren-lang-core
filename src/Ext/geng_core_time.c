@@ -95,10 +95,12 @@ static void tick(void *env) {
         return;
     }
     t->timer = geng_timer_start(t->interval, tick, t);
+    geng_write_barrier(t, &t->timer, t->timer);
 }
 
 geng_cancel geng_core_time_every(double interval, void *source, void *build, geng_wait *wait) {
-    ticker *t = geng_alloc(sizeof *t, GENG_HEADER_ANY(sizeof *t));
+    ticker *t = geng_alloc(sizeof *t, GENG_HEADER_WORDS(ticker) | GENG_HEADER_POINTER(ticker, source) |
+                                          GENG_HEADER_POINTER(ticker, build) | GENG_HEADER_POINTER(ticker, timer));
     t->interval = interval > 0 && !isinf(interval) ? round(interval) : 0;
     t->source = source;
     t->build = build;
