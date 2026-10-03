@@ -55,6 +55,10 @@ emitted into it afterwards is dropped, and a timer delivering into it stops.
 Every task that could read it has ended too. On JavaScript a program is one
 tree, so a source lasts as long as the program.
 
+A source nothing can reach any more is freed sooner, like any value, and so is
+a task waiting on it that nothing else can reach (D567): on the BEAM its tree's
+scheduler finds it, a source no task, message, other process or table holds.
+
 @docs Source, new, next, close
 
 -}
