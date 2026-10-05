@@ -589,6 +589,11 @@ pushFirst value array =
     pushLast 1 []          == [ 1 ]
     pushLast 5 [ 1, 4, 9 ] == [ 1, 4, 9, 5 ]
 
+Each push copies the whole array, so building an array of `n` values by
+pushing one at a time costs time and memory in proportion to `n * n`. For a
+long array, build it with [`Array.Builder`](Array-Builder), whose
+`pushLast` does not copy.
+
 -}
 pushLast : a -> Array a -> Array a
 pushLast value array =
