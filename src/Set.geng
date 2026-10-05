@@ -90,10 +90,10 @@ toggle : Ord a => a -> Set a -> Set a
 toggle key (Set_gren_builtin dict) =
     when Dict.get key dict is
         Just _ ->
-            Set_gren_builtin <| Dict.remove key dict
+            Set_gren_builtin (Dict.remove key dict)
 
         Nothing ->
-            Set_gren_builtin <| Dict.set key {} dict
+            Set_gren_builtin (Dict.set key {} dict)
 
 
 {-| Determine if a set is empty.
