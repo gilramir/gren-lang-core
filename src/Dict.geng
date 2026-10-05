@@ -628,6 +628,9 @@ singleton key value =
 
 {-| Combine two dictionaries. If there is a collision, preference is given
 to the first dictionary.
+
+Each pair of the first dictionary is set into the second, so the union costs
+the size of the first.
 -}
 union : Ord k => Dict k v -> Dict k v -> Dict k v
 union t1 t2 =

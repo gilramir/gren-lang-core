@@ -160,6 +160,10 @@ all fn (Set_gren_builtin dict) =
 
 
 {-| Get the union of two sets. Keep all values.
+
+Each value of the first set is inserted into the second, so the union costs
+the size of the first: when one set is small and the other grows, as a set of
+everything seen so far does, put the small one first.
 -}
 union : Ord a => Set a -> Set a -> Set a
 union (Set_gren_builtin dict1) (Set_gren_builtin dict2) =
