@@ -623,6 +623,304 @@ singleton key value =
 
 
 
+-- TRANSIENT
+--
+-- A loop that threads a `Dict` through itself and keeps no old version of it
+-- updates the tree in place (geng-lang D579, D582, `m3-fold.md` §FL10). The
+-- compiler's `Core.Pass.Transient` finds the loop, takes an owner where the
+-- loop is entered, and calls the twins below where the loop calls `set`,
+-- `update`, `updateWithDefault` and `remove`. Nothing else calls them.
+--
+-- Each twin is its original case for case, with `node c k v l r` replaced by
+-- `dictEdit` of the node the case took apart, which writes that node if this
+-- loop made it and copies it once if not, carrying the owner: Clojure's
+-- editable nodes (`m3-inplace.md` §IP3). Every argument handed to an edit is a
+-- name bound where a node was matched, never a field read after a write, so
+-- the order a backend evaluates arguments in cannot see one. Each primitive
+-- answers the node it made or wrote and only that answer is used, so where
+-- nothing is written in place (the BEAM, or owner 0) they are the originals.
+
+
+{-| A fresh owner, or 0 where nothing is written in place. -}
+@prim("dict_owner")
+dictOwner : {} -> Int
+
+
+{-| A node carrying the owner. -}
+@prim("dict_node")
+dictNode : Int -> NColor -> k -> v -> Dict k v -> Dict k v -> Dict k v
+
+
+{-| A node with its colour and children replaced: written if it carries the
+owner, itself if nothing changes, a copy carrying the owner otherwise. -}
+@prim("dict_edit")
+dictEdit : Int -> Dict k v -> NColor -> Dict k v -> Dict k v -> Dict k v
+
+
+{-| A node with its value replaced, the same way. -}
+@prim("dict_edit_value")
+dictEditValue : Int -> Dict k v -> v -> Dict k v
+
+
+{-| `set`'s twin. -}
+setT : Ord k => Int -> k -> v -> Dict k v -> Dict k v
+setT owner setKey setValue dict =
+    blackenT owner (setHelpT owner setKey setValue dict)
+
+
+blackenT : Int -> Dict k v -> Dict k v
+blackenT owner dict =
+    when dict is
+        RBNode_gren_builtin { color = Red, left, right } ->
+            dictEdit owner dict Black left right
+
+        _ ->
+            dict
+
+
+setHelpT : Ord k => Int -> k -> v -> Dict k v -> Dict k v
+setHelpT owner key value dict =
+    when dict is
+        RBEmpty_gren_builtin ->
+            dictNode owner Red key value RBEmpty_gren_builtin RBEmpty_gren_builtin
+
+        RBNode_gren_builtin { color = nColor, key = nKey, left = nLeft, right = nRight } ->
+            when compare key nKey is
+                LT ->
+                    balanceT owner dict nColor (setHelpT owner key value nLeft) nRight
+
+                EQ ->
+                    dictEditValue owner dict value
+
+                GT ->
+                    balanceT owner dict nColor nLeft (setHelpT owner key value nRight)
+
+
+{-| `balance color key value left right`, where `color`, `key` and `value`
+are `n`'s and `color` was read before anything was written. -}
+balanceT : Int -> Dict k v -> NColor -> Dict k v -> Dict k v -> Dict k v
+balanceT owner n color left right =
+    when right is
+        RBNode_gren_builtin { color = Red, left = rLeft, right = rRight } ->
+            when left is
+                RBNode_gren_builtin { color = Red, left = lLeft, right = lRight } ->
+                    dictEdit owner n Red (dictEdit owner left Black lLeft lRight) (dictEdit owner right Black rLeft rRight)
+
+                _ ->
+                    dictEdit owner right color (dictEdit owner n Red left rLeft) rRight
+
+        _ ->
+            when left is
+                RBNode_gren_builtin { color = Red, left = (RBNode_gren_builtin { color = Red, left = llLeft, right = llRight }) as ll, right = lRight } ->
+                    dictEdit owner left Red (dictEdit owner ll Black llLeft llRight) (dictEdit owner n Black lRight right)
+
+                _ ->
+                    dictEdit owner n color left right
+
+
+{-| `update`'s twin, which answers no `Updated`: its help answers the empty
+dictionary where `updateHelp` answers `Unchanged` or `Removed`, which `member`
+then tells apart, since `alter` has been called and must not be again. -}
+updateT : Ord k => Int -> k -> (Maybe v -> Maybe v) -> Dict k v -> Dict k v
+updateT owner targetKey alter dictionary =
+    when updateHelpT owner targetKey alter dictionary is
+        RBEmpty_gren_builtin ->
+            if member targetKey dictionary then
+                removeT owner targetKey dictionary
+
+            else
+                dictionary
+
+        changed ->
+            blackenT owner changed
+
+
+updateHelpT : Ord k => Int -> k -> (Maybe v -> Maybe v) -> Dict k v -> Dict k v
+updateHelpT owner key alter dict =
+    when dict is
+        RBEmpty_gren_builtin ->
+            when alter Nothing is
+                Just value ->
+                    dictNode owner Red key value RBEmpty_gren_builtin RBEmpty_gren_builtin
+
+                Nothing ->
+                    RBEmpty_gren_builtin
+
+        RBNode_gren_builtin { color = nColor, key = nKey, value = nValue, left = nLeft, right = nRight } ->
+            when compare key nKey is
+                LT ->
+                    when updateHelpT owner key alter nLeft is
+                        RBEmpty_gren_builtin ->
+                            RBEmpty_gren_builtin
+
+                        newLeft ->
+                            balanceT owner dict nColor newLeft nRight
+
+                EQ ->
+                    when alter (Just nValue) is
+                        Just value ->
+                            dictEditValue owner dict value
+
+                        Nothing ->
+                            RBEmpty_gren_builtin
+
+                GT ->
+                    when updateHelpT owner key alter nRight is
+                        RBEmpty_gren_builtin ->
+                            RBEmpty_gren_builtin
+
+                        newRight ->
+                            balanceT owner dict nColor nLeft newRight
+
+
+{-| `updateWithDefault`'s twin. -}
+updateWithDefaultT : Ord k => Int -> k -> v -> (v -> v) -> Dict k v -> Dict k v
+updateWithDefaultT owner targetKey defaultValue alter dictionary =
+    updateT owner
+        targetKey
+        (\found ->
+            when found is
+                Just value ->
+                    Just (alter value)
+
+                Nothing ->
+                    Just (alter defaultValue)
+        )
+        dictionary
+
+
+{-| `remove`'s twin. -}
+removeT : Ord k => Int -> k -> Dict k v -> Dict k v
+removeT owner key dict =
+    blackenT owner (removeHelpT owner key dict)
+
+
+removeHelpT : Ord k => Int -> k -> Dict k v -> Dict k v
+removeHelpT owner targetKey dict =
+    when dict is
+        RBEmpty_gren_builtin ->
+            RBEmpty_gren_builtin
+
+        RBNode_gren_builtin { color, key, left, right } ->
+            if targetKey < key then
+                when left is
+                    RBNode_gren_builtin { color = Black, left = lLeft } ->
+                        when lLeft is
+                            RBNode_gren_builtin { color = Red } ->
+                                dictEdit owner dict color (removeHelpT owner targetKey left) right
+
+                            _ ->
+                                when moveRedLeftT owner dict is
+                                    (RBNode_gren_builtin { color = nColor, left = nLeft, right = nRight }) as moved ->
+                                        balanceT owner moved nColor (removeHelpT owner targetKey nLeft) nRight
+
+                                    RBEmpty_gren_builtin ->
+                                        RBEmpty_gren_builtin
+
+                    _ ->
+                        dictEdit owner dict color (removeHelpT owner targetKey left) right
+
+            else
+                removeHelpEQGTT owner targetKey (removeHelpPrepEQGTT owner dict color left right)
+
+
+removeHelpPrepEQGTT : Int -> Dict k v -> NColor -> Dict k v -> Dict k v -> Dict k v
+removeHelpPrepEQGTT owner dict color left right =
+    when left is
+        RBNode_gren_builtin { color = Red, left = lLeft, right = lRight } ->
+            dictEdit owner left color lLeft (dictEdit owner dict Red lRight right)
+
+        _ ->
+            when right is
+                RBNode_gren_builtin { color = Black, left = RBNode_gren_builtin { color = Black } } ->
+                    moveRedRightT owner dict
+
+                RBNode_gren_builtin { color = Black, left = RBEmpty_gren_builtin } ->
+                    moveRedRightT owner dict
+
+                _ ->
+                    dict
+
+
+{-| The node a removal takes the key of is replaced by a node of its own
+carrying the leftmost key and value of its right side, since an edit keeps a
+node's key. -}
+removeHelpEQGTT : Ord k => Int -> k -> Dict k v -> Dict k v
+removeHelpEQGTT owner targetKey dict =
+    when dict is
+        RBNode_gren_builtin { color, key, value, left, right } ->
+            when compare targetKey key is
+                EQ ->
+                    when getMin right is
+                        RBNode_gren_builtin { key = minKey, value = minValue } ->
+                            let
+                                rest =
+                                    removeMinT owner right
+                            in
+                            balanceT owner (dictNode owner color minKey minValue left rest) color left rest
+
+                        RBEmpty_gren_builtin ->
+                            RBEmpty_gren_builtin
+
+                _ ->
+                    balanceT owner dict color left (removeHelpT owner targetKey right)
+
+        RBEmpty_gren_builtin ->
+            RBEmpty_gren_builtin
+
+
+removeMinT : Int -> Dict k v -> Dict k v
+removeMinT owner dict =
+    when dict is
+        RBNode_gren_builtin { color, left = ((RBNode_gren_builtin { color = lColor, left = lLeft }) as left), right } ->
+            when lColor is
+                Black ->
+                    when lLeft is
+                        RBNode_gren_builtin { color = Red } ->
+                            dictEdit owner dict color (removeMinT owner left) right
+
+                        _ ->
+                            when moveRedLeftT owner dict is
+                                (RBNode_gren_builtin { color = nColor, left = nLeft, right = nRight }) as moved ->
+                                    balanceT owner moved nColor (removeMinT owner nLeft) nRight
+
+                                RBEmpty_gren_builtin ->
+                                    RBEmpty_gren_builtin
+
+                _ ->
+                    dictEdit owner dict color (removeMinT owner left) right
+
+        _ ->
+            RBEmpty_gren_builtin
+
+
+moveRedLeftT : Int -> Dict k v -> Dict k v
+moveRedLeftT owner dict =
+    when dict is
+        RBNode_gren_builtin { left = (RBNode_gren_builtin { left = lLeft, right = lRight }) as left, right = (RBNode_gren_builtin { left = (RBNode_gren_builtin { color = Red, left = rlL, right = rlR }) as rLeft, right = rRight }) as right } ->
+            dictEdit owner rLeft Red (dictEdit owner dict Black (dictEdit owner left Red lLeft lRight) rlL) (dictEdit owner right Black rlR rRight)
+
+        RBNode_gren_builtin { left = (RBNode_gren_builtin { left = lLeft, right = lRight }) as left, right = (RBNode_gren_builtin { left = rLeft, right = rRight }) as right } ->
+            dictEdit owner dict Black (dictEdit owner left Red lLeft lRight) (dictEdit owner right Red rLeft rRight)
+
+        _ ->
+            dict
+
+
+moveRedRightT : Int -> Dict k v -> Dict k v
+moveRedRightT owner dict =
+    when dict is
+        RBNode_gren_builtin { left = (RBNode_gren_builtin { left = (RBNode_gren_builtin { color = Red, left = llLeft, right = llRight }) as ll, right = lRight }) as left, right = (RBNode_gren_builtin { left = rLeft, right = rRight }) as right } ->
+            dictEdit owner left Red (dictEdit owner ll Black llLeft llRight) (dictEdit owner dict Black lRight (dictEdit owner right Red rLeft rRight))
+
+        RBNode_gren_builtin { left = (RBNode_gren_builtin { left = lLeft, right = lRight }) as left, right = (RBNode_gren_builtin { left = rLeft, right = rRight }) as right } ->
+            dictEdit owner dict Black (dictEdit owner left Red lLeft lRight) (dictEdit owner right Red rLeft rRight)
+
+        _ ->
+            dict
+
+
+
 -- COMBINE
 
 
