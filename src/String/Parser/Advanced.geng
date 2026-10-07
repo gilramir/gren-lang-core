@@ -58,6 +58,7 @@ you need to provide a `Problem` for certain scenarios.**
 import Basics exposing (..)
 import String exposing (String)
 import Array exposing (Array)
+import Array.Builder as Builder exposing (Builder)
 import Char exposing (Char)
 import Inspect
 import Result exposing (Result(..))
@@ -1164,15 +1165,15 @@ sequenceEnd ender ws parseItem sep trailing =
     chompRest item =
       when trailing is
         Forbidden ->
-          loop [item] (sequenceEndForbidden ender ws parseItem sep)
+          loop (Builder.pushLast item (Builder.empty 0)) (sequenceEndForbidden ender ws parseItem sep)
 
         Optional ->
-          loop [item] (sequenceEndOptional ender ws parseItem sep)
+          loop (Builder.pushLast item (Builder.empty 0)) (sequenceEndOptional ender ws parseItem sep)
 
         Mandatory ->
           skip ender
             ( revSkip ws <| revSkip sep <| revSkip ws <|
-                loop [item] (sequenceEndMandatory ws parseItem sep)
+                loop (Builder.pushLast item (Builder.empty 0)) (sequenceEndMandatory ws parseItem sep)
             )
   in
   oneOf
@@ -1181,38 +1182,38 @@ sequenceEnd ender ws parseItem sep trailing =
     ]
 
 
-sequenceEndForbidden : Parser c x {} -> Parser c x {} -> Parser c x a -> Parser c x {} -> Array a -> Parser c x (Step (Array a) (Array a))
+sequenceEndForbidden : Parser c x {} -> Parser c x {} -> Parser c x a -> Parser c x {} -> Builder a -> Parser c x (Step (Builder a) (Array a))
 sequenceEndForbidden ender ws parseItem sep items =
   revSkip ws <|
     oneOf
-      [ revSkip sep <| revSkip ws <| map (\item -> Loop (Array.pushLast item items)) parseItem
-      , ender |> map (\_ -> Done items )
+      [ revSkip sep <| revSkip ws <| map (\item -> Loop (Builder.pushLast item items)) parseItem
+      , ender |> map (\_ -> Done (Builder.toArray items))
       ]
 
 
-sequenceEndOptional : Parser c x {} -> Parser c x {} -> Parser c x a -> Parser c x {} -> Array a -> Parser c x (Step (Array a) (Array a))
+sequenceEndOptional : Parser c x {} -> Parser c x {} -> Parser c x a -> Parser c x {} -> Builder a -> Parser c x (Step (Builder a) (Array a))
 sequenceEndOptional ender ws parseItem sep items =
   let
     parseEnd =
-      map (\_ -> Done items) ender
+      map (\_ -> Done (Builder.toArray items)) ender
   in
   revSkip ws <|
     oneOf
       [ revSkip sep <| revSkip ws <|
           oneOf
-            [ parseItem |> map (\item -> Loop (Array.pushLast item items))
+            [ parseItem |> map (\item -> Loop (Builder.pushLast item items))
             , parseEnd
             ]
       , parseEnd
       ]
 
 
-sequenceEndMandatory : Parser c x {} -> Parser c x a -> Parser c x {} -> Array a -> Parser c x (Step (Array a) (Array a))
+sequenceEndMandatory : Parser c x {} -> Parser c x a -> Parser c x {} -> Builder a -> Parser c x (Step (Builder a) (Array a))
 sequenceEndMandatory ws parseItem sep items =
   oneOf
-    [ map (\item -> Loop (Array.pushLast item items)) <|
+    [ map (\item -> Loop (Builder.pushLast item items)) <|
         skip (skip (skip ws sep) ws) parseItem
-    , map (\_ -> Done items) (succeed {})
+    , map (\_ -> Done (Builder.toArray items)) (succeed {})
     ]
 
 

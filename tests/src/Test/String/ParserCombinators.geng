@@ -89,6 +89,24 @@ tests =
             , trailing "Mandatory, without" Mandatory "[1, 2, 3]" Nothing
             , trailing "empty" Forbidden "[ ]" (Just [])
             , trailing "spaces around everything" Optional "[ 1 ,2 , 3 , ]" (Just [ 1, 2, 3 ])
+            , test "run again after a branch backtracks over it, from nothing" <| \{} ->
+                P.run
+                    (P.oneOf
+                        [ P.backtrackable (intSequence Optional |> P.skip (P.token "!"))
+                        , intSequence Optional |> P.skip (P.token "?")
+                        ]
+                    )
+                    "[1, 2]?"
+                    |> Result.toMaybe
+                    |> Expect.equal (Just [ 1, 2 ])
+            ]
+        , describe "chompUntilEndOr's position (upstream core 3004fc2)"
+            [ test "with a match" <| \{} ->
+                P.run (P.chompUntilEndOr "X" |> P.andThen (\_ -> P.getPosition)) "a\nbcX"
+                    |> Expect.equal (Ok { row = 2, col = 3 })
+            , test "at the end of the input" <| \{} ->
+                P.run (P.chompUntilEndOr "X" |> P.andThen (\_ -> P.getPosition)) "a\nbc"
+                    |> Expect.equal (Ok { row = 2, col = 3 })
             ]
         , describe "Advanced.setPayload"
             [ test "the parser after it sees the new payload" <| \{} ->
@@ -115,17 +133,18 @@ nesting =
 trailing : String -> Trailing -> String -> Maybe (Array Int) -> Test
 trailing name rule source expected =
     test name <| \{} ->
-        P.run
-            (P.sequence
-                { start = "["
-                , separator = ","
-                , end = "]"
-                , spaces = P.spaces
-                , item = P.int
-                , trailing = rule
-                }
-                |> P.skip P.end
-            )
-            source
+        P.run (intSequence rule |> P.skip P.end) source
             |> Result.toMaybe
             |> Expect.equal expected
+
+
+intSequence : Trailing -> Parser (Array Int)
+intSequence rule =
+    P.sequence
+        { start = "["
+        , separator = ","
+        , end = "]"
+        , spaces = P.spaces
+        , item = P.int
+        , trailing = rule
+        }

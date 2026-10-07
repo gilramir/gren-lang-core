@@ -873,20 +873,26 @@ popLast array =
 -}
 partition : (a -> Bool) -> Array a -> { trues : Array a, falses : Array a }
 partition fn array =
-    foldl
-        (\val { trues, falses } ->
-            if fn val then
-                { trues = pushLast val trues
-                , falses = falses
-                }
+    partitionHelp fn array 0 (unsafeLength array) (T.new 0) (T.new 0)
 
-            else
-                { trues = trues
-                , falses = pushLast val falses
-                }
-        )
-        { trues = [], falses = [] }
-        array
+
+partitionHelp : (a -> Bool) -> Array a -> Int -> Int -> Transient a -> Transient a -> { trues : Array a, falses : Array a }
+partitionHelp fn array index len trues falses =
+    if lt index len then
+        let
+            value =
+                unsafeGet array index
+        in
+        if fn value then
+            partitionHelp fn array (add index 1) len (T.push trues value) falses
+
+        else
+            partitionHelp fn array (add index 1) len trues (T.push falses value)
+
+    else
+        { trues = transientToArray trues
+        , falses = transientToArray falses
+        }
 
 
 -- SORT
