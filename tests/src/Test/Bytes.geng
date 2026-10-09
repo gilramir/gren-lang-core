@@ -1,6 +1,7 @@
 module Test.Bytes exposing (tests)
 
 import Bytes exposing (Bytes)
+import Bytes.Decode as BD
 import Bytes.Encode
 import Expect
 import Fuzz
@@ -16,13 +17,65 @@ encodeInt i =
 
 tests : Test
 tests =
-    describe "Byte comparison"
-        [ fuzz Fuzz.string "same strings are equal" <| \s ->
-            Expect.equal (Bytes.fromString s) (Bytes.fromString s)
-        , fuzz (Fuzz.intRange -128 127) "same ints are equal" <| \i ->
-            Expect.equal (encodeInt i) (encodeInt i)
-        , fuzz Fuzz.string "different strings are not equal" <| \s ->
-            Expect.notEqual (Bytes.fromString s) (Bytes.fromString (s ++ "a"))
-        , fuzz (Fuzz.intRange -100 100) "different ints are not equal" <| \i ->
-            Expect.notEqual (encodeInt i) (encodeInt (i + 1))
+    describe "Bytes"
+        [ describe "Byte comparison"
+            [ fuzz Fuzz.string "same strings are equal" <| \s ->
+                Expect.equal (Bytes.fromString s) (Bytes.fromString s)
+            , fuzz (Fuzz.intRange -128 127) "same ints are equal" <| \i ->
+                Expect.equal (encodeInt i) (encodeInt i)
+            , fuzz Fuzz.string "different strings are not equal" <| \s ->
+                Expect.notEqual (Bytes.fromString s) (Bytes.fromString (s ++ "a"))
+            , fuzz (Fuzz.intRange -100 100) "different ints are not equal" <| \i ->
+                Expect.notEqual (encodeInt i) (encodeInt (i + 1))
+            ]
+        , describe "Flatten"
+            [ fuzz Fuzz.string "Joins bytes together" <| \s ->
+                Expect.equal
+                    (Bytes.fromString (s ++ s ++ s))
+                    (Bytes.flatten
+                        [ Bytes.fromString s
+                        , Bytes.fromString s
+                        , Bytes.fromString s
+                        ]
+                    )
+            ]
+        , describe "String conversion"
+            [ test "Byte order mark at start of bytes survives" <| \{} ->
+                Expect.equal
+                    (Just "\u{FEFF}a")
+                    (Bytes.toString (Bytes.fromString "\u{FEFF}a"))
+            , fuzz Fuzz.string "fromString -> toString ends up the same" <| \str ->
+                Expect.equal
+                    (Just str)
+                    (Bytes.toString (Bytes.fromString str))
+            ]
+        , describe "Decode"
+            [ test "Decode.bytes holds only the bytes it read" <| \{} ->
+                let
+                    original =
+                        Bytes.fromString "ABCD"
+
+                    firstThree =
+                        when BD.decode (BD.bytes 3) original is
+                            Just bytes ->
+                                bytes
+
+                            Nothing ->
+                                Bytes.empty
+                in
+                Expect.all
+                    [ \_ ->
+                        BD.decode (BD.bytes 4) firstThree
+                            |> Expect.equal Nothing
+                    , \_ ->
+                        Expect.equal
+                            firstThree
+                            (Bytes.fromString "ABC")
+                    ]
+                    {}
+            , test "Decode.fail makes decode return Nothing" <| \{} ->
+                Expect.equal
+                    Nothing
+                    (BD.decode (BD.fail : BD.Decoder Int) Bytes.empty)
+            ]
         ]

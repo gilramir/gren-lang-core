@@ -32,6 +32,7 @@ tests =
             , test "append 3" <| \{} -> Expect.equal "butter" (String.append "" "butter")
             , test "split commas" <| \{} -> Expect.equal [ "cat", "dog", "cow" ] (String.split "," "cat,dog,cow")
             , test "split slashes" <| \{} -> Expect.equal [ "home", "steve", "Desktop", "" ] (String.split "/" "home/steve/Desktop/")
+            , test "split empty" <| \{} -> Expect.equal [ "a", "\u{1F600}", "b" ] (String.split "" "a\u{1F600}b")
             , test "join spaces" <| \{} -> Expect.equal "cat dog cow" (String.join " " [ "cat", "dog", "cow" ])
             , test "join slashes" <| \{} -> Expect.equal "home/steve/Desktop" (String.join "/" [ "home", "steve", "Desktop" ])
             , test "foldl" <| \_ -> Expect.equal "time" (String.foldl String.pushFirst "" "emit")
@@ -108,6 +109,18 @@ tests =
             , test "any false" <| \{} -> Expect.equal False (String.any Char.isDigit "one is one")
             , test "all true" <| \{} -> Expect.equal True (String.all Char.isDigit "123")
             , test "all false" <| \{} -> Expect.equal False (String.all Char.isDigit "1 2 3")
+            , test "startsWith" <| \{} -> Expect.equal True (String.startsWith "start" "starting positions")
+            , test "startsWith fail" <| \{} -> Expect.equal False (String.startsWith "final" "starting positions")
+            ]
+        , describe "index functions"
+            [ test "firstIndexOf code point" <| \{} -> Expect.equal (Just 4) (String.firstIndexOf "and" "try\u{1F60E}and try and try again")
+            , test "lastIndexOf code point" <| \{} -> Expect.equal (Just 12) (String.lastIndexOf "and" "try\u{1F60E}and try and try again")
+            , test "indices code points" <| \{} -> Expect.equal [ 0, 8 ] (String.indices "try" "try\u{1F60E}and try again")
+            , test "firstIndexOfFrom" <| \{} -> Expect.equal (Just 12) (String.firstIndexOfFrom 8 "and" "try and try and try again")
+            , test "firstIndexOfFrom code point" <| \{} -> Expect.equal (Just 12) (String.firstIndexOfFrom 5 "and" "try\u{1F60E}and try and try again")
+            , test "firstIndexOfFrom below 0" <| \{} -> Expect.equal (Just 0) (String.firstIndexOfFrom -2 "a" "aha")
+            , test "firstIndexOfFrom empty at end" <| \{} -> Expect.equal (Just 3) (String.firstIndexOfFrom 3 "" "abc")
+            , test "firstIndexOfFrom past end" <| \{} -> Expect.equal Nothing (String.firstIndexOfFrom 4 "" "abc")
             ]
         ]
 

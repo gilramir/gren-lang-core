@@ -2,7 +2,7 @@ module String exposing
     ( String, isEmpty, count, reverse, repeat, replace
     , prepend, append, split, join, words, lines
     , slice, takeFirst, takeLast, dropFirst, dropLast
-    , contains, startsWith, endsWith, firstIndexOf, lastIndexOf, indices
+    , contains, startsWith, endsWith, firstIndexOf, firstIndexOfFrom, lastIndexOf, indices
     , toInt, fromInt
     , fromInt64, fromUInt32, fromUInt64
     , toFloat, fromFloat, fromFloat32
@@ -40,7 +40,7 @@ number of code points, and an index counts them.
 
 ## Check for Substrings
 
-@docs contains, startsWith, endsWith, firstIndexOf, lastIndexOf, indices
+@docs contains, startsWith, endsWith, firstIndexOf, firstIndexOfFrom, lastIndexOf, indices
 
 
 ## Int Conversions
@@ -573,6 +573,50 @@ firstIndexOf sub string =
 
     else
         Just (primOffsetToIndex string found)
+
+
+{-| Find the index of the first string within the second one, starting the
+search at the given index, if it's there.
+
+    firstIndexOfFrom 4 "and" "try\u{1F60E}and try and again" == Just 12
+
+    firstIndexOfFrom 0 "and" "try\u{1F60E}and try and again" == Just 4
+
+A start below 0 searches from 0, and one past the end finds nothing. Both
+indices are codepoint indices, as in [firstIndexOf](#firstIndexOf), which is
+`firstIndexOfFrom 0`.
+
+-}
+firstIndexOfFrom : Int -> String -> String -> Maybe Int
+firstIndexOfFrom start sub string =
+    let
+        length =
+            primLength string
+
+        from =
+            max 0 start
+    in
+    if from > length then
+        Nothing
+
+    else
+        let
+            fromOffset =
+                if length == primEnd string then
+                    -- Every codepoint is one offset wide, so an index is an offset.
+                    from
+
+                else
+                    offsetValue (offsetAfter string (Offset 0) from)
+
+            found =
+                primFind string sub fromOffset
+        in
+        if found < 0 then
+            Nothing
+
+        else
+            Just (primOffsetToIndex string found)
 
 
 {-| Find the last index of the first string within the second one, if it's there.

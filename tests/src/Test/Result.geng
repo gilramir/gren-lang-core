@@ -52,6 +52,7 @@ tests =
     describe "Result"
         [ describe "firstOk"
             [ test "Ok" <| \{} -> Expect.equal (Just 5) (Result.firstOk [ Ok 5, Err 0, Ok 10 ])
+            , test "Ok last" <| \{} -> Expect.equal (Just 10) (Result.firstOk [ Err 0, Err 1, Ok 10 ])
             , test "Err" <| \{} -> expectNothing (Result.firstOk [ Err 1, Err 2, Err 3 ])
             ]
         , describe "allOk"
@@ -64,6 +65,17 @@ tests =
                     in
                     Expect.equal (Ok [ 0, 1 ]) (Result.allOk oks)
             , test "Err" <| \{} -> Expect.equal (Err [ 0 ]) (Result.allOk [ Ok 5, Err 0, Ok 10 ])
+            ]
+        , describe "sequence"
+            [ test "Ok" <|
+                \{} ->
+                    let
+                        oks : Array (Result String Int)
+                        oks =
+                            [ Ok 0, Ok 1 ]
+                    in
+                    Expect.equal (Ok [ 0, 1 ]) (Result.sequence oks)
+            , test "Err" <| \{} -> Expect.equal (Err "first") (Result.sequence [ Ok 0, Err "first", Err "second", Ok 1 ])
             ]
         , describe "map"
             [ test "Ok" <| \{} -> equalWithStringError (Ok 3) (Result.map ((+) 1) (Ok 2))

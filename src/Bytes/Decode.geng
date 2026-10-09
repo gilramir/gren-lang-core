@@ -339,7 +339,9 @@ float64At isLE b o =
 -- BYTES
 
 
-{-| Copy a given number of bytes into a new `Bytes` sequence.
+{-| Read a given number of bytes as a `Bytes` sequence. It is a view of the
+input rather than a copy, so it costs the same at any length, and it holds
+only the bytes it read: a decoder run on it cannot see past them.
 -}
 bytes : Int -> Decoder Bytes
 bytes n =
