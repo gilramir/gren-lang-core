@@ -565,7 +565,8 @@ int =
     run (keyword "let") "letters" == Err ... (ExpectingKeyword "let") ...
 
 **Note:** Notice the third case there! `keyword` actually looks ahead one
-character to make sure it is not a letter, number, or underscore. The goal is
+character to make sure it is not a letter, number, or underscore, in any
+script: `é` and `١` carry a word on as `e` and `1` do. The goal is
 to help with parsers like this:
 
     succeed identity

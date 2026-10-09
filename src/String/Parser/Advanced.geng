@@ -64,6 +64,7 @@ import Inspect
 import Result exposing (Result(..))
 import Maybe exposing (Maybe(..))
 import Set
+import Unicode.Lookup
 
 
 -- PARSERS
@@ -470,7 +471,7 @@ keyword kwd expecting =
       { newOffset, newRow, newCol } =
         isSubString kwdChars s.offset s.row s.col s.chars
     in
-    if newOffset == -1 || 0 <= isSubChar (\c -> Char.isAlphaNum c || c == '_') newOffset s.chars then
+    if newOffset == -1 || 0 <= isSubChar isKeywordInner newOffset s.chars then
       Bad { pred = False, bag = (fromState s expecting) }
     else
       Good 
@@ -486,6 +487,14 @@ keyword kwd expecting =
           }
         }
 
+
+{-| A character that would carry the word on past a keyword: a letter or a
+number in any script, or `_`. Upstream's `4250172` asks `\p{L}` or `_`, which
+lets `let1` end at `let`; this keeps the digits (D641).
+-}
+isKeywordInner : Char -> Bool
+isKeywordInner c =
+  c == '_' || Unicode.Lookup.isLetterOrNumber c
 
 
 -- TOKEN

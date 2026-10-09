@@ -1,5 +1,6 @@
 module Unicode.Lookup exposing
     ( graphemeClass
+    , isLetterOrNumber
     , isNonPrintable
     , isWhitespace
     , lowerDelta
@@ -8,7 +9,7 @@ module Unicode.Lookup exposing
     , upperExpansion
     )
 
-{-| Reading `Unicode.Tables`: five questions, one binary search.
+{-| Reading `Unicode.Tables`: six questions, one binary search.
 
 `docs/unicode.md` U2 says that every Unicode-dependent operation in `core` is
 answered from a pinned version rather than from the host, and that the
@@ -28,7 +29,7 @@ the hundred-odd codepoints whose mapping is longer than one codepoint, an
 nothing else, because a Unicode-aware predicate family belongs to the
 `geng/unicode` package U4 describes and not to `core`.
 
-@docs isWhitespace, isNonPrintable
+@docs isWhitespace, isNonPrintable, isLetterOrNumber
 @docs upperDelta, upperExpansion, lowerDelta, lowerExpansion
 @docs graphemeClass
 
@@ -79,6 +80,25 @@ isNonPrintable c =
 
     else
         inRanges code Tables.nonPrintableRanges
+
+
+{-| Is this codepoint a letter or a number, general category `L*` or `N*`?
+
+`String.Parser.keyword` asks it of the character after a keyword: `let` does
+not end in front of `é` or `١` any more than in front of `e` or `1` (D641).
+
+-}
+isLetterOrNumber : Char -> Bool
+isLetterOrNumber c =
+    let
+        code =
+            Char.toCode c
+    in
+    if code < 128 then
+        Char.isAlphaNum c
+
+    else
+        inRanges code Tables.wordRanges
 
 
 {-| How far this codepoint's uppercase is from it, or `0` for a codepoint that

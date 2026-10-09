@@ -116,6 +116,49 @@ tests =
             , test "run keyword true with trailing characters succeeds" <| \{} ->
                 Expect.equal (Ok {}) (run (keyword "true") "true!")
             
+            , test "run keyword true with trailing letters fails" <| \{} ->
+                when run (keyword "true") "trues" is
+                    Ok _ -> Expect.fail "Unexpected success"
+                    Err _ -> Expect.pass
+            
+            , test "run keyword true with trailing letters fails 2" <| \{} ->
+                when run (keyword "true") "true\u{00E9}s" is
+                    Ok _ -> Expect.fail "Unexpected success"
+                    Err _ -> Expect.pass
+            
+            , test "run keyword true with trailing letters fails 3" <| \{} ->
+                when run (keyword "true") "true\u{FF5A}s" is
+                    Ok _ -> Expect.fail "Unexpected success"
+                    Err _ -> Expect.pass
+            
+            , test "run keyword true with trailing letters fails 4" <| \{} ->
+                when run (keyword "true") "true\u{1D41A}s" is
+                    Ok _ -> Expect.fail "Unexpected success"
+                    Err _ -> Expect.pass
+            
+            , test "run keyword true before an ASCII digit fails" <| \{} ->
+                when run (keyword "true") "true1" is
+                    Ok _ -> Expect.fail "Unexpected success"
+                    Err _ -> Expect.pass
+            
+            , test "run keyword true before an Arabic-Indic digit fails" <| \{} ->
+                when run (keyword "true") "true\u{0661}" is
+                    Ok _ -> Expect.fail "Unexpected success"
+                    Err _ -> Expect.pass
+            
+            , test "run keyword true before a Roman numeral fails" <| \{} ->
+                when run (keyword "true") "true\u{2160}" is
+                    Ok _ -> Expect.fail "Unexpected success"
+                    Err _ -> Expect.pass
+            
+            , test "run keyword true before an underscore fails" <| \{} ->
+                when run (keyword "true") "true_" is
+                    Ok _ -> Expect.fail "Unexpected success"
+                    Err _ -> Expect.pass
+            
+            , test "run keyword true before a non-breaking space succeeds" <| \{} ->
+                Expect.equal (Ok {}) (run (keyword "true") "true\u{00A0}")
+            
             , test "run int with leading zeros" <| \{} ->
                 Expect.equal (Ok 0) (run int "0123")
             
