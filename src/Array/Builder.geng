@@ -30,11 +30,22 @@ type alias Builder a =
 {-| Creates a [Builder](#Builder) without any elements.
 
 The `Int` argument lets you specify the amount of elements you expect
-to end up in the final `Array`.
+to end up in the final `Array`. It is a hint: a `Builder` grows past it as
+it needs to, and a hint above 65,536 is taken as 65,536.
 -}
 empty : Int -> Builder a
 empty capacity =
-    T.new (clamp 0 2147483647 capacity)
+    -- A hint is a guess, and may come from input: honoured whole, 2^31 - 1
+    -- asked a native program for 16 GB at the first push, and made node's
+    -- array a dictionary 25 times slower to fill. Above the cap a Builder
+    -- doubles as one without a hint does. Core's own loops know their count
+    -- and call T.new directly (D638, m3-sweep.md §SW23).
+    T.new (clamp 0 maxHint capacity)
+
+
+maxHint : Int
+maxHint =
+    65536
 
 
 {-| Creates a [Builder](#Builder) based on an existing `Array`.

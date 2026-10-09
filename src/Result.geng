@@ -37,6 +37,7 @@ import Basics exposing (..)
 import Maybe exposing (Maybe(..))
 import Array exposing (Array)
 import Array.Builder
+import Array.Transient
 
 
 {-| A `Result` is either `Ok` meaning the computation succeeded, or it is an
@@ -131,7 +132,7 @@ you'll receive the first one.
 -}
 sequence : Array (Result err ok) -> Result err (Array ok)
 sequence results =
-    sequenceHelp results 0 (Array.Builder.empty (Array.length results))
+    sequenceHelp results 0 (Array.Transient.new (Array.length results))
 
 
 sequenceHelp : Array (Result err ok) -> Int -> Array.Builder.Builder ok -> Result err (Array ok)

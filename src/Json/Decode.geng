@@ -51,6 +51,7 @@ JSON decoders][guide] to get a feel for how this library works!
 import Basics exposing (..)
 import Array exposing (Array)
 import Array.Builder as Builder exposing (Builder)
+import Array.Transient
 import Dict exposing (Dict)
 import Char
 import Inspect
@@ -206,7 +207,7 @@ array (Decoder run) =
         (\v ->
             when v is
                 Json.Value.Arr items ->
-                    arrayHelp run items 0 (Array.length items) (Builder.empty (Array.length items))
+                    arrayHelp run items 0 (Array.length items) (Array.Transient.new (Array.length items))
 
                 _ ->
                     expecting "an ARRAY" v
@@ -306,7 +307,7 @@ keyValuePairs (Decoder run) =
         (\v ->
             when v is
                 Json.Value.Obj pairs ->
-                    pairsHelp run pairs 0 (Array.length pairs) (Builder.empty (Array.length pairs))
+                    pairsHelp run pairs 0 (Array.length pairs) (Array.Transient.new (Array.length pairs))
 
                 _ ->
                     expecting "an OBJECT" v

@@ -27,6 +27,7 @@ backend compiles to a loop, so a value nests as deep as memory allows.
 
 import Array exposing (Array)
 import Array.Builder as Builder exposing (Builder)
+import Array.Transient
 import Basics exposing (..)
 import Char exposing (Char)
 import Dict exposing (Dict)
@@ -204,7 +205,7 @@ dedupe pairs =
                     Nothing ->
                         acc
             )
-            { left = last, out = Builder.empty (Dict.count last) }
+            { left = last, out = Array.Transient.new (Dict.count last) }
             pairs
         ).out
             |> Builder.toArray
@@ -1519,7 +1520,7 @@ foldLoop builders work built =
                 taken =
                     take count built Bottom
             in
-            foldLoop builders rest (Built { top = builders.array (toArray taken.values (Builder.empty count)), below = taken.left })
+            foldLoop builders rest (Built { top = builders.array (toArray taken.values (Array.Transient.new count)), below = taken.left })
 
         BuildObject { keys, rest } ->
             let
@@ -1530,7 +1531,7 @@ foldLoop builders work built =
                     take count built Bottom
 
                 values =
-                    toArray taken.values (Builder.empty count)
+                    toArray taken.values (Array.Transient.new count)
             in
             foldLoop builders
                 rest
