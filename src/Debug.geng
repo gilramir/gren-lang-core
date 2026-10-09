@@ -13,12 +13,11 @@ so there is nothing to write to reach it.
 -}
 
 import Basics exposing ((++))
-import Gren.Kernel.Debug
 import Inspect exposing (Inspect)
 import String exposing (String)
 
 
-{-| Log a tagged value on the developer console, and then return the value.
+{-| Log a tagged value on standard error, and then return the value.
 
     1 + log "number" 1 -- equals 2, logs "number: 1"
 
@@ -45,7 +44,13 @@ function, a `Task`, or an abstract type whose author wrote no instance.
 -}
 log : Inspect a => String -> a -> a
 log tag value =
-    Gren.Kernel.Debug.log (tag ++ ": " ++ inspect value) value
+    debugLog (tag ++ ": " ++ inspect value) value
+
+
+-- `core.md` C13's barrier, which writes the line on standard error on every
+-- backend (D640).
+@prim("debug_log")
+debugLog : String -> a -> a
 
 
 {-| This is a placeholder for code that you will write later.
