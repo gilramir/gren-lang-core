@@ -116,6 +116,7 @@ tests =
             [ test "firstIndexOf code point" <| \{} -> Expect.equal (Just 4) (String.firstIndexOf "and" "try\u{1F60E}and try and try again")
             , test "lastIndexOf code point" <| \{} -> Expect.equal (Just 12) (String.lastIndexOf "and" "try\u{1F60E}and try and try again")
             , test "indices code points" <| \{} -> Expect.equal [ 0, 8 ] (String.indices "try" "try\u{1F60E}and try again")
+            , test "indices does not overlap" <| \{} -> Expect.equal [ 0, 2 ] (String.indices "aa" "aaaa")
             , test "firstIndexOfFrom" <| \{} -> Expect.equal (Just 12) (String.firstIndexOfFrom 8 "and" "try and try and try again")
             , test "firstIndexOfFrom code point" <| \{} -> Expect.equal (Just 12) (String.firstIndexOfFrom 5 "and" "try\u{1F60E}and try and try again")
             , test "firstIndexOfFrom below 0" <| \{} -> Expect.equal (Just 0) (String.firstIndexOfFrom -2 "a" "aha")

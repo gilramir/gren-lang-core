@@ -10,6 +10,7 @@ module Bytes exposing
   , fromString
   , toString
   , toStringLossy
+  , toHexString
   --
   , flatten
   --
@@ -26,7 +27,7 @@ module Bytes exposing
 @docs Endianness, getHostEndianness
 
 ## Strings
-@docs fromString, toString, toStringLossy
+@docs fromString, toString, toStringLossy, toHexString
 
 ## Combine
 @docs flatten
@@ -40,6 +41,7 @@ module Bytes exposing
 import Array exposing (Array)
 import Array.Builder
 import Basics exposing (..)
+import Bitwise
 import Inspect exposing (Inspect)
 import Maybe exposing (Maybe(..))
 import String exposing (String)
@@ -322,6 +324,76 @@ toStringLossy bytes =
 
   else
     primFromUtf8 (flatten (lossyFrom bytes (primLength bytes) 0 0 (Array.Builder.empty 8)))
+
+
+{-| Convert any `Bytes` to a hex-encoded `String`, two lower-case digits a
+byte. Setting `padding` to `True` puts a space between every byte, which is
+easier for humans to read.
+
+    toHexString { padding = False } (fromString "Hi") == "4869"
+
+    toHexString { padding = True } (fromString "Hi") == "48 69"
+-}
+toHexString : { padding : Bool } -> Bytes -> String
+toHexString { padding } bytes =
+  let
+    count =
+      primLength bytes
+
+    width =
+      if padding then
+        3
+
+      else
+        2
+
+    size =
+      if count == 0 then
+        0
+
+      else
+        count * width - (width - 2)
+  in
+  primFromUtf8 (primToBytes (hexFrom bytes count width 0 (Bytes.Transient.new size)))
+
+
+{-| Writes byte `index` and every one after it at `index * width`, a space
+after each but the last when `width` is 3. Hex digits and the space are ASCII,
+so the bytes written are UTF-8.
+-}
+hexFrom : Bytes -> Int -> Int -> Int -> Transient -> Transient
+hexFrom bytes count width index transient =
+  if index == count then
+    transient
+
+  else
+    let
+      byte =
+        byteAt bytes index
+
+      offset =
+        index * width
+
+      digits =
+        Bytes.Transient.setU8 (Bytes.Transient.setU8 transient offset (hexDigit (Bitwise.shiftRightZfBy 4 byte))) (offset + 1) (hexDigit (Bitwise.and 15 byte))
+
+      spaced =
+        if width == 3 && index + 1 < count then
+          Bytes.Transient.setU8 digits (offset + 2) 32
+
+        else
+          digits
+    in
+    hexFrom bytes count width (index + 1) spaced
+
+
+hexDigit : Int -> Int
+hexDigit digit =
+  if digit < 10 then
+    48 + digit
+
+  else
+    87 + digit
 
 
 {-| The pieces of the repaired bytes: each run that is UTF-8 as a slice, and
