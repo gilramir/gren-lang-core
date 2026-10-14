@@ -589,10 +589,15 @@ pushFirst value array =
     pushLast 1 []          == [ 1 ]
     pushLast 5 [ 1, 4, 9 ] == [ 1, 4, 9, 5 ]
 
-Each push copies the whole array, so building an array of `n` values by
-pushing one at a time costs time and memory in proportion to `n * n`. For a
-long array, build it with [`Array.Builder`](Array-Builder), whose
-`pushLast` does not copy.
+What a push costs depends on the target. Natively and on JavaScript an
+array can have room past its end, and a push writes there, without copying,
+when no other push has been made onto the same array: a loop that pushes onto
+what the step before answered is linear. Pushing twice onto one array, or
+pushing back onto what `popLast` answered, copies. On the BEAM every push
+copies the whole array, unless the compiler has rewritten the loop to grow a
+builder, which it does for a loop that only appends to its array. To be linear
+on every target, build a long array with [`Array.Builder`](Array-Builder),
+whose `pushLast` does not copy.
 
 -}
 pushLast : a -> Array a -> Array a
