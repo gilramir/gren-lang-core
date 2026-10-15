@@ -77,6 +77,14 @@ tests =
                     Expect.equal (Ok [ 0, 1 ]) (Result.sequence oks)
             , test "Err" <| \{} -> Expect.equal (Err "first") (Result.sequence [ Ok 0, Err "first", Err "second", Ok 1 ])
             ]
+        , describe "sequenceMap"
+            [ test "Ok" <| \{} -> equalWithStringError (Ok [ 2, 4, 6 ]) (Result.sequenceMap (\n -> Ok (n * 2)) [ 1, 2, 3 ])
+            , test "empty" <| \{} -> equalWithStringError (Ok []) (Result.sequenceMap (\n -> if n > 0 then Ok n else Err (String.fromInt n)) [])
+            , test "the first Err" <| \{} -> Expect.equal (Err 2) (Result.sequenceMap (\n -> if n > 1 then Err n else Ok n) [ 1, 2, 3 ])
+            , test "the first of several" <| \{} ->
+                Expect.equal (Err "two")
+                    (Result.sequenceMap (\s -> if s == "one" then Ok s else Err s) [ "one", "two", "three" ])
+            ]
         , describe "map"
             [ test "Ok" <| \{} -> equalWithStringError (Ok 3) (Result.map ((+) 1) (Ok 2))
             , test "Err" <| \{} -> Expect.equal (Err "error") (Result.map ((+) 1) (Err "error"))

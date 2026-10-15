@@ -3,7 +3,7 @@ module String.Parser exposing
   , int, keyword, variable, end
   , succeed, keep, skip, lazy, andThen, problem
   , oneOf, map, backtrackable, commit, token
-  , sequence, Trailing(..), loop, Step(..)
+  , sequence, Trailing(..), loop, Step(..), many
   , spaces, lineComment, multiComment, Nestable(..)
   , getChompedString, chompIf, chompChar, chompWhile, chompUntil, chompUntilEndOr, mapChompedString
   , DeadEnd, Problem(..), deadEndsToString
@@ -26,7 +26,7 @@ module String.Parser exposing
 @docs oneOf, map, backtrackable, commit
 
 ## Loops
-@docs sequence, Trailing, loop, Step
+@docs sequence, Trailing, loop, Step, many
 
 ## Whitespace
 @docs spaces, lineComment, multiComment, Nestable
@@ -489,6 +489,17 @@ succeed without consuming any characters. So in some cases you may want to use
 [getOffset](#getOffset) to ensure that each step actually consumed characters.
 Otherwise you could end up in an infinite loop!
 
+**Growing an array in a loop.** Above, the push is in the function `keep`
+applies, so it runs once a statement has been parsed, and only for the
+alternative that matched. A push written straight into `succeed`, as in
+`succeed (Loop (Array.pushLast stmt stmts))`, runs when `oneOf` builds its
+alternatives, before any of them is tried: two alternatives written that way
+push onto `stmts` twice each step, and the array is copied each step, so the
+loop is quadratic. Keep each push behind the parser that decides it, as above,
+or keep the items in an `Array.Builder`, which is linear however it is pushed
+onto. A plain run of items needs no loop: [many](#many) collects them, and
+[sequence](#sequence) collects them between a start, separators and an end.
+
 **Note:** Anything you can write with `loop`, you can also write as a parser
 that chomps some characters `andThen` calls itself with new arguments. The
 problem with calling `andThen` recursively is that it grows the stack, so you
@@ -498,6 +509,33 @@ elimination, allowing you to parse however many repeats you want.
 loop : state -> (state -> Parser (Step state a)) -> Parser a
 loop state callback =
   A.loop state (\s -> map toAdvancedStep (callback s))
+
+
+{-| Zero or more of a parser, in order: each time `item` succeeds and chomps
+something, what it answers is kept and it is tried again.
+
+    words : Parser (Array String)
+    words =
+      many
+        (getChompedString (chompIf Char.isAlpha |> skip (chompWhile Char.isAlpha))
+          |> skip spaces
+        )
+
+    run words "one two  three" == Ok [ "one", "two", "three" ]
+
+    run (many (token "ab")) "ababc" == Ok [ {}, {} ]
+
+It stops, answering what it has kept, at the first `item` that fails without
+chomping, as [oneOf](#oneOf) would move on, or that succeeds without chomping,
+whose answer is not kept, so that `many (succeed 1)` answers `[]` instead of
+looping forever. An `item` that fails after chomping fails the whole `many`.
+
+The items are collected in an `Array.Builder`, so a `many` of n items takes
+time linear in n.
+-}
+many : Parser a -> Parser (Array a)
+many item =
+  A.many item
 
 
 {-| Decide what steps to take next in your [loop](#loop).

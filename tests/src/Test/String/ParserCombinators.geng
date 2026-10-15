@@ -3,7 +3,8 @@ module Test.String.ParserCombinators exposing (tests)
 {-| The combinators no test ran, found by `harness/coverage.py`'s survey
 (geng-lang `m1b-test.md` §TS9.2): `andThen`, `lazy`, `backtrackable` and
 `commit`, `mapChompedString`, `getSource`, `sequence` under each trailing rule,
-and `Advanced`'s `setPayload`, `getSource` and `sequence`.
+and `Advanced`'s `setPayload`, `getSource` and `sequence`; and `many`, which
+the fork adds (geng-lang `m3-pushlast.md` §PL22, D720).
 -}
 
 import Array exposing (Array)
@@ -99,6 +100,42 @@ tests =
                     "[1, 2]?"
                     |> Result.toMaybe
                     |> Expect.equal (Just [ 1, 2 ])
+            ]
+        , describe "many"
+            [ test "collects every item, in order" <| \{} ->
+                P.run (P.many (P.int |> P.skip P.spaces)) "1 2  3"
+                    |> Expect.equal (Ok [ 1, 2, 3 ])
+            , test "none" <| \{} ->
+                P.run (P.many P.int) "x"
+                    |> Expect.equal (Ok [])
+            , test "stops where an item fails without chomping, and leaves the rest" <| \{} ->
+                P.run (P.many (P.token "ab") |> P.andThen (\items -> P.getOffset |> P.map (\o -> { n = Array.length items, at = o }))) "ababc"
+                    |> Expect.equal (Ok { n = 2, at = 4 })
+            , test "fails where an item fails after chomping" <| \{} ->
+                P.run (P.many (P.succeed identity |> P.skip (P.token "a") |> P.keep P.int)) "a1a2ax"
+                    |> Result.toMaybe
+                    |> Expect.equal Nothing
+            , test "stops at an item that chomps nothing, without keeping it" <| \{} ->
+                P.run (P.many (P.succeed 1)) "abc"
+                    |> Expect.equal (Ok [])
+            , test "after a run of items, an item that chomps nothing is not kept" <| \{} ->
+                P.run (P.many (P.oneOf [ P.token "a" |> P.map (\_ -> 1), P.succeed 0 ])) "aab"
+                    |> Expect.equal (Ok [ 1, 1 ])
+            , test "a long run" <| \{} ->
+                P.run (P.many (P.chompChar 'x' |> P.map (\_ -> 1))) (String.repeat 100000 "x")
+                    |> Result.map Array.length
+                    |> Expect.equal (Ok 100000)
+            , test "Advanced.many inside a oneOf that backtracks over it" <| \{} ->
+                A.run
+                    (A.oneOf
+                        [ A.backtrackable (A.many (A.chompChar 'a' "a") |> A.skip (A.token "!" "!") |> A.map (\_ -> 0))
+                        , A.many (A.chompChar 'a' "a") |> A.map Array.length
+                        ]
+                    )
+                    {}
+                    "aaa?"
+                    |> Result.toMaybe
+                    |> Expect.equal (Just 3)
             ]
         , describe "chompUntilEndOr's position (upstream core 3004fc2)"
             [ test "with a match" <| \{} ->

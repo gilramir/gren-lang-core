@@ -1,6 +1,6 @@
 module Result exposing
     ( Result(..)
-    , hasValue, checkValue, firstOk, allOk, sequence
+    , hasValue, checkValue, firstOk, allOk, sequence, sequenceMap
     , map, map2, map3, andMap
     , andThen, onError
     , withDefault, withDefaultLazy, toMaybe, fromMaybe, mapError
@@ -14,7 +14,7 @@ way to manage errors in Gren.
 
 ## Query
 
-@docs hasValue, checkValue, firstOk, allOk, sequence
+@docs hasValue, checkValue, firstOk, allOk, sequence, sequenceMap
 
 
 ## Mapping
@@ -146,6 +146,41 @@ sequenceHelp results idx oks =
 
         Just (Err err) ->
             Err err
+
+
+{-| Apply a function that may fail to each element of an `Array`, in order, and
+collect what it answers. You'll only receive an `Ok` if every call answers
+`Ok`; otherwise you receive the first `Err`, and the elements after it are not
+looked at.
+
+    Result.sequenceMap String.toInt [ "1", "2", "3" ] == Ok [ 1, 2, 3 ]
+
+    Result.sequenceMap String.toInt [ "1", "two", "3" ] == Err ...
+
+It is `sequence (Array.map fn array)` without the array in between, and it is
+the fold to reach for when each step of a fold over a `Result` would push
+onto the array it is handed: the answers are collected in an `Array.Builder`,
+so it takes time linear in the length of the array. To add several elements
+for each, answer an `Array` and `Array.flatten` the result.
+-}
+sequenceMap : (a -> Result err ok) -> Array a -> Result err (Array ok)
+sequenceMap fn array =
+    sequenceMapHelp fn array 0 (Array.Transient.new (Array.length array))
+
+
+sequenceMapHelp : (a -> Result err ok) -> Array a -> Int -> Array.Builder.Builder ok -> Result err (Array ok)
+sequenceMapHelp fn array idx oks =
+    when Array.get idx array is
+        Nothing ->
+            Ok (Array.Builder.toArray oks)
+
+        Just x ->
+            when fn x is
+                Ok val ->
+                    sequenceMapHelp fn array (idx + 1) (Array.Builder.pushLast val oks)
+
+                Err err ->
+                    Err err
 
 
 errToMaybe : Result err ok -> Maybe err

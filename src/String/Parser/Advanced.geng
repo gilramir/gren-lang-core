@@ -4,7 +4,7 @@ module String.Parser.Advanced exposing
   , int, token, keyword, variable, end
   , succeed, keep, skip, lazy, andThen, problem
   , oneOf, map, mapError, backtrackable, commit 
-  , sequence, Token, Trailing(..), loop, Step(..)
+  , sequence, Token, Trailing(..), loop, Step(..), many
   , spaces, lineComment, multiComment, Nestable(..)
   , getChompedString, chompIf, chompChar, chompWhile, chompUntil, chompUntilEndOr, mapChompedString
   , getPosition, getRow, getCol, getOffset, getSource
@@ -41,7 +41,7 @@ you need to provide a `Problem` for certain scenarios.**
 @docs oneOf, map, mapError, backtrackable, commit 
 
 ## Loops
-@docs sequence, Token, Trailing, loop, Step
+@docs sequence, Token, Trailing, loop, Step, many
 
 ## Whitespace
 @docs spaces, lineComment, multiComment, Nestable
@@ -418,6 +418,32 @@ loopHelp p state callback s0 =
 
     Bad { pred = p1, bag = x } ->
       Bad { pred = (p || p1), bag = x }
+
+
+{-| Just like [String.Parser.many](String.Parser#many)
+-}
+many : Parser c x a -> Parser c x (Array a)
+many (Parser parse) =
+  Parser <| \s ->
+    manyHelp False parse (Builder.empty 0) s
+
+
+manyHelp : Bool -> (State c -> PStep c x a) -> Builder a -> State c -> PStep c x (Array a)
+manyHelp p parse items s0 =
+  when parse s0 is
+    Good { pred = p1, value = item, state = s1 } ->
+      if s1.offset == s0.offset then
+        Good { pred = p, value = Builder.toArray items, state = s0 }
+
+      else
+        manyHelp (p || p1) parse (Builder.pushLast item items) s1
+
+    Bad { pred = p1, bag = x } ->
+      if p1 then
+        Bad { pred = True, bag = x }
+
+      else
+        Good { pred = p, value = Builder.toArray items, state = s0 }
 
 
 
