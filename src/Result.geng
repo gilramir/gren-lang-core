@@ -56,6 +56,8 @@ type Result error value
     
     Result.hasValue 123 (Err "failed") == False
 
+It costs one `==` of the contained value, at its type.
+
 -}
 hasValue : Eq a => a -> Result x a -> Bool
 hasValue value result =
@@ -75,6 +77,8 @@ hasValue value result =
     
     Result.checkValue isOdd (Err "failed") == False
 
+It costs one call of the test, or O(1) for an `Err`.
+
 -}
 checkValue : (a -> Bool) -> Result x a -> Bool
 checkValue test result =
@@ -92,6 +96,8 @@ checkValue test result =
 
     Result.firstOk [ Err 0, Err 1 ] == Nothing
 
+It costs one look at each result up to the first `Ok`, O(n) when there is none.
+
 -}
 firstOk : Array (Result x a) -> Maybe a
 firstOk array =
@@ -106,6 +112,9 @@ receive an `Ok` if there are no `Err` values in the `Array`.
     Result.allOk [ Ok 5, Err 0, Ok 10 ] == Err [ 0 ]
 
     Result.allOk [ Ok 0, Ok 1 ] == Ok [ 0, 1 ]
+
+It costs O(n): one pass to collect the errors and, when there are none, a
+second to collect the values.
 
 -}
 allOk : Array (Result err ok) -> Result (Array err) (Array ok)
@@ -128,6 +137,9 @@ you'll receive the first one.
     Result.sequence [ Ok 5, Err 0, Ok 10 ] == Err 0
 
     Result.sequence [ Ok 0, Ok 1 ] == Ok [ 0, 1 ]
+
+It costs O(n): one pass collecting the values into an `Array.Builder`, which
+stops at the first `Err`.
 
 -}
 sequence : Array (Result err ok) -> Result err (Array ok)
@@ -162,6 +174,10 @@ the fold to reach for when each step of a fold over a `Result` would push
 onto the array it is handed: the answers are collected in an `Array.Builder`,
 so it takes time linear in the length of the array. To add several elements
 for each, answer an `Array` and `Array.flatten` the result.
+
+It costs one call of the function for each element up to the first `Err`,
+collected into an `Array.Builder`, so O(n) in all.
+
 -}
 sequenceMap : (a -> Result err ok) -> Array a -> Result err (Array ok)
 sequenceMap fn array =
@@ -200,6 +216,8 @@ return a given default value. The following examples try to parse integers.
 
     Result.withDefault 0 (Err "no") == 0
 
+It costs O(1).
+
 -}
 withDefault : a -> Result x a -> a
 withDefault def result =
@@ -213,6 +231,8 @@ withDefault def result =
 
 {-| Same as [withDefault](#withDefault) but the default value is provided by a function.
 This lets you avoid computing the default value if it isn't necessary.
+
+It costs O(1), and one call of the default's function for an `Err`.
 
 -}
 withDefaultLazy : ({} -> a) -> Result x a -> a
@@ -231,6 +251,8 @@ If the result is an `Err`, the same error value will propagate through.
     map sqrt (Ok 4.0) == Ok 2.0
 
     map sqrt (Err "bad input") == Err "bad input"
+
+It costs one call of the function, or O(1) for an `Err`.
 
 -}
 map : (a -> value) -> Result x a -> Result x value
@@ -256,6 +278,8 @@ propagate through.
 
 This can be useful if you have two computations that may fail, and you want
 to put them together quickly.
+
+It costs one call of the function, or O(1) when either is an `Err`.
 
 -}
 map2 : (a -> b -> value) -> Result x a -> Result x b -> Result x value
@@ -284,6 +308,9 @@ propagate through.
 
 This can be useful if you have three computations that may fail, and you want
 to put them together quickly.
+
+It costs one call of the function, or O(1) when any is an `Err`.
+
 -}
 map3 : (a -> b -> c -> value) -> Result x a -> Result x b -> Result x c -> Result x value
 map3 func ra rb rc =
@@ -314,6 +341,9 @@ aren't enough.
         |> andMap (Ok 3)
         |> andMap (Ok 4)
         == Ok 10
+
+It costs one call of the function, or O(1) when either is an `Err`.
+
 -}
 andMap : Result x a -> Result x (a -> b) -> Result x b
 andMap =
@@ -360,6 +390,8 @@ message. It is often best to create a custom type that explicitly represents
 the exact ways your computation may fail. This way it is easy to handle in your
 code.
 
+It costs one call of the callback, or O(1) for an `Err`.
+
 -}
 andThen : (a -> Result x b) -> Result x a -> Result x b
 andThen callback result =
@@ -378,6 +410,8 @@ in a chain.
     toInt "a"
         |> onError (\_msg -> Ok 1) -- defaulting to first month of the year
         |> andThen toValidMonth
+
+It costs one call of the callback, or O(1) for an `Ok`.
 
 -}
 onError : (a -> Result b x) -> Result a x -> Result b x
@@ -404,6 +438,8 @@ information:
     mapError .message (parseInt "123") == Ok 123
     mapError .message (parseInt "abc") == Err "char 'a' is not a number"
 
+It costs one call of the function, or O(1) for an `Ok`.
+
 -}
 mapError : (x -> y) -> Result x a -> Result y a
 mapError f result =
@@ -424,6 +460,8 @@ you need to interact with some code that primarily uses maybes.
     maybeParseInt string =
         toMaybe (parseInt string)
 
+It costs O(1).
+
 -}
 toMaybe : Result x a -> Maybe a
 toMaybe result =
@@ -443,6 +481,8 @@ uses `Results`.
     resultParseInt : String -> Result String Int
     resultParseInt string =
         fromMaybe ("error parsing string: " ++ toString string) (parseInt string)
+
+It costs O(1).
 
 -}
 fromMaybe : x -> Maybe a -> Result x a

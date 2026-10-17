@@ -23,6 +23,19 @@ declared type, and a type with nothing to convert in it converts to itself.
 On JavaScript nothing is converted, as D200 has it for every `js` row: the
 value is the term.
 
+## Costs
+
+On JavaScript nothing is converted and `outbound` answers the value (D200);
+natively it boxes the value's slot, one allocation (D516); on the BEAM the
+backend generates, for each type it is used at, a conversion that walks the
+value into the shape every `beam` package is promised, a record a map and a
+`Dict` or a `Set` an Erlang map, so its cost grows with the value. Costs are
+per call.
+
+- `outbound`: It costs O(1) on JavaScript, one allocation natively, and on the
+  BEAM O(the size of the value), each `Dict` or `Set` of n entries becoming an
+  Erlang map of n insertions.
+
 @docs Outbound
 
 -}

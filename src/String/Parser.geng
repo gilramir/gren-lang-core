@@ -14,6 +14,16 @@ module String.Parser exposing
 {-| Functions for turning unstructured strings into structured data.
 
 ## Parsers
+## Costs
+
+A parser reads an `Array Char` that [`run`](#run) makes of the whole source
+once, in O(n). Reading a character is then an `Array.get`, O(1) on every target
+(on the BEAM the array is a tuple), and an offset is a code-point index. A
+combinator costs O(1) beyond the parsers it runs, a chomper costs the
+characters it reads, and a parser that answers a string copies the characters
+it cut. The sentences below give each function's cost per run of the parser it
+builds, not counting the parsers and functions it is given.
+
 @docs Parser, run
 
 ## Building Blocks
@@ -82,6 +92,11 @@ parser:
 Notice the last case! A `Parser` will chomp as much as possible and not worry
 about the rest. Use the [end](#end) parser to ensure you made it to the end
 of the string!
+
+It costs O(n) in the length of the source, which it turns into an `Array Char`
+before parsing, plus what the parser costs, plus the dead ends it collects on a
+failure.
+
 -}
 run : Parser a -> String -> Result (Array DeadEnd) a
 run parser source =
@@ -142,6 +157,11 @@ type Problem
 
 {-| Turn all the `DeadEnd` data into a string that is easier for people to
 read.
+
+It costs O(n + d²) in the length n of the source and the number d of dead ends:
+it splits the source into lines and groups the dead ends by position, scanning
+the rest of them for each group.
+
 -}
 deadEndsToString : String -> Array DeadEnd -> String
 deadEndsToString src deadEnds =
@@ -201,6 +221,9 @@ problemToExpected p =
 Seems weird on its own, but it is very useful in combination with other
 functions. The docs for [keep](keep) and [andThen](#andThen) have some neat
 examples.
+
+It costs O(1).
+
 -}
 succeed : a -> Parser a
 succeed =
@@ -231,6 +254,9 @@ functions just decide whether we give the values to the `Point` function.
 
 So in this case, we skip the `{}` from `token "("`, we skip the `{}` from
 `spaces`, we keep the `Float` from `float`, etc.
+
+It costs O(1) beyond the two parsers it runs.
+
 -}
 keep : Parser keep -> Parser (keep -> b) -> Parser b
 keep =
@@ -259,6 +285,9 @@ some JavaScript variables:
 `chompWhile isInnerChar` can chomp zero or more characters and produce a `{}`
 value. The `skip` function is saying to still chomp all the characters, but
 skip the two `{}` values that get produced. No one cares about them.
+
+It costs O(1) beyond the two parsers it runs.
+
 -}
 skip : Parser ignore -> Parser kept -> Parser kept
 skip =
@@ -304,6 +333,10 @@ That means we will want to define our parser in terms of itself:
 only define a value in terms of itself if it is behind a function call. So
 `lazy` helps us define these self-referential parsers. (`andThen` can be used
 for this as well!)
+
+It costs O(1) beyond the parser, and calls the function to build that parser
+each time it runs.
+
 -}
 lazy : ({} -> Parser a) -> Parser a
 lazy =
@@ -332,6 +365,10 @@ First we chomp digits `andThen` we check if it is a valid U.S. zip code. We
 
 **Note:** If you are using `andThen` recursively and blowing the stack, check
 out the [loop](#loop) function to limit stack usage.
+
+It costs O(1) beyond the parser and the function, which builds the next parser
+each time it runs.
+
 -}
 andThen : (a -> Parser b) -> Parser a -> Parser b
 andThen =
@@ -341,6 +378,9 @@ andThen =
 {-| Indicate that a parser has reached a dead end. "Everything was going fine
 until I ran into this problem." Check out the [andThen](#andThen) docs to see
 an example usage.
+
+It costs O(1).
+
 -}
 problem : String -> Parser a
 problem msg =
@@ -371,6 +411,11 @@ sample of what that code might look like:
 
 This parser will keep trying parsers until `oneOf` them starts chomping
 characters. Once a path is chosen, it does not come back and try the others.
+
+It costs the alternatives it tries, in order, until one succeeds or one fails
+after chomping; on the BEAM each step to the next alternative copies the rest
+of an array shorter than 64.
+
 -}
 oneOf : Array (Parser a) -> Parser a
 oneOf =
@@ -391,6 +436,9 @@ an integer or `null`:
     -- run nullOrInt "13"   == Ok (Just 13)
     -- run nullOrInt "null" == Ok Nothing
     -- run nullOrInt "zero" == Err ...
+
+It costs O(1) beyond the parser and one call of the function.
+
 -}
 map : (a -> b) -> Parser a -> Parser b
 map =
@@ -399,6 +447,9 @@ map =
 
 {-| It is quite tricky to use `backtrackable` well! It can be very useful, but
 also can degrade performance and error message quality.
+
+It costs O(1) beyond the parser.
+
 -}
 backtrackable : Parser a -> Parser a
 backtrackable =
@@ -407,6 +458,9 @@ backtrackable =
 
 {-| `commit` is almost always paired with `backtrackable` in some way, and it
 is tricky to use well.
+
+It costs O(1).
+
 -}
 commit : a -> Parser a
 commit =
@@ -450,6 +504,10 @@ This definition is specially designed so that (1) if you really see `let` you
 commit to that path and (2) if you see `letters` instead you can backtrack and
 try other options. If I had just put a `backtrackable` around the whole thing
 you would not get (1) anymore.
+
+It costs O(m) in the length m of the token, which it compares character by
+character with the source.
+
 -}
 token : String -> Parser {}
 token str =
@@ -495,9 +553,9 @@ alternative that matched. A push written straight into `succeed`, as in
 `succeed (Loop (Array.pushLast stmt stmts))`, runs when `oneOf` builds its
 alternatives, before any of them is tried: two alternatives written that way
 push onto `stmts` twice each step, and the array is copied each step, so the
-loop is quadratic. Keep each push behind the parser that decides it, as above,
-or keep the items in an `Array.Builder`, which is linear however it is pushed
-onto. A plain run of items needs no loop: [many](#many) collects them, and
+loop is quadratic. Keep each push behind the parser that decides it, as above:
+an `Array.Builder` pushed onto twice in one step copies just as an array
+does. A plain run of items needs no loop: [many](#many) collects them, and
 [sequence](#sequence) collects them between a start, separators and an end.
 
 **Note:** Anything you can write with `loop`, you can also write as a parser
@@ -505,6 +563,10 @@ that chomps some characters `andThen` calls itself with new arguments. The
 problem with calling `andThen` recursively is that it grows the stack, so you
 cannot do it indefinitely. So `loop` is important because enables tail-call
 elimination, allowing you to parse however many repeats you want.
+
+It costs O(1) a step beyond the parser the function builds for that step, so a
+loop costs the sum of its steps.
+
 -}
 loop : state -> (state -> Parser (Step state a)) -> Parser a
 loop state callback =
@@ -532,6 +594,10 @@ looping forever. An `item` that fails after chomping fails the whole `many`.
 
 The items are collected in an `Array.Builder`, so a `many` of n items takes
 time linear in n.
+
+It costs O(1) per item beyond the item parser, and collects the items in an
+`Array.Builder`, so n items take time linear in n.
+
 -}
 many : Parser a -> Parser (Array a)
 many item =
@@ -587,6 +653,10 @@ parser like this:
             |> keep int
         , int
         ]
+
+It costs O(k) in the k digits it reads, which it chomps, copies into a string
+and converts.
+
 -}
 int : Parser Int
 int =
@@ -618,6 +688,11 @@ The trouble is that `spaces` may chomp zero characters (to handle expressions
 like `[1,2]` and `[ 1 , 2 ]`) and in this case, it would mean `letters` could
 be parsed as `let ters` and then wonder where the equals sign is! Check out the
 [token](#token) docs if you need to customize this!
+
+It costs O(m) in the length m of the keyword, which it compares character by
+character with the source, plus one Unicode table lookup for the character
+after it.
+
 -}
 keyword : String -> Parser {}
 keyword kwd =
@@ -642,6 +717,9 @@ keyword kwd =
 
 Parsers can succeed without parsing the whole string. Ending your parser
 with `end` guarantees that you have successfully parsed the whole string.
+
+It costs O(1).
+
 -}
 end : Parser {}
 end =
@@ -679,6 +757,10 @@ and [getSource](#getSource) to implement this function:
         |> keep getSource
 
 [php]: https://www.w3schools.com/php/php_variables.asp
+
+It costs O(k) beyond its parser, k being the number of characters that parser
+chomped, which it copies into a new string.
+
 -}
 getChompedString : Parser a -> Parser String
 getChompedString =
@@ -699,6 +781,9 @@ You could implement `mapChompedString` like this:
         |> keep getOffset
         |> keep getSource
 
+It costs O(k) beyond its parser and one call of the function, k being the
+number of characters that parser chomped, which it copies into a new string.
+
 -}
 mapChompedString : (String -> a -> b) -> Parser a -> Parser b
 mapChompedString =
@@ -713,6 +798,9 @@ mapChompedString =
       chompIf Char.isUpper
 
 So this can chomp a character like `T` and produces a `{}` value.
+
+It costs O(1) and one call of the test.
+
 -}
 chompIf : (Char -> Bool) -> Parser {}
 chompIf isGood =
@@ -726,6 +814,8 @@ chompIf isGood =
 This is the same as
 
     chompIf (\c -> c == 'c')
+
+It costs O(1).
 
 -}
 chompChar : Char -> Parser {}
@@ -752,6 +842,10 @@ situations, especially if you define your whitespace with it. In that case,
 you could accidentally interpret `letx` as the keyword `let` followed by
 "spaces" followed by the variable `x`. This is why the `keyword` and `number`
 parsers peek ahead, making sure they are not followed by anything unexpected.
+
+It costs O(k) in the k characters it chomps, one call of the test each and one
+more for the character that stops it.
+
 -}
 chompWhile : (Char -> Bool) -> Parser {}
 chompWhile =
@@ -768,6 +862,11 @@ comments like this:
 
 I recommend using [multiComment](#multiComment) for this particular scenario
 though. It can be trickier than it looks!
+
+It costs O(k·m) at worst, k being the number of characters it passes and m the
+length of the string it looks for, because it tries that string at each
+character and stops at the first difference.
+
 -}
 chompUntil : String -> Parser {}
 chompUntil str =
@@ -787,6 +886,11 @@ a newline. Tricky!
 
 I recommend just using [lineComment](#lineComment) for this particular
 scenario.
+
+It costs O(k·m) at worst, k being the number of characters it passes and m the
+length of the string it looks for, because it tries that string at each
+character and stops at the first difference.
+
 -}
 chompUntilEndOr : String -> Parser {}
 chompUntilEndOr =
@@ -843,6 +947,9 @@ So it would preserve any tabs from the source line. There are tons of other
 ways to do this though. The point is just that you handle the tabs after
 parsing but before anyone looks at the numbers in a context where tabs may
 equal 2, 4, or 8.
+
+It costs O(1).
+
 -}
 getPosition : Parser { row: Int, col: Int }
 getPosition =
@@ -853,6 +960,9 @@ getPosition =
 you just want to track the line number for some reason? This lets you do that.
 
 See [getPosition](#getPosition) for an explanation of rows and columns.
+
+It costs O(1).
+
 -}
 getRow : Parser Int
 getRow =
@@ -864,6 +974,9 @@ This can be useful when you need to track or check the current column position
 during parsing.
 
 See [getPosition](#getPosition) for an explanation of rows and columns.
+
+It costs O(1).
+
 -}
 getCol : Parser Int
 getCol =
@@ -871,13 +984,12 @@ getCol =
 
 
 {-| Editors think of code as a grid, but behind the scenes it is just a flat
-array of UTF-16 characters. `getOffset` tells you your index in that flat
-array. So if you chomp `"\n\n\n\n"` you are on row 5, column 1, and offset 4.
+array of characters. `getOffset` tells you your index in that flat array, in
+codepoints, on every target. So if you chomp `"\n\n\n\n"` you are on row 5,
+column 1, and offset 4, and after `"🙈🙉🙊"` the offset is 3.
 
-**Note:** JavaScript uses a somewhat odd version of UTF-16 strings, so a single
-character may take two slots. So in JavaScript, `'abc'.length === 3` but
-`'🙈🙉🙊'.length === 6`. Try it out! And since Gren runs in JavaScript, the offset
-moves by those rules.
+It costs O(1).
+
 -}
 getOffset : Parser Int
 getOffset =
@@ -894,6 +1006,11 @@ getOffset =
         |> skip parser
         |> keep getOffset
         |> keep getSource
+
+It costs O(1); passing what it answers to `String.slice` costs the length of
+the whole source at every call, where [`getChompedString`](#getChompedString)
+costs only what it cuts.
+
 -}
 getSource : Parser String
 getSource =
@@ -920,6 +1037,10 @@ we could try something like this:
 This is saying it _must_ start with a lower-case character. After that,
 characters can be letters, numbers, or underscores. It is also saying that if
 you run into any of these reserved names, it is definitely not a variable.
+
+It costs O(k) in the k characters of the name, one call of `start` or `inner`
+each, and copies the name into a new string.
+
 -}
 variable :
   { start : Char -> Bool
@@ -960,6 +1081,10 @@ however you need. Say you want to parse C-style code blocks:
 out the implementation and customize it for your case. It is better to
 get nice error messages with a lower-level implementation than to try
 to hack high-level parsers to do things they are not made for.
+
+It costs O(1) per item and separator beyond the parsers it runs, collecting the
+items in an `Array.Builder`, so a sequence of k items is linear in k.
+
 -}
 sequence
   : { start : String
@@ -1011,6 +1136,9 @@ The implementation is pretty simple:
 So if you need something different (like tabs) just define an alternative with
 the necessary tweaks! Check out [lineComment](#lineComment) and
 [multiComment](#multiComment) for more complex situations.
+
+It costs O(k) in the k characters it chomps.
+
 -}
 spaces : Parser {}
 spaces =
@@ -1040,6 +1168,10 @@ This parser is defined like this:
 
 So it will consume the remainder of the line. If the file ends before you see
 a newline, that is fine too.
+
+It costs O(k) in the k characters of the comment, the token and then the rest
+of the line.
+
 -}
 lineComment : String -> Parser {}
 lineComment str =
@@ -1070,6 +1202,12 @@ important! It can succeed without consuming any characters, so if it were the
 first option, it would always succeed and bypass the others! This possibility of
 success without consumption is also why wee need the `ifProgress` helper. It
 detects if there is no more whitespace to consume.
+
+It costs O(k·m) at worst, k being the comment's length and m the closing
+token's, because it tries the closing token at each character and stops at the
+first difference; a `Nestable` comment also goes one call deeper for each
+character it meets that starts the opening or the closing token.
+
 -}
 multiComment : String -> String -> Nestable -> Parser {}
 multiComment open close nestable =

@@ -13,6 +13,17 @@ in the `Array` module.
 A `Builder` *is* the `tr_` transient (`m1b-arr-prim.md` D240), and this module
 is the public face of it.
 
+## Costs
+
+On JavaScript and natively a builder is a mutable buffer with the count of its
+elements, written in place while it is used linearly, each call given the
+builder the call before answered; a write to a builder already passed on, or
+handed out by `toArray`, copies it first, O(n), so a non-linear use stays
+correct and costs a copy. On the BEAM a builder is the same persistent 32-way
+tree an `Array` becomes, where a push, `set` or `get` costs O(log₃₂ n), at most
+about five steps, however the builder is used, and `toArray` builds a tuple.
+Each cost is per call, n being the builder's length.
+
 @docs Builder, empty, fromArray, pushLast, append, set, get, length, toArray
 
 -}
@@ -34,6 +45,9 @@ type alias Builder a =
 The `Int` argument lets you specify the amount of elements you expect
 to end up in the final `Array`. It is a hint: a `Builder` grows past it as
 it needs to, and a hint above 65,536 is taken as 65,536.
+
+It costs O(1): the hint is taken as at most 65,536.
+
 -}
 empty : Int -> Builder a
 empty capacity =
@@ -51,12 +65,22 @@ maxHint =
 
 
 {-| Creates a [Builder](#Builder) based on an existing `Array`.
+
+It costs O(n) once: on JavaScript and natively the builder's first write copies
+the array, and on the BEAM a tuple is made a tree at once, where an array that
+is a tree already costs O(1).
+
 -}
 @prim("tr_from_array")
 fromArray : Array a -> Builder a
 
 
 {-| Add a single element to a [Builder](#Builder).
+
+It costs O(1) amortized on JavaScript and natively when the builder is the one
+the call before answered, and O(n) otherwise, where it copies; on the BEAM it
+costs O(log n), onto any version.
+
 -}
 pushLast : a -> Builder a -> Builder a
 pushLast value builder =
@@ -64,6 +88,9 @@ pushLast value builder =
 
 
 {-| Adds the elements of an `Array` to the end of a [Builder](#Builder).
+
+It costs O(m) for an array of m elements, which it pushes one by one.
+
 -}
 append : Array a -> Builder a -> Builder a
 append array builder =
@@ -87,17 +114,18 @@ unsafeGet : Array a -> Int -> a
 the index is out of bounds. A negative index counts back from the end, as in
 [`Array.set`](Array#set).
 
-`Array.set` copies the whole array on JavaScript and natively, so a loop that
-sets one element a step is quadratic there; a builder's `set` writes in place
-when the builder is used linearly, and a loop of them is linear on every
-target (geng-lang `m3-cost.md` D753).
-
     empty 3
         |> pushLast 1
         |> pushLast 2
         |> set 0 9
         |> toArray
         == [ 9, 2 ]
+
+It costs O(1) on JavaScript and natively when the builder is the one the call
+before answered, and O(n) otherwise, where it copies, and O(log n) on the BEAM,
+so a loop of builder sets is linear on every target where a loop of
+[`Array.set`](Array#set) copies the array at each step on JavaScript and
+natively (geng-lang `m3-cost.md` D753).
 
 -}
 set : Int -> a -> Builder a -> Builder a
@@ -113,6 +141,9 @@ set index value builder =
 {-| The element at the given index, or `Nothing` if the index is out of
 bounds. A negative index counts back from the end, as in
 [`Array.get`](Array#get).
+
+It costs O(1), and O(log n) on the BEAM.
+
 -}
 get : Int -> Builder a -> Maybe a
 get index builder =
@@ -125,6 +156,9 @@ get index builder =
 
 
 {-| The number of elements in a [Builder](#Builder).
+
+It costs O(1).
+
 -}
 length : Builder a -> Int
 length builder =
@@ -152,6 +186,13 @@ actualIndex index builder =
 
 
 {-| Converts a [Builder](#Builder) to an `Array`.
+
+It costs O(1) on JavaScript and natively, handing over the builder's buffer,
+after which the next write to that builder copies it, O(n), and O(n) on the
+BEAM, where it builds a tuple; so a loop that calls `toArray` at every step is
+quadratic on every target, and should read the builder with [`get`](#get) and
+[`length`](#length) instead.
+
 -}
 @prim("tr_to_array")
 toArray : Builder a -> Array a

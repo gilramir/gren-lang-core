@@ -11,8 +11,20 @@ module Set exposing
 instance. This includes `Int`, `Float`, `Char`, `String`, and arrays of
 ordered values.
 
-Set, remove, and query operations all take _O(log n)_ time.
+Getting, setting and removing a value take _O(log n)_ time; `count` and the
+functions that look at every entry take _O(n)_, and each function says what it
+costs.
 
+
+## Costs
+
+A set is a `Dict` whose values are `{}`, so each cost here is `Dict`'s: a
+red-black tree with no stored size, the same Geng code on every target, and
+in-place writes on JavaScript and natively for a loop of `set` or `remove` that
+keeps no older version. Costs are per call, counted in comparisons of members,
+which a `String` member on JavaScript makes dearer as `Dict` describes. `==` on
+two sets builds both as arrays before it compares anything, O(n + m), where
+`Dict`'s `==` compares the sizes first.
 
 @docs Set
 
@@ -56,6 +68,9 @@ type Set t
 
 
 {-| Create an empty set.
+
+It costs O(1).
+
 -}
 empty : Set a
 empty =
@@ -63,6 +78,9 @@ empty =
 
 
 {-| Create a set with one value.
+
+It costs O(1).
+
 -}
 singleton : Ord a => a -> Set a
 singleton key =
@@ -70,6 +88,10 @@ singleton key =
 
 
 {-| Set a value into a set.
+
+It costs O(log n) comparisons of members and allocates a new path of O(log n)
+nodes.
+
 -}
 set : Ord a => a -> Set a -> Set a
 set key (Set_gren_builtin dict) =
@@ -77,6 +99,10 @@ set key (Set_gren_builtin dict) =
 
 
 {-| Remove a value from a set. If the value is not found, no changes are made.
+
+It costs O(log n), up to two comparisons of members at each level, and it
+rebuilds the path even when the member is absent.
+
 -}
 remove : Ord a => a -> Set a -> Set a
 remove key (Set_gren_builtin dict) =
@@ -85,6 +111,10 @@ remove key (Set_gren_builtin dict) =
 
 {-| Toggle a value in a set. If the value isn't in the set, it is added. If the
 value is in the set, it is removed.
+
+It costs two descents, O(log n) comparisons each: a lookup, and then a `set` or
+a `remove`.
+
 -}
 toggle : Ord a => a -> Set a -> Set a
 toggle key (Set_gren_builtin dict) =
@@ -97,6 +127,9 @@ toggle key (Set_gren_builtin dict) =
 
 
 {-| Determine if a set is empty.
+
+It costs O(1).
+
 -}
 isEmpty : Set a -> Bool
 isEmpty (Set_gren_builtin dict) =
@@ -104,6 +137,9 @@ isEmpty (Set_gren_builtin dict) =
 
 
 {-| Determine if a value is in a set.
+
+It costs O(log n) comparisons of members.
+
 -}
 member : Ord a => a -> Set a -> Bool
 member key (Set_gren_builtin dict) =
@@ -111,6 +147,11 @@ member key (Set_gren_builtin dict) =
 
 
 {-| Determine the number of elements in a set.
+
+It costs O(n), since a set does not store its size: it walks every member, so
+ask `isEmpty` to know whether there are any, and keep a count beside the set
+when a loop needs one.
+
 -}
 count : Set a -> Int
 count (Set_gren_builtin dict) =
@@ -118,6 +159,9 @@ count (Set_gren_builtin dict) =
 
 
 {-| Get the first element of the set.
+
+It costs O(log n): it walks down the left edge of the tree.
+
 -}
 first : Set a -> Maybe a
 first (Set_gren_builtin dict) =
@@ -125,6 +169,9 @@ first (Set_gren_builtin dict) =
 
 
 {-| Get the last element of the set.
+
+It costs O(log n): it walks down the right edge of the tree.
+
 -}
 last : Set a -> Maybe a
 last (Set_gren_builtin dict) =
@@ -132,6 +179,10 @@ last (Set_gren_builtin dict) =
 
 
 {-| Find the first value that passes the test.
+
+It costs one call of the test for each member from the lowest up to the first
+that passes, O(n) when none does.
+
 -}
 findFirst : (a -> Bool) -> Set a -> Maybe a
 findFirst fn (Set_gren_builtin dict) =
@@ -139,6 +190,10 @@ findFirst fn (Set_gren_builtin dict) =
 
 
 {-| Find the last value that passes the test.
+
+It costs one call of the test for each member from the highest down to the
+first that passes, O(n) when none does.
+
 -}
 findLast : (a -> Bool) -> Set a -> Maybe a
 findLast fn (Set_gren_builtin dict) =
@@ -146,6 +201,10 @@ findLast fn (Set_gren_builtin dict) =
 
 
 {-| Checks if any value in the set passes the test.
+
+It costs one call of the test for each member up to the first that passes, O(n)
+when none does.
+
 -}
 any : (a -> Bool) -> Set a -> Bool
 any fn (Set_gren_builtin dict) =
@@ -153,6 +212,10 @@ any fn (Set_gren_builtin dict) =
 
 
 {-| Checks if all values in the set passes the test.
+
+It costs one call of the test for each member up to the first that fails, O(n)
+when all pass.
+
 -}
 all : (a -> Bool) -> Set a -> Bool
 all fn (Set_gren_builtin dict) =
@@ -164,6 +227,11 @@ all fn (Set_gren_builtin dict) =
 Each value of the first set is inserted into the second, so the union costs
 the size of the first: when one set is small and the other grows, as a set of
 everything seen so far does, put the small one first.
+
+It costs O(m log (m + n)) for a first set of m members, since each of them is
+set into the second, so put the smaller first when the other is the one that
+grows.
+
 -}
 union : Ord a => Set a -> Set a -> Set a
 union (Set_gren_builtin dict1) (Set_gren_builtin dict2) =
@@ -171,6 +239,11 @@ union (Set_gren_builtin dict1) (Set_gren_builtin dict2) =
 
 
 {-| Get the intersection of two sets. Keeps values that appear in both sets.
+
+It costs O(m log n) for a first set of m members and a second of n, one lookup
+in the second for each of the first's members, and O(k log k) to build the k it
+keeps.
+
 -}
 intersect : Ord a => Set a -> Set a -> Set a
 intersect (Set_gren_builtin dict1) (Set_gren_builtin dict2) =
@@ -179,6 +252,11 @@ intersect (Set_gren_builtin dict1) (Set_gren_builtin dict2) =
 
 {-| Get the difference between the first set and the second. Keeps values
 that do not appear in the second set.
+
+It costs O(s log l) for a smaller set of s members and a larger of l, whichever
+is first: it compares the two sizes in O(s), and then keeps the first's members
+that the second lacks, or removes the second's members from the first.
+
 -}
 diff : Ord a => Set a -> Set a -> Set a
 diff (Set_gren_builtin dict1) (Set_gren_builtin dict2) =
@@ -186,6 +264,9 @@ diff (Set_gren_builtin dict1) (Set_gren_builtin dict2) =
 
 
 {-| Convert a set into an array, sorted from lowest to highest.
+
+It costs O(n): one walk of the tree into an `Array.Builder`.
+
 -}
 toArray : Set a -> Array a
 toArray (Set_gren_builtin dict) =
@@ -193,6 +274,10 @@ toArray (Set_gren_builtin dict) =
 
 
 {-| Convert an array into a set, removing any duplicates.
+
+It costs O(n log n): one `set` for each element, even when the array is already
+sorted.
+
 -}
 fromArray : Ord a => Array a -> Set a
 fromArray array =
@@ -200,6 +285,9 @@ fromArray array =
 
 
 {-| Fold over the values in a set, in order from lowest to highest.
+
+It costs O(n) calls of the function, from the lowest member to the highest.
+
 -}
 foldl : (a -> b -> b) -> b -> Set a -> b
 foldl func initialState (Set_gren_builtin dict) =
@@ -207,6 +295,9 @@ foldl func initialState (Set_gren_builtin dict) =
 
 
 {-| Fold over the values in a set, in order from highest to lowest.
+
+It costs O(n) calls of the function, from the highest member to the lowest.
+
 -}
 foldr : (a -> b -> b) -> b -> Set a -> b
 foldr func initialState (Set_gren_builtin dict) =
@@ -214,6 +305,10 @@ foldr func initialState (Set_gren_builtin dict) =
 
 
 {-| Map a function onto a set, creating a new set with no duplicates.
+
+It costs O(n log n): one call of the function and one `set` into a new tree for
+each member.
+
 -}
 map : Ord b => (a -> b) -> Set a -> Set b
 map func coll =
@@ -234,6 +329,9 @@ map func coll =
 
     -- positives == Set.fromArray [1,2]
 
+It costs O(n log n): it sets each member that passes into a new tree, though
+the members arrive in order.
+
 -}
 keepIf : Ord a => (a -> Bool) -> Set a -> Set a
 keepIf isGood (Set_gren_builtin dict) =
@@ -253,6 +351,10 @@ keepIf isGood (Set_gren_builtin dict) =
         Set.mapAndKeepJust String.toInt strings
 
     -- numbers == Set.fromArray [ 3, -5 ]
+
+It costs O(n log n): one call of the function and one `set` into a new tree for
+each `Just`.
+
 -}
 mapAndKeepJust : Ord b => (a -> Maybe b) -> Set a -> Set b
 mapAndKeepJust toMaybe coll =
@@ -271,6 +373,10 @@ mapAndKeepJust toMaybe coll =
 
 {-| Create two new sets. The first contains all the elements that passed the
 given test, and the second contains all the elements that did not.
+
+It costs O(n log n): it sets each member into one of two new trees, though the
+members arrive in order.
+
 -}
 partition : Ord a => (a -> Bool) -> Set a -> { trues : Set a, falses : Set a }
 partition isGood (Set_gren_builtin dict) =

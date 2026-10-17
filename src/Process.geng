@@ -77,6 +77,8 @@ there.
 cannot receive any messages. More flexibility for user-defined processes will
 come in a later release!
 
+It costs O(1): it makes a light-weight process and queues it.
+
 -}
 @prim("task_spawn")
 spawn : Task x a -> Task y Id
@@ -87,6 +89,10 @@ The JavaScript equivalent of this is [`setTimeout`][setTimeout] which lets you
 delay work until later.
 
 [setTimeout]: https://developer.mozilla.org/en-US/docs/Web/API/WindowTimers/setTimeout
+
+It costs one timer: a push onto the runtime's heap of timers natively, O(log t)
+in the t pending, `setTimeout` on JavaScript, and on the BEAM a `receive` in a
+tree of one process, or a timer process otherwise.
 
 -}
 @extern(js, "Process", "sleep")
@@ -104,6 +110,10 @@ A process being killed still runs the release handler of every
 [`Task.bracket`](Task#bracket) it was inside, innermost first, and this task
 does not succeed until they are done. So a killed process has given up its
 resources by the time `kill` answers, rather than at some point afterwards.
+
+It costs a walk of the killed process's stack to find its release handlers,
+O(its depth), and then what those handlers do, which it waits for.
+
 -}
 @prim("task_kill")
 kill : Id -> Task x {}
@@ -125,6 +135,11 @@ reduction is not a microsecond, and neither starts at zero.
             Task.map (\after -> after - before) Process.work
 
 Reading it costs one step.
+
+It costs one step: one system call natively (`clock_gettime`) and on node
+(`process.cpuUsage`), with a `BigInt` built from it on JavaScript, and one
+`erlang:statistics(reductions)` on the BEAM.
+
 -}
 work : Task x Int64
 work =

@@ -24,6 +24,18 @@ what the type admits.
 Every type has an instance without asking, as it has [`Inbound`](Inbound).
 On JavaScript nothing is upgraded in place, and the value is the term.
 
+## Costs
+
+On JavaScript nothing is upgraded in place and `migrate` answers the term;
+natively it is `Inbound`'s check of the boxed value's shape (D516); on the BEAM
+the backend generates a walk of the value at the new build's type, which
+rebuilds each `Dict` or `Set` under the new build's order, so its cost grows
+with the value. Costs are per call.
+
+- `migrate`: It costs O(1) on JavaScript and natively, and on the BEAM O(the
+  size of the value), plus O(n log n) to sort and rebuild each `Dict` or `Set`
+  of n entries in it.
+
 @docs Migrate
 
 -}

@@ -5,6 +5,23 @@ module Bitwise exposing
 
 {-| Functions for doing [bitwise operations](https://en.wikipedia.org/wiki/Bitwise_operation).
 
+## Costs
+
+Costs are per call, and every function here is O(1) at every type. The logical
+operations are one machine operation each; a shift is one as well, with a
+comparison or two that clamp its count (A4), which constant folding removes
+where the count is a literal. At `Int64` and `UInt64` on JavaScript each is a
+`BigInt` operation, a shift count widened to a `BigInt` first, and on the BEAM
+a 64-bit value beyond 2^59 in magnitude is a bignum on the heap.
+
+- `and`: It costs O(1).
+- `or`: It costs O(1).
+- `xor`: It costs O(1).
+- `complement`: It costs O(1).
+- `shiftLeftBy`: It costs O(1): one shift, and a clamp of the count.
+- `shiftRightBy`: It costs O(1): one shift, and a clamp of the count.
+- `shiftRightZfBy`: It costs O(1): one shift, and a clamp of the count.
+
 @docs Bits, countLeadingZeros
 
 -}
@@ -386,6 +403,9 @@ instance Bits UInt64 where
     countLeadingZeros 0 == 32
     countLeadingZeros 1 == 31
     countLeadingZeros 0xFFFF == 16
+
+It costs O(1): one instruction natively, `Math.clz32` on JavaScript, and on the
+BEAM a loop of at most 32 shifts.
 
 -}
 @prim("i32_clz")

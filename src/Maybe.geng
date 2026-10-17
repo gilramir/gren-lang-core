@@ -56,6 +56,8 @@ equals a provided constant.
 
     hasValue 5 Nothing == False
 
+It costs one `==` of the contained value, at its type.
+
 -}
 hasValue : Eq a => a -> Maybe a -> Bool
 hasValue value maybe =
@@ -75,6 +77,8 @@ passes the provided test.
     checkValue isOdd (Just 2) == False
 
     checkValue isOdd Nothing == False
+
+It costs one call of the test, or O(1) for `Nothing`.
 
 -}
 checkValue : (a -> Bool) -> Maybe a -> Bool
@@ -97,6 +101,8 @@ value. This comes in handy when paired with functions like
     
     withDefault "unknown" (Dict.get "Tom" Dict.empty) == "unknown"
 
+It costs O(1).
+
 -}
 withDefault : a -> Maybe a -> a
 withDefault default maybe =
@@ -113,6 +119,8 @@ a function. This is useful when computing the default value is expensive, as
 you can compute it only when it is required.
 
 In most cases you should use pattern matching or [withDefault](#withDefault) instead.
+
+It costs O(1), and one call of the default's function for `Nothing`.
 
 -}
 withDefaultLazy : ({} -> a) -> Maybe a -> a
@@ -134,6 +142,8 @@ withDefaultLazy default maybe =
     map sqrt (String.toFloat "9") == Just 3
 
     map sqrt (String.toFloat "x") == Nothing
+
+It costs one call of the function, or O(1) for `Nothing`.
 
 -}
 map : (a -> b) -> Maybe a -> Maybe b
@@ -159,6 +169,8 @@ map f maybe =
     map2 (+) (String.toInt "x") (String.toInt "123") == Nothing
 
     map2 (+) (String.toInt "1") (String.toInt "1.3") == Nothing
+
+It costs one call of the function, or O(1) when either is `Nothing`.
 
 -}
 map2 : (a -> b -> value) -> Maybe a -> Maybe b -> Maybe value
@@ -188,6 +200,8 @@ map2 func ma mb =
 
     map3 (+) (String.toInt "x") (String.toInt "123") (String.toInt "4") == Nothing
 
+It costs one call of the function, or O(1) when any is `Nothing`.
+
 -}
 map3 : (a -> b -> c -> value) -> Maybe a -> Maybe b -> Maybe c -> Maybe value
 map3 func ma mb mc =
@@ -216,6 +230,9 @@ map3 func ma mb mc =
         |> andMap (Just "more ")
         |> andMap (Just "time")
         == (Just "one more time")
+
+It costs one call of the function, or O(1) when either is `Nothing`.
+
 -}
 andMap : Maybe a -> Maybe (a -> b) -> Maybe b
 andMap =
@@ -228,6 +245,8 @@ test.
     keepIf isOdd (Just 5) == Just 5
 
     keepIf isOdd (Just 2) == Nothing
+
+It costs one call of the test, or O(1) for `Nothing`.
 
 -}
 keepIf : (a -> Bool) -> Maybe a -> Maybe a
@@ -276,6 +295,8 @@ In the `parseMonth` function, if `String.toInt` produces `Nothing` (because
 the `userInput` was not an integer) this entire chain of operations will
 short-circuit and result in `Nothing`. If `toValidMonth` results in `Nothing`,
 again the chain of computations will result in `Nothing`.
+
+It costs one call of the callback, or O(1) for `Nothing`.
 
 -}
 andThen : (a -> Maybe b) -> Maybe a -> Maybe b

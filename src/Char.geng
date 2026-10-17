@@ -10,6 +10,15 @@ module Char exposing
 `'a'` pair of single quotes.
 
 
+## Costs
+
+A `Char` is its code point on every target: a number on JavaScript, a 32-bit
+integer natively and an integer on the BEAM. Nothing in this module reads
+memory beyond its argument, and every function costs O(1) per call. The
+predicates test ASCII ranges only. The Unicode properties are used by
+`String.trim`, `String.toUpper`, `String.toLower` and `inspect`, which read
+`core`'s tables with one fixed-size binary search a character.
+
 @docs Char
 
 
@@ -103,6 +112,8 @@ type Char
 
     isUpper 'Σ' == False
 
+It costs O(1).
+
 -}
 isUpper : Char -> Bool
 isUpper char =
@@ -130,6 +141,8 @@ isUpper char =
 
     isLower 'π' == False
 
+It costs O(1).
+
 -}
 isLower : Char -> Bool
 isLower char =
@@ -156,6 +169,8 @@ isLower char =
 
     isAlpha 'π' == False
 
+It costs O(1).
+
 -}
 isAlpha : Char -> Bool
 isAlpha char =
@@ -180,6 +195,8 @@ isAlpha char =
 
     isAlphaNum 'π' == False
 
+It costs O(1).
+
 -}
 isAlphaNum : Char -> Bool
 isAlphaNum char =
@@ -200,6 +217,8 @@ isAlphaNum char =
     isDigit 'b' == False
 
     isDigit 'A' == False
+
+It costs O(1).
 
 -}
 isDigit : Char -> Bool
@@ -226,6 +245,8 @@ isDigit char =
 
     isOctDigit 'A' == False
 
+It costs O(1).
+
 -}
 isOctDigit : Char -> Bool
 isOctDigit char =
@@ -237,6 +258,9 @@ isOctDigit char =
 
 
 {-| Detect hexadecimal digits `0123456789abcdefABCDEF`
+
+It costs O(1).
+
 -}
 isHexDigit : Char -> Bool
 isHexDigit char =
@@ -270,6 +294,8 @@ isHexDigit char =
 A `Char` *is* its code point (C8), so this is the identity on every backend and
 is the primitive itself rather than a wrapper around one.
 
+It costs O(1), being the identity on every target.
+
 -}
 @prim("char_to_i32")
 toCode : Char -> Int
@@ -297,6 +323,8 @@ this returns a [`Maybe`](Maybe#Maybe) rather than picking a character nobody
 asked for.
 
 [cp]: https://en.wikipedia.org/wiki/Code_point
+
+It costs O(1).
 
 -}
 fromCode : Int -> Maybe Char
@@ -350,6 +378,8 @@ instance Ord Char where
 unknown or cannot be represented:
 
     Maybe.withDefault replacementChar (fromCode 0xD800) == '\u{FFFD}'
+
+It costs O(1).
 
 -}
 replacementChar : Char

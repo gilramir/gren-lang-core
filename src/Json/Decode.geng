@@ -14,6 +14,16 @@ JSON decoders][guide] to get a feel for how this library works!
 [guide]: https://guide.elm-lang.org/effects/json.html
 
 
+## Costs
+
+A `Decoder` is a function over a `Value` tree, and
+[`decodeString`](#decodeString) parses the whole text into that tree before it
+decodes. On JavaScript the parse is `JSON.parse` and a walk over its answer.
+Elsewhere it is one pass of `core`'s parser, which does not recurse once per
+level of nesting. An object's members are an `Array` in source order, not a
+`Dict`, so [`field`](#field) finds a name by a linear scan. Costs are per run
+of the decoder, not counting the decoders and functions it is given.
+
 @docs Decoder, string, bool, int, float
 
 
@@ -86,6 +96,8 @@ type Decoder a
     decodeString string "\"hello\""         == Ok "hello"
     decodeString string "{ \"hello\": 42 }" == Err ...
 
+It costs O(1).
+
 -}
 string : Decoder String
 string =
@@ -107,6 +119,8 @@ string =
     decodeString bool "3.14"              == Err ...
     decodeString bool "\"hello\""         == Err ...
     decodeString bool "{ \"hello\": 42 }" == Err ...
+
+It costs O(1).
 
 -}
 bool : Decoder Bool
@@ -134,6 +148,8 @@ bool =
 A number is an `Int` only if it is a whole number from `-2147483648` to
 `2147483647`.
 
+It costs O(1).
+
 -}
 int : Decoder Int
 int =
@@ -160,6 +176,8 @@ int =
     decodeString float "\"hello\""         == Err ...
     decodeString float "{ \"hello\": 42 }" == Err ...
 
+It costs O(1).
+
 -}
 float : Decoder Float
 float =
@@ -185,6 +203,8 @@ float =
     decodeString (nullable int) "null"  == Ok Nothing
     decodeString (nullable int) "true"  == Err ..
 
+It costs O(1) beyond `decoder`, which it runs unless the value is null.
+
 -}
 nullable : Decoder a -> Decoder (Maybe a)
 nullable decoder =
@@ -199,6 +219,9 @@ nullable decoder =
     decodeString (array int) "[1,2,3]" == Ok [ 1, 2, 3 ]
 
     decodeString (array bool) "[true,false]" == Ok [ True, False ]
+
+It costs O(k) in the array's k elements, beyond the decoder run on each, and
+collects the results in a builder sized in advance.
 
 -}
 array : Decoder a -> Decoder (Array a)
@@ -289,6 +312,9 @@ So now JSON like `{ "alice": { height: 1.6, age: 33 }}` are turned into
 dictionary values like `Dict.singleton "alice" (User "alice" 1.6 33)` if
 you need that.
 
+It costs O(k log k) in the object's k members, beyond the decoder run on each
+value, which it puts in a `Dict`.
+
 -}
 dict : Decoder a -> Decoder (Dict String a)
 dict decoder =
@@ -299,6 +325,8 @@ dict decoder =
 
     decodeString (keyValuePairs int) "{ \"alice\": 42, \"bob\": 99 }"
         == Ok [ { key = "alice", value = 42 }, { key = "bob", value = 99 } ]
+
+It costs O(k) in the object's k members, beyond the decoder run on each value.
 
 -}
 keyValuePairs : Decoder a -> Decoder (Array { key : String, value : a })
@@ -349,6 +377,10 @@ this function with [`elm/file`]() to write a `dropDecoder` like this:
 
 This captures the fact that you can never drag-and-drop zero files.
 
+It costs what [`array`](#array) costs, plus O(1) on JavaScript and natively,
+where the rest of the array is a view, and O(k) on the BEAM, where it is
+copied.
+
 -}
 oneOrMore : (a -> Array a -> value) -> Decoder a -> Decoder value
 oneOrMore toValue decoder =
@@ -388,6 +420,12 @@ cares about is if `x` is present and that the value there is an `Int`.
 
 Check out [`map2`](#map2) to see how to decode multiple fields!
 
+It costs O(k) in the object's k members, comparing the name with each key until
+it finds it, so a decoder that reads many fields of a wide object costs their
+product; to read most of an object's fields, decode it once with
+[`dict`](#dict) or [`keyValuePairs`](#keyValuePairs) and look the members up in
+that.
+
 -}
 field : String -> Decoder a -> Decoder a
 field name (Decoder run) =
@@ -423,6 +461,9 @@ This is really just a shorthand for saying things like:
 
     field "person" (field "name" string) == at [ "person", "name" ] string
 
+It costs one [`field`](#field) a name, each O(k) in the members of the object
+at that level.
+
 -}
 at : Array String -> Decoder a -> Decoder a
 at fields decoder =
@@ -437,6 +478,9 @@ at fields decoder =
     decodeString (index 1 string) json  == Ok "bob"
     decodeString (index 2 string) json  == Ok "chuck"
     decodeString (index 3 string) json  == Err ...
+
+It costs O(1) beyond the decoder (on the BEAM, O(log₃₂ k) for an array held as
+a tree).
 
 -}
 index : Int -> Decoder a -> Decoder a
@@ -490,6 +534,8 @@ the content _may_ be a float. There is no `height` field, so the decoder fails.
 Point is, `maybe` will make exactly what it contains conditional. For optional
 fields, this means you probably want it _outside_ a use of `field` or `at`.
 
+It costs O(1) beyond `decoder`.
+
 -}
 maybe : Decoder a -> Decoder (Maybe a)
 maybe decoder =
@@ -518,6 +564,9 @@ like this!
 You could also use `oneOf` to help version your data. Try the latest format,
 then a few older ones that you still support. You could use `andThen` to be
 even more particular if you wanted.
+
+It costs the decoders it tries, in order, until one succeeds, and it keeps each
+failure's error.
 
 -}
 oneOf : Array (Decoder a) -> Decoder a
@@ -565,6 +614,8 @@ It is often helpful to use `map` with `oneOf`, like when defining `nullable`:
             , map Just decoder
             ]
 
+It costs O(1) beyond the decoder and one call of the function.
+
 -}
 map : (a -> value) -> Decoder a -> Decoder value
 map f (Decoder run) =
@@ -602,6 +653,8 @@ objects with many fields:
 
 It tries each individual decoder and puts the result together with the `Point`
 constructor.
+
+It costs O(1) beyond the decoders it runs and one call of the function.
 
 -}
 map2 : (a -> b -> value) -> Decoder a -> Decoder b -> Decoder value
@@ -649,37 +702,59 @@ objects with many fields:
 Like `map2` it tries each decoder in order and then give the results to the
 `Person` constructor. That can be any function though!
 
+It costs O(1) beyond the decoders it runs and one call of the function.
+
 -}
 map3 : (a -> b -> c -> value) -> Decoder a -> Decoder b -> Decoder c -> Decoder value
 map3 f da db dc =
     andMap dc (map2 f da db)
 
 
-{-| -}
+{-|
+
+It costs O(1) beyond the decoders it runs and one call of the function.
+
+-}
 map4 : (a -> b -> c -> d -> value) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder value
 map4 f da db dc dd =
     andMap dd (map3 f da db dc)
 
 
-{-| -}
+{-|
+
+It costs O(1) beyond the decoders it runs and one call of the function.
+
+-}
 map5 : (a -> b -> c -> d -> e -> value) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder e -> Decoder value
 map5 f da db dc dd de =
     andMap de (map4 f da db dc dd)
 
 
-{-| -}
+{-|
+
+It costs O(1) beyond the decoders it runs and one call of the function.
+
+-}
 map6 : (a -> b -> c -> d -> e -> f -> value) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder e -> Decoder f -> Decoder value
 map6 f da db dc dd de df =
     andMap df (map5 f da db dc dd de)
 
 
-{-| -}
+{-|
+
+It costs O(1) beyond the decoders it runs and one call of the function.
+
+-}
 map7 : (a -> b -> c -> d -> e -> f -> g -> value) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder e -> Decoder f -> Decoder g -> Decoder value
 map7 f da db dc dd de df dg =
     andMap dg (map6 f da db dc dd de df)
 
 
-{-| -}
+{-|
+
+It costs O(1) beyond the decoders it runs and one call of the function.
+
+-}
 map8 : (a -> b -> c -> d -> e -> f -> g -> h -> value) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder e -> Decoder f -> Decoder g -> Decoder h -> Decoder value
 map8 f da db dc dd de df dg dh =
     andMap dh (map7 f da db dc dd de df dg)
@@ -695,6 +770,11 @@ fails for some reason.
 
     decodeString int "4"     == Ok 4
     decodeString int "1 + 2" == Err ...
+
+It costs O(n) in the length of the text to parse it into a `Value` and then
+what the decoder costs; outside JavaScript the parse also spends O(k log k) on
+an object of k members, past eight, whose keys share a bit of its 32-bit filter
+and so must be checked for a repeat.
 
 -}
 decodeString : Decoder a -> String -> Result Error a
@@ -724,6 +804,9 @@ decodeString (Decoder run) text =
 
 {-| Run a `Decoder` on some JSON `Value`. You can send these JSON values
 through ports, so that is probably the main time you would use this function.
+
+It costs what the decoder costs.
+
 -}
 decodeValue : Decoder a -> Value -> Result Error a
 decodeValue (Decoder run) v =
@@ -763,6 +846,10 @@ something like this:
 **Note:** It would be cool to do nicer coloring and fancier HTML, but I wanted
 to avoid having an `elm/html` dependency for now. It is totally possible to
 crawl the `Error` structure and create this separately though!
+
+It costs O(n) in the length n of the message it writes, which is mostly the
+failing value encoded with an indent of 4, and for a `OneOf` each alternative's
+message.
 
 -}
 errorToString : Error -> String
@@ -864,6 +951,8 @@ indent str =
 
 This is handy when used with `oneOf` or `andThen`.
 
+It costs O(1).
+
 -}
 succeed : a -> Decoder a
 succeed x =
@@ -875,6 +964,8 @@ succeed x =
 case.
 
 See the [`andThen`](#andThen) docs for an example.
+
+It costs O(1).
 
 -}
 fail : String -> Decoder a
@@ -908,6 +999,9 @@ versioned data, you might do something like this:
 
     -- infoDecoder4 : Decoder Info
     -- infoDecoder3 : Decoder Info
+
+It costs O(1) beyond the decoder and the function, which builds the next
+decoder each time it runs.
 
 -}
 andThen : (a -> Decoder b) -> Decoder a -> Decoder b
@@ -949,6 +1043,8 @@ For example:
             |> andMap (field "height" float)
             |> andMap (field "age" int)
 
+It costs O(1) beyond the two decoders it runs.
+
 -}
 andMap : Decoder a -> Decoder (a -> b) -> Decoder b
 andMap =
@@ -987,6 +1083,9 @@ structures [here].
 
 [here]: https://github.com/elm/compiler/blob/master/hints/recursive-alias.md
 
+It costs O(1) beyond the decoder, and calls the function to build that decoder
+each time it runs.
+
 -}
 lazy : ({} -> Decoder a) -> Decoder a
 lazy thunk =
@@ -997,6 +1096,9 @@ lazy thunk =
 This can be useful if you have particularly complex data that you would like to
 deal with later. Or if you are going to send it out a port and do not care
 about its structure.
+
+It costs O(1).
+
 -}
 value : Decoder Value
 value =
@@ -1011,6 +1113,8 @@ value =
     decodeString (null 42) "false"   == Err ..
 
 So if you ever see a `null`, this will return whatever value you specified.
+
+It costs O(1).
 
 -}
 null : a -> Decoder a

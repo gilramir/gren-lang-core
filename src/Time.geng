@@ -40,6 +40,15 @@ module Time exposing
 
 {-| Functions for working with time and time zones.
 
+## Costs
+
+A `Posix` and a `Duration` hold an `Int64` of milliseconds, which is a `BigInt`
+on JavaScript, so their arithmetic there is a `BigInt` operation, about 2.2
+times a float's on timestamp-shaped code (`int64-migration.md`). A `Zone` is an
+offset and an array of eras, and the calendar functions walk the eras to the
+first that starts before the time they are asked about, so they cost O(1) at
+`utc` and at `here`'s zone, which have none. Costs are per call.
+
 @docs Posix, now, posixToMillis, millisToPosix
 
 ## Timers
@@ -98,6 +107,10 @@ type Posix = Posix Int64
 
 
 {-| Get the POSIX time at the moment when this task is run.
+
+It costs one read of the wall clock, and on JavaScript a `BigInt` built from
+it.
+
 -}
 now : Task x Posix
 now =
@@ -112,6 +125,9 @@ nowWith : (Int64 -> posix) -> Task x posix
 
 {-| Turn a `Posix` time into the number of milliseconds since 1970 January 1
 at 00:00:00 UTC. It was a Thursday.
+
+It costs O(1).
+
 -}
 posixToMillis : Posix -> Int64
 posixToMillis (Posix millis) =
@@ -119,6 +135,9 @@ posixToMillis (Posix millis) =
 
 
 {-| Turn milliseconds into a `Posix` time.
+
+It costs O(1).
+
 -}
 millisToPosix : Int64 -> Posix
 millisToPosix =
@@ -143,6 +162,9 @@ type Duration = Duration Int64
 
 
 {-| A duration of some number of milliseconds.
+
+It costs O(1).
+
 -}
 milliseconds : Int64 -> Duration
 milliseconds =
@@ -150,6 +172,9 @@ milliseconds =
 
 
 {-| A duration of some number of seconds.
+
+It costs O(1): one `Int64` multiplication.
+
 -}
 seconds : Int64 -> Duration
 seconds n =
@@ -157,6 +182,9 @@ seconds n =
 
 
 {-| A duration of some number of minutes.
+
+It costs O(1): one `Int64` multiplication.
+
 -}
 minutes : Int64 -> Duration
 minutes n =
@@ -164,6 +192,9 @@ minutes n =
 
 
 {-| A duration of some number of hours.
+
+It costs O(1): one `Int64` multiplication.
+
 -}
 hours : Int64 -> Duration
 hours n =
@@ -174,6 +205,9 @@ hours n =
 
 A day here is exactly 24 hours. Calendar days are not all 24 hours long, and
 turning one of those into a duration needs a `Zone`.
+
+It costs O(1): one `Int64` multiplication.
+
 -}
 days : Int64 -> Duration
 days n =
@@ -181,6 +215,9 @@ days n =
 
 
 {-| How many milliseconds a duration is. Exact: this is what one holds.
+
+It costs O(1).
+
 -}
 inMilliseconds : Duration -> Int64
 inMilliseconds (Duration millis) =
@@ -191,6 +228,9 @@ inMilliseconds (Duration millis) =
 
 Every accessor but [inMilliseconds](#inMilliseconds) **truncates toward zero**,
 which is `//`'s rule (A11): 1500 milliseconds is 1 second and -1500 is -1.
+
+It costs O(1): one `Int64` division.
+
 -}
 inSeconds : Duration -> Int64
 inSeconds (Duration millis) =
@@ -198,6 +238,9 @@ inSeconds (Duration millis) =
 
 
 {-| How many whole minutes a duration is, truncating toward zero.
+
+It costs O(1): one `Int64` division.
+
 -}
 inMinutes : Duration -> Int64
 inMinutes (Duration millis) =
@@ -205,6 +248,9 @@ inMinutes (Duration millis) =
 
 
 {-| How many whole hours a duration is, truncating toward zero.
+
+It costs O(1): one `Int64` division.
+
 -}
 inHours : Duration -> Int64
 inHours (Duration millis) =
@@ -212,6 +258,9 @@ inHours (Duration millis) =
 
 
 {-| How many whole 24-hour days a duration is, truncating toward zero.
+
+It costs O(1): one `Int64` division.
+
 -}
 inDays : Duration -> Int64
 inDays (Duration millis) =
@@ -225,6 +274,9 @@ inDays (Duration millis) =
 A6 makes the addition wrap at 64 bits rather than saturate, the way every other
 integer operation does. `Int64` milliseconds spans 292 million years either way,
 so reaching the wrap is not a thing a program does by accident.
+
+It costs O(1): one `Int64` addition.
+
 -}
 add : Duration -> Posix -> Posix
 add (Duration millis) (Posix time) =
@@ -235,6 +287,9 @@ add (Duration millis) (Posix time) =
 `add (diff a b) a == b`.
 
 It is negative when the second time is the earlier one.
+
+It costs O(1): one `Int64` subtraction.
+
 -}
 diff : Posix -> Posix -> Duration
 diff (Posix from) (Posix to) =
@@ -287,6 +342,9 @@ The `utc` zone has no time adjustments. It never observes daylight-saving
 time and it never shifts around based on political restructuring.
 
 [UTC]: https://en.wikipedia.org/wiki/Coordinated_Universal_Time
+
+It costs O(1).
+
 -}
 utc : Zone
 utc =
@@ -323,6 +381,9 @@ cannot do it myself unfortunately.
 **Alternatives:** See the `customZone` docs to learn how to implement stopgaps.
 
 [tz]: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+
+It costs one query of the host's current UTC offset.
+
 -}
 here : Task x Zone
 here =
@@ -347,6 +408,11 @@ hereWith : (Int -> zone) -> Task x zone
     toYear nyc (millisToPosix 0) == 1969
 
     -- pretend `nyc` is the `Zone` for America/New_York.
+
+It costs O(e) for a zone of e eras, a walk to the era the time falls in that is
+O(e²) on the BEAM below 64 eras, where each step copies the rest, and then a
+constant amount of calendar arithmetic.
+
 -}
 toYear : Zone -> Posix -> Int
 toYear zone time =
@@ -361,6 +427,11 @@ toYear zone time =
     toMonth nyc (millisToPosix 0) == Dec
 
     -- pretend `nyc` is the `Zone` for America/New_York.
+
+It costs O(e) for a zone of e eras, a walk to the era the time falls in that is
+O(e²) on the BEAM below 64 eras, where each step copies the rest, and then a
+constant amount of calendar arithmetic.
+
 -}
 toMonth : Zone -> Posix -> Month
 toMonth zone time =
@@ -388,6 +459,10 @@ toMonth zone time =
 
     -- pretend `nyc` is the `Zone` for America/New_York.
 
+It costs O(e) for a zone of e eras, a walk to the era the time falls in that is
+O(e²) on the BEAM below 64 eras, where each step copies the rest, and then a
+constant amount of calendar arithmetic.
+
 -}
 toDay : Zone -> Posix -> Int
 toDay zone time =
@@ -402,6 +477,11 @@ toDay zone time =
     toWeekday nyc (millisToPosix 0) == Wed
 
     -- pretend `nyc` is the `Zone` for America/New_York.
+
+It costs O(e) for a zone of e eras, a walk to the era the time falls in that is
+O(e²) on the BEAM below 64 eras, where each step copies the rest, and then a
+division and a remainder.
+
 -}
 toWeekday : Zone -> Posix -> Weekday
 toWeekday zone time =
@@ -423,6 +503,11 @@ toWeekday zone time =
     toHour nyc (millisToPosix 0) == 19 -- 7pm
 
     -- pretend `nyc` is the `Zone` for America/New_York.
+
+It costs O(e) for a zone of e eras, a walk to the era the time falls in that is
+O(e²) on the BEAM below 64 eras, where each step copies the rest, and then a
+division and a remainder.
+
 -}
 toHour : Zone -> Posix -> Int
 toHour zone time =
@@ -437,6 +522,11 @@ toHour zone time =
 
 This can be different in different time zones. Some time zones are offset
 by 30 or 45 minutes!
+
+It costs O(e) for a zone of e eras, a walk to the era the time falls in that is
+O(e²) on the BEAM below 64 eras, where each step copies the rest, and then a
+remainder.
+
 -}
 toMinute : Zone -> Posix -> Int
 toMinute zone time =
@@ -450,6 +540,10 @@ toMinute zone time =
     toSecond utc (millisToPosix    0) == 0
     toSecond utc (millisToPosix 1234) == 1
     toSecond utc (millisToPosix 5678) == 5
+
+It costs O(1), since it does not look at the zone: an `Int64` division and
+remainder.
+
 -}
 toSecond : Zone -> Posix -> Int
 toSecond _ time =
@@ -466,6 +560,9 @@ toSecond _ time =
     toMillis utc (millisToPosix    0) == 0
     toMillis utc (millisToPosix 1234) == 234
     toMillis utc (millisToPosix 5678) == 678
+
+It costs O(1), since it does not look at the zone: an `Int64` remainder.
+
 -}
 toMillis : Zone -> Posix -> Int
 toMillis _ time =
@@ -606,6 +703,10 @@ function for that sort of thing! It syncs up with repaints and will end up
 being much smoother for any moving visuals.
 
 [af]: /packages/gren-lang/browser/latest/Browser-Events#onAnimationFrame
+
+It costs O(1) to start a repeating timer, natively a heap entry, O(log t) in
+the t timers pending, and then one emit into the source at each tick.
+
 -}
 every : Float -> Source msg -> (Posix -> msg) -> Task x Timer
 every interval ticks tagger =
@@ -614,6 +715,9 @@ every interval ticks tagger =
 
 
 {-| Stop a timer delivering. Cancelling one twice is not an error.
+
+It costs O(1).
+
 -}
 cancel : Timer -> Task x {}
 cancel (Timer handle) =
@@ -657,6 +761,9 @@ database however you want: HTTP, cache, hardcode, etc.
 **Note:** If you use this, please share your work in an Gren community forum!
 I am sure others would like to hear about it, and more experience reports will
 help me and the any potential TC39 proposal.
+
+It costs O(1).
+
 -}
 customZone : Int -> Array { start : Int, offset : Int } -> Zone
 customZone offset eras =
@@ -668,6 +775,10 @@ customZone offset eras =
 Use `Intl.DateTimeFormat().resolvedOptions().timeZone` to try to get names
 like `Europe/Moscow` or `America/Havana`. From there you can look it up in any
 IANA data you loaded yourself.
+
+It costs one query of the host: `Intl.DateTimeFormat` on JavaScript, and
+natively `TZ`, the `/etc/localtime` link or `/etc/timezone`.
+
 -}
 getZoneName : Task x ZoneName
 getZoneName =

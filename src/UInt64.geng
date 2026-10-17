@@ -19,6 +19,16 @@ for a 64-bit bit pattern and not for a loop counter.
 
 ## Bounds
 
+## Costs
+
+A `UInt64` is a JavaScript `BigInt`, wrapped with `BigInt.asUintN` after each
+operation that can leave the range, so every operation on one there is a
+`BigInt` operation, at `Int64`'s cost: about 2.2 times a float's on
+timestamp-shaped code and 20 to 30 times an `Int`'s in arithmetic-heavy loops
+(`int64-migration.md`). Natively it is a `uint64_t`, and on the BEAM an Erlang
+integer masked to 64 bits after each operation, which is a bignum on the heap
+from 2^59 up. Every function here is O(1). Costs are per call.
+
 @docs minValue, maxValue
 
 
@@ -75,6 +85,9 @@ import UInt32
 
 
 {-| `0`.
+
+It costs O(1): it is a constant.
+
 -}
 minValue : UInt64
 minValue =
@@ -87,6 +100,8 @@ Digits, and it was `Bitwise.complement 0` until §I16 of `docs/m1b-int.md`: a
 literal used to be carried through canonicalization as a machine `Int`, which
 stops one decimal short of every `UInt64` above `2^63 - 1`. Both of D86's
 parsers carry one exactly now.
+
+It costs O(1): it is a constant.
 
 -}
 maxValue : UInt64
@@ -102,6 +117,8 @@ maxValue =
 
     UInt64.fromInt -1 == UInt64.minValue
 
+It costs O(1).
+
 -}
 fromInt : Int -> UInt64
 fromInt n =
@@ -116,6 +133,8 @@ fromInt n =
 
     UInt64.fromIntWrap -1 == UInt64.maxValue
 
+It costs O(1).
+
 -}
 fromIntWrap : Int -> UInt64
 fromIntWrap n =
@@ -123,6 +142,9 @@ fromIntWrap n =
 
 
 {-| Widen an `Int`, or `Nothing` when it is negative.
+
+It costs O(1).
+
 -}
 fromIntChecked : Int -> Maybe UInt64
 fromIntChecked n =
@@ -141,6 +163,8 @@ fromIntChecked n =
 
     UInt64.toInt UInt64.maxValue == 2147483647
 
+It costs O(1).
+
 -}
 toInt : UInt64 -> Int
 toInt n =
@@ -155,6 +179,8 @@ toInt n =
 
     UInt64.toIntWrap UInt64.maxValue == -1
 
+It costs O(1).
+
 -}
 toIntWrap : UInt64 -> Int
 toIntWrap n =
@@ -162,6 +188,9 @@ toIntWrap n =
 
 
 {-| Narrow to an `Int`, or `Nothing` when it does not fit.
+
+It costs O(1).
+
 -}
 toIntChecked : UInt64 -> Maybe Int
 toIntChecked n =
@@ -191,6 +220,8 @@ maxIntAsUInt64 =
 
     UInt64.fromUInt32 UInt32.maxValue == 4294967295
 
+It costs O(1).
+
 -}
 @prim("u32_to_u64")
 fromUInt32 : UInt32 -> UInt64
@@ -203,6 +234,8 @@ negative one.
     UInt64.fromInt64 (Int64.fromInt 42) == 42
 
     UInt64.fromInt64 Int64.minValue == UInt64.minValue
+
+It costs O(1).
 
 -}
 fromInt64 : Int64 -> UInt64
@@ -218,6 +251,8 @@ fromInt64 n =
 
     UInt64.fromInt64Wrap (Int64.fromInt -1) == UInt64.maxValue
 
+It costs O(1).
+
 -}
 @prim("i64_as_u64")
 fromInt64Wrap : Int64 -> UInt64
@@ -226,6 +261,8 @@ fromInt64Wrap : Int64 -> UInt64
 {-| Reinterpret an `Int64`, or `Nothing` when it is negative.
 
     UInt64.fromInt64Checked Int64.minValue == Nothing
+
+It costs O(1).
 
 -}
 fromInt64Checked : Int64 -> Maybe UInt64
@@ -251,6 +288,8 @@ zeroAsInt64 =
 Total, and lossy above `2^53`: a `UInt64` has 64 bits of magnitude and a
 `Float` has 53, so a large one rounds to nearest, ties to even.
 
+It costs O(1).
+
 -}
 @prim("u64_to_f64")
 toFloat : UInt64 -> Float
@@ -268,6 +307,8 @@ goes towards positive infinity.
 
     UInt64.round (0 / 0) == UInt64.minValue
 
+It costs O(1): a floor, comparisons and a saturating conversion.
+
 -}
 round : Float -> UInt64
 round x =
@@ -277,6 +318,8 @@ round x =
 {-| Round down to a `UInt64`, **saturating** at this type's bounds.
 
     UInt64.floor 1.5 == UInt64.fromInt 1
+
+It costs O(1): a floor and a saturating conversion.
 
 -}
 floor : Float -> UInt64
@@ -288,6 +331,8 @@ floor x =
 
     UInt64.ceiling 1.5 == UInt64.fromInt 2
 
+It costs O(1): a ceiling and a saturating conversion.
+
 -}
 ceiling : Float -> UInt64
 ceiling x =
@@ -297,6 +342,8 @@ ceiling x =
 {-| Round towards zero to a `UInt64`, **saturating** at this type's bounds.
 
     UInt64.truncate -0.5 == UInt64.minValue
+
+It costs O(1): a truncation and a saturating conversion.
 
 -}
 truncate : Float -> UInt64

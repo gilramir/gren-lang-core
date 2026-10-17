@@ -23,6 +23,13 @@ holds; a number goes in as its digits (geng-lang `m2-beam-toptier.md` D449).
 
 ## Reading
 
+## Costs
+
+A context is an array of key and value strings that the scheduler keeps with
+each process (D449), and each function here turns it into a `Dict` to read it,
+so its costs grow with the number k of keys in the context, which is small in
+practice. Costs are per call.
+
 @docs current, get
 
 
@@ -42,6 +49,9 @@ import Task exposing (Task)
 
 {-| The context the running task has: everything every `with` around it
 added, an inner one's key replacing an outer one's.
+
+It costs O(k log k) for k keys: it builds a `Dict` from the context's entries.
+
 -}
 current : Task x (Dict String String)
 current =
@@ -49,6 +59,10 @@ current =
 
 
 {-| One key of the context, if something around the running task set it.
+
+It costs O(k log k) for k keys, since it builds the whole context as a `Dict`
+before the lookup, so read `current` once where a task asks for several keys.
+
 -}
 get : String -> Task x (Maybe String)
 get key =
@@ -57,6 +71,11 @@ get key =
 
 {-| Run a task with these keys added to the context, and every task it starts
 with them too. A key already there is replaced for this task only.
+
+It costs O(k log k + f log (k + f)) for k keys in the context and f in
+`fields`: it builds the context as a `Dict`, unions `fields` into it and turns
+it back into an array, which the task then runs under.
+
 -}
 with : Dict String String -> Task x a -> Task x a
 with fields task =

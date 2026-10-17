@@ -8,6 +8,16 @@ module Json.Encode exposing
 {-| Functions for turning Gren values into Json values.
 
 
+## Costs
+
+A `Value` is a tree. An array is an `Array`, and an object is an `Array` of its
+members in their order, not a `Dict`. Building a value costs its elements, and
+[`object`](#object) and [`dict`](#dict) also look for a repeated key.
+[`encode`](#encode) writes the text in one pass, appending each piece onto one
+string that grows as it goes: natively and on the BEAM the append writes in
+place, and on JavaScript it makes a rope. Costs are per call, not counting the
+functions given.
+
 @docs encode, Value
 
 
@@ -71,6 +81,8 @@ the amount of indentation in the resulting string.
     --     "age": 42
     -- }
 
+It costs O(n) in the length of the text it writes, indentation included.
+
 -}
 encode : Int -> Value -> String
 encode =
@@ -90,6 +102,8 @@ encode =
     -- encode 0 (string "abc")   == "\"abc\""
     -- encode 0 (string "hello") == "\"hello\""
 
+It costs O(1).
+
 -}
 string : String -> Value
 string =
@@ -104,6 +118,8 @@ string =
     -- encode 0 (int 42) == "42"
     -- encode 0 (int -7) == "-7"
     -- encode 0 (int 0)  == "0"
+
+It costs O(1).
 
 -}
 int : Int -> Value
@@ -130,6 +146,8 @@ both as `null`.
 [ieee]: https://en.wikipedia.org/wiki/IEEE_754
 [json]: https://www.json.org/
 
+It costs O(1).
+
 -}
 float : Float -> Value
 float =
@@ -143,6 +161,8 @@ float =
 
     -- encode 0 (bool True)  == "true"
     -- encode 0 (bool False) == "false"
+
+It costs O(1).
 
 -}
 bool : Bool -> Value
@@ -160,6 +180,8 @@ bool =
 
 
     -- encode 0 null == "null"
+
+It costs O(1).
 
 -}
 null : Value
@@ -180,6 +202,8 @@ null =
     -- encode 0 (array bool [True,False]) == "[true,false]"
     -- encode 0 (array string ["a","b"])  == """["a","b"]"""
 
+It costs O(k) in the array's k elements, one call of the function each.
+
 -}
 array : (a -> Value) -> Array a -> Value
 array func entries =
@@ -187,6 +211,10 @@ array func entries =
 
 
 {-| Turn an `Set` into a JSON array.
+
+It costs O(k) in the set's k elements, which it turns into an array and then
+maps.
+
 -}
 set : (a -> Value) -> Set a -> Value
 set func entries =
@@ -213,6 +241,9 @@ set func entries =
 The members keep the order they are given in. A key given more than once keeps
 its last value, at its first position.
 
+It costs O(k log k) for k members past eight, which it puts in a `Dict` to find
+a repeated key, and at most 28 key comparisons for eight members or fewer.
+
 -}
 object : Array { key : String, value : Value } -> Value
 object pairs =
@@ -230,6 +261,9 @@ object pairs =
 
     -- Encode.encode 0 (Encode.dict identity Encode.int people)
     --   == """{"Tom":42,"Sue":38}"""
+
+It costs O(k log k) in the dictionary's k entries: one pass to make the members
+and, past eight entries, a `Dict` to find any key that `toKey` repeats.
 
 -}
 dict : (k -> String) -> (v -> Value) -> Dict k v -> Value

@@ -25,6 +25,32 @@ Unless otherwise noted, all functions in this module deal with code points: a le
 number of code points, and an index counts them.
 
 
+## Costs
+
+Each function below states its cost per call, n being the length of the string.
+On JavaScript a `String` is V8's: an offset is a UTF-16 unit, a slice is O(1),
+an append makes a rope that V8 flattens, O(n) once, the first time it is sliced
+or read by offset, and counting code points is a scan for surrogate pairs that
+V8 answers at once on a string whose characters are all below U+0100. Natively
+a `String` is UTF-8 bytes with no cached length or index: a slice is an O(1)
+view, counting code points reads every byte, a search is a naive loop (O(n·m)
+at worst, m being the length of what is searched for), and an append writes in
+place into the room beside the latest string grown from a buffer. On the BEAM a
+`String` is a UTF-8 binary, or two parts with the front reversed once it has
+been grown at its front: slicing a binary is O(1), slicing a two-part string
+copies what it cuts, counting code points reads every byte, and an append
+extends the latest binary in place. So the functions that take a code-point
+index (`slice` and its family, `firstIndexOfFrom`) count the string at every
+call, and [`popFirst`](#popFirst) and [`popLast`](#popLast) are the O(1) way
+along a string on every target.
+
+- `String`: Comparing two strings with `==` costs O(1) when their lengths (in
+  UTF-16 units on JavaScript, in bytes elsewhere) differ and up to O(n) when
+  they are the same, and `compare`, which `Dict`, `Set` and `Array.sort` call
+  at every step, costs their common prefix natively and on the BEAM, and on
+  JavaScript up to both strings' whole length whenever they differ and either
+  has a character above U+00FF.
+
 @docs String, isEmpty, count, reverse, repeat, replace
 
 
@@ -166,6 +192,8 @@ type String
 
     isEmpty "the world" == False
 
+It costs O(1).
+
 -}
 isEmpty : String -> Bool
 isEmpty string =
@@ -178,6 +206,9 @@ isEmpty string =
 
     count "" == 0
 
+It costs O(n) on every target, except that JavaScript answers at once for a
+string whose characters are all below U+0100.
+
 -}
 count : String -> Int
 count =
@@ -187,6 +218,8 @@ count =
 {-| Reverse a string.
 
     reverse "stressed" == "desserts"
+
+It costs O(n), turning the string into an array of characters and back.
 
 -}
 reverse : String -> String
@@ -199,6 +232,9 @@ reverse str =
 {-| Repeat a string _n_ times.
 
     repeat 3 "ha" == "hahaha"
+
+It costs O(r) in the length r of the result, which it builds by doubling the
+piece, so n copies take O(log n) appends.
 
 -}
 repeat : Int -> String -> String
@@ -229,6 +265,10 @@ repeatHelp n chunk acc =
 **Note:** If you need more advanced replacements, check out the
 [`String.Parser`](String.Parser) module.
 
+It costs O(n) in the length of the string plus the length of the result, a
+[`split`](#split) followed by a [`join`](#join) (natively O(n·m) at worst, m
+being the length of the string replaced).
+
 -}
 replace : String -> String -> String -> String
 replace before after string =
@@ -244,6 +284,12 @@ to do this.
 
     prepend "butter" "fly" == "butterfly"
 
+It costs O(1) on JavaScript, which makes a rope; natively and on the BEAM it
+writes one string into the room beside the other when that one is the latest
+string grown from its buffer, costing the string it writes, and otherwise
+copies both, so `acc ++ piece` and `piece ++ acc` in a loop are linear but
+appending twice onto one version copies it the second time.
+
 -}
 prepend : String -> String -> String
 prepend =
@@ -254,6 +300,9 @@ prepend =
 but with the arguments reversed.
     
     append "butter" "fly" == "flybutter"
+
+It costs what [`prepend`](#prepend) costs, being `prepend` with its arguments
+reversed.
 
 -}
 append : String -> String -> String
@@ -271,6 +320,10 @@ you will get an array containing the original string.
     split "," "cat,dog,cow" == [ "cat", "dog", "cow" ]
     
     split "/" "home/evan/Desktop/" == [ "home", "evan", "Desktop", "" ]
+
+It costs O(n) in the length of the string: the host's `split` on JavaScript,
+`binary:split` on the BEAM, and natively a naive search, O(n·m) at worst, m
+being the length of the separator.
 
 -}
 @externPure(js, "String", "split")
@@ -309,6 +362,9 @@ splitHelp sep sepEnd string (Offset start) acc =
 
     join "/" [ "home", "evan", "Desktop" ] == "home/evan/Desktop"
 
+It costs O(n) in the length of the result, appending each piece onto the one
+before in place (a rope on JavaScript).
+
 -}
 join : String -> Array String -> String
 join sep strings =
@@ -330,6 +386,8 @@ in it: `words "" == []`.
 Whitespace here is Unicode's `White_Space` property at the version
 [`Unicode.version`](Unicode#version) names, and not the host's idea of it
 (`docs/unicode.md` U2).
+
+It costs O(n), one whitespace lookup a character.
 
 -}
 words : String -> Array String
@@ -362,6 +420,8 @@ closeWord acc =
 
     lines "How are you?\nGood?" == [ "How are you?", "Good?" ]
 
+It costs O(n), a few passes over the string.
+
 -}
 lines : String -> Array String
 lines string =
@@ -385,6 +445,12 @@ are taken starting from the _end_ of the array.
     slice 0 -7 "snakes on a plane!" == "snakes on a"
 
     slice -6 -1 "snakes on a plane!" == "plane"
+
+It costs O(n) at every call: it counts the string and, on any text that is not
+ASCII, walks from the start to the index (on JavaScript it counts a string
+whose characters are all below U+0100 at once, and walks only on text with a
+character above U+FFFF); to walk along a string, use [`popFirst`](#popFirst),
+which costs O(1).
 
 -}
 slice : Int -> Int -> String -> String
@@ -442,6 +508,10 @@ the length of the string, then the string is returned as is.
 
     takeFirst 8 "Mulder" == "Mulder"
 
+It is [`slice`](#slice) and costs the same, the whole string's length at every
+call however few characters it takes; to take characters one at a time, use
+[`popFirst`](#popFirst), which costs O(1).
+
 -}
 takeFirst : Int -> String -> String
 takeFirst n string =
@@ -459,6 +529,10 @@ the length of the string, then the string is returned as is.
 
     takeLast 8 "Scully" == "Scully"
 
+It is [`slice`](#slice) and costs the same, the whole string's length at every
+call however few characters it takes; to take characters one at a time from the
+end, use [`popLast`](#popLast), which costs O(1).
+
 -}
 takeLast : Int -> String -> String
 takeLast n string =
@@ -473,6 +547,10 @@ takeLast n string =
 
     dropFirst 2 "The Lone Gunmen" == "e Lone Gunmen"
 
+It is [`slice`](#slice) and costs the same, the whole string's length at every
+call, so `dropFirst 1` in a loop is quadratic; use [`popFirst`](#popFirst),
+which costs O(1).
+
 -}
 dropFirst : Int -> String -> String
 dropFirst n string =
@@ -486,6 +564,10 @@ dropFirst n string =
 {-| Drop the last _n_ characters.
 
     dropLast 2 "Cigarette Smoking Man" == "Cigarette Smoking M"
+
+It is [`slice`](#slice) and costs the same, the whole string's length at every
+call, so `dropLast 1` in a loop is quadratic; use [`popLast`](#popLast), which
+costs O(1).
 
 -}
 dropLast : Int -> String -> String
@@ -509,6 +591,9 @@ dropLast n string =
 
     contains "THE" "theory" == False
 
+It costs O(n), one search from the start (natively a naive loop, O(n·m) at
+worst, m being the length of the first string).
+
 -}
 contains : String -> String -> Bool
 contains sub string =
@@ -520,6 +605,9 @@ contains sub string =
     startsWith "the" "theory" == True
 
     startsWith "ory" "theory" == False
+
+It costs O(m) in the length m of the first string, which it compares with the
+slice of the second that has the same width.
 
 -}
 startsWith : String -> String -> Bool
@@ -540,6 +628,9 @@ startsWith sub string =
     endsWith "the" "theory" == False
 
     endsWith "ory" "theory" == True
+
+It costs O(m) in the length m of the first string, which it compares with the
+slice of the second that has the same width.
 
 -}
 endsWith : String -> String -> Bool
@@ -573,6 +664,11 @@ one:
 
     slice 1 4 theory == "ory"
 
+It costs O(n) at worst: a search up to the first match (natively O(n·m) at
+worst, m being the length of the first string), then a count of the code points
+before the match, which on JavaScript may run to the end of any text with a
+character above U+00FF.
+
 -}
 firstIndexOf : String -> String -> Maybe Int
 firstIndexOf sub string =
@@ -597,6 +693,13 @@ search at the given index, if it's there.
 A start below 0 searches from 0, and one past the end finds nothing. Both
 indices are codepoint indices, as in [firstIndexOf](#firstIndexOf), which is
 `firstIndexOfFrom 0`.
+
+It costs O(n) at every call wherever the search starts, because it counts the
+string, walks to the start on text that is not ASCII (on JavaScript, text with
+a character above U+FFFF) and counts code points from the beginning up to the
+match; on JavaScript a string whose characters are all below U+0100 costs only
+the search. To find every match, use [`indices`](#indices), which takes one
+pass.
 
 -}
 firstIndexOfFrom : Int -> String -> String -> Maybe Int
@@ -639,6 +742,10 @@ firstIndexOfFrom start sub string =
 
 A codepoint index, as in [firstIndexOf](#firstIndexOf).
 
+It costs O(n): a search back from the end natively and on JavaScript, a search
+forward from the start that keeps the last match on the BEAM, then a count of
+the code points before the match.
+
 -}
 lastIndexOf : String -> String -> Maybe Int
 lastIndexOf sub string =
@@ -662,6 +769,10 @@ lastIndexOf sub string =
     indices "needle" "haystack" == []
 
 Codepoint indices, as in [firstIndexOf](#firstIndexOf).
+
+It costs O(n) however many matches it finds, one search and one count of code
+points from each match to the next (natively the search is O(n·m) at worst, m
+being the length of the first string).
 
 -}
 indices : String -> String -> Array Int
@@ -720,6 +831,8 @@ visible in practice is final sigma: `toLower "\u{039F}\u{0394}\u{039F}\u{03A3}"`
 is `"\u{03BF}\u{03B4}\u{03BF}\u{03C3}"` here, with an ordinary sigma at the
 end rather than `\u{03C2}`.
 
+It costs O(n), one table lookup a character.
+
 -}
 toUpper : String -> String
 toUpper string =
@@ -729,6 +842,8 @@ toUpper string =
 {-| Convert a string to all lower case. Useful for case-insensitive comparisons.
 
     toLower "X-FILES" == "x-files"
+
+It costs O(n), one table lookup a character.
 
 -}
 toLower : String -> String
@@ -778,6 +893,10 @@ mapCase delta expansion c acc =
 
     pad 5 ' ' "121" == " 121 "
 
+It costs O(n) in the length of the string plus the padding, and counts the
+string first (at once on JavaScript for a string whose characters are all below
+U+0100).
+
 -}
 pad : Int -> Char -> String -> String
 pad n char string =
@@ -796,6 +915,10 @@ pad n char string =
 
     padLeft 5 '.' "121" == "..121"
 
+It costs O(n) in the length of the string plus the padding, and counts the
+string first (at once on JavaScript for a string whose characters are all below
+U+0100).
+
 -}
 padLeft : Int -> Char -> String -> String
 padLeft n char string =
@@ -809,6 +932,10 @@ padLeft n char string =
     padRight 5 '.' "11" == "11..."
 
     padRight 5 '.' "121" == "121.."
+
+It costs O(n) in the length of the string plus the padding, and counts the
+string first (at once on JavaScript for a string whose characters are all below
+U+0100).
 
 -}
 padRight : Int -> Char -> String -> String
@@ -825,6 +952,10 @@ Whitespace is Unicode's `White_Space` property at the version
 every backend. It is *not* the host's: ECMAScript trims U+FEFF, which is not
 `White_Space`, and does not trim U+0085, which is (`docs/unicode.md` U2).
 
+It costs O(w) in the w characters of whitespace it removes, one
+[`popFirst`](#popFirst) or [`popLast`](#popLast) each, plus the one-time
+flattening those cost on a string built by appends.
+
 -}
 trim : String -> String
 trim string =
@@ -834,6 +965,10 @@ trim string =
 {-| Get rid of whitespace on the left of a string.
 
     trimLeft "  hats  \n" == "hats  \n"
+
+It costs O(w) in the w characters of whitespace it removes, one
+[`popFirst`](#popFirst) each, plus the one-time flattening that costs on a
+string built by appends.
 
 -}
 trimLeft : String -> String
@@ -853,6 +988,10 @@ trimLeft string =
 {-| Get rid of whitespace on the right of a string.
 
     trimRight "  hats  \n" == "  hats"
+
+It costs O(w) in the w characters of whitespace it removes, one
+[`popLast`](#popLast) each, plus the one-time flattening that costs on a string
+built by appends.
 
 -}
 trimRight : String -> String
@@ -889,6 +1028,8 @@ want to use [`Maybe.withDefault`](Maybe#withDefault) to handle bad data:
     Maybe.withDefault 0 (String.toInt "42") == 42
 
     Maybe.withDefault 0 (String.toInt "ab") == 0
+
+It costs O(n).
 
 -}
 toInt : String -> Maybe Int
@@ -971,6 +1112,8 @@ toIntHelp string end (Offset o) acc =
 Check out [`inspect`](Inspect#Inspect) to convert any value that has an
 `Inspect` instance to a string for debugging purposes.
 
+It costs O(1), since the result is at most eleven characters.
+
 -}
 fromInt : Int -> String
 fromInt n =
@@ -1017,6 +1160,9 @@ intDigits n =
 
     String.fromInt64 (-42 : Int64) == "-42"
 
+It costs O(1): at most twenty digits by repeated division, each division a
+`BigInt` division on JavaScript.
+
 -}
 fromInt64 : Int64 -> String
 fromInt64 n =
@@ -1055,6 +1201,8 @@ int64Digits n =
 
     String.fromUInt32 (4294967295 : UInt32) == "4294967295"
 
+It costs O(1), at most ten digits by repeated division.
+
 -}
 fromUInt32 : UInt32 -> String
 fromUInt32 n =
@@ -1075,6 +1223,9 @@ fromUInt32 n =
 {-| Convert a `UInt64` to a `String`.
 
     String.fromUInt64 (18446744073709551615 : UInt64) == "18446744073709551615"
+
+It costs O(1): at most twenty digits by repeated division, each division a
+`BigInt` division on JavaScript.
 
 -}
 fromUInt64 : UInt64 -> String
@@ -1117,6 +1268,9 @@ want to use [`Maybe.withDefault`](Maybe#withDefault) to handle bad data:
 It reads everything [`fromFloat`](#fromFloat) writes, `"NaN"`, `"Infinity"` and
 `"-Infinity"` included, so `toFloat (fromFloat x)` gives back `x` for every
 `Float` but the sign of `-0.0`.
+
+It costs O(n): it checks the string, then hands it to the host's decimal reader
+(natively `strtod`, on a copy of the string).
 
 -}
 toFloat : String -> Maybe Float
@@ -1229,6 +1383,9 @@ looks like one, which `String.fromInt` of the same number does not.
 [`inspect`](Inspect#Inspect), and deliberately (R5): what `fromFloat` writes has
 to be what [`toFloat`](#toFloat) reads, and `inspect` answers to a format instead.
 
+It costs O(1); the shortest digits come from the host on JavaScript and from
+Ryu, written in Geng, elsewhere.
+
 -}
 fromFloat : Float -> String
 fromFloat number =
@@ -1316,6 +1473,9 @@ which is what R5 pins and what a `strtof` does. The two disagree at exactly one
 `Float32` in the whole 2^32 -- `7.038531e-26`, at either sign -- where the round
 trip lands on the neighbour instead (`docs/m1b-ryu.md` §Y14.6, which counted
 them, and where the fix is a `String.toFloat32` that rounds once).
+
+It costs O(1), with the shortest digits from Ryu, written in Geng, on every
+target.
 
 -}
 fromFloat32 : Float32 -> String
@@ -1415,6 +1575,8 @@ orZero digits =
 
     toArray "🙈🙉🙊" == [ '🙈', '🙉', '🙊' ]
 
+It costs O(n).
+
 -}
 toArray : String -> Array Char
 toArray string =
@@ -1427,6 +1589,8 @@ toArray string =
     fromArray [ 'a', 'b', 'c' ] == "abc"
 
     fromArray [ '🙈', '🙉', '🙊' ] == "🙈🙉🙊"
+
+It costs O(n) in the length of the array.
 
 -}
 fromArray : Array Char -> String
@@ -1442,6 +1606,8 @@ fromArray =
 
     fromChar 'a' == "a"
 
+It costs O(1).
+
 -}
 fromChar : Char -> String
 fromChar char =
@@ -1452,6 +1618,11 @@ fromChar char =
 
     pushFirst 'T' "he truth is out there" == "The truth is out there"
 
+It costs O(1) on JavaScript; natively and on the BEAM it writes in place onto a
+string that is the latest grown at its front and otherwise copies the string
+once, so pushing in a loop is linear but pushing twice onto one version copies
+it.
+
 -}
 pushFirst : Char -> String -> String
 pushFirst char string =
@@ -1461,6 +1632,11 @@ pushFirst char string =
 {-| Add a character to the end of a string.
 
     pushLast 'T' "he truth is out there" == "he truth is out thereT"
+
+It costs O(1) on JavaScript; natively and on the BEAM it writes in place onto a
+string that is the latest grown at its end and otherwise copies the string
+once, so pushing in a loop is linear but pushing twice onto one version copies
+it.
 
 -}
 pushLast : Char -> String -> String
@@ -1474,6 +1650,11 @@ pattern match on strings exactly as you would with arrays.
     popFirst "abc" == Just { first = 'a', rest = "bc" }
 
     popFirst "" == Nothing
+
+It costs O(1), except that the first pop off a string built by appends flattens
+it once, O(n), on JavaScript (a rope) and on the BEAM (a string grown at its
+front), so walking along a string by `popFirst` costs O(n) in all on every
+target.
 
 -}
 popFirst : String -> Maybe { first : Char, rest : String }
@@ -1496,6 +1677,11 @@ pattern match on strings exactly as you would with arrays.
     popLast "hi 🙂" == Just { last = '🙂', rest = "hi " }
 
     popLast "" == Nothing
+
+It costs O(1), except that the first pop off a string built by appends flattens
+it once, O(n), on JavaScript (a rope) and on the BEAM (a string grown at its
+front), so walking back along a string by `popLast` costs O(n) in all on every
+target.
 
 -}
 popLast : String -> Maybe { last : Char, rest : String }
@@ -1531,6 +1717,8 @@ popLast string =
         "a/b/c"
         == "a.b.c"
 
+It costs O(n), one call of the function a character.
+
 -}
 map : (Char -> Char) -> String -> String
 map fn str =
@@ -1545,6 +1733,8 @@ map fn str =
 {-| Keep only the characters that pass the test.
 
     keepIf isDigit "R2-D2" == "22"
+
+It costs O(n), one call of the test a character.
 
 -}
 keepIf : (Char -> Bool) -> String -> String
@@ -1565,6 +1755,8 @@ keepIf isGood str =
 
     foldl cons "" "time" == "emit"
 
+It costs O(n), one call of the function a character.
+
 -}
 foldl : (Char -> b -> b) -> b -> String -> b
 foldl step initial string =
@@ -1574,6 +1766,9 @@ foldl step initial string =
 {-| Reduce a string from the end.
 
     foldr cons "" "time" == "time"
+
+It costs O(n), one call of the function a character; on the BEAM it first makes
+a list of every character.
 
 -}
 foldr : (Char -> b -> b) -> b -> String -> b
@@ -1590,6 +1785,9 @@ foldr step initial string =
     any isDigit "heart" == False
 
     any isDigit "" == False
+
+It costs O(k), k being the number of characters up to the first that passes the
+test, so O(n) when none does.
 
 -}
 any : (Char -> Bool) -> String -> Bool
@@ -1619,6 +1817,9 @@ anyHelp isGood string end (Offset o) =
 
     all isDigit "" = True
 
+It costs O(k), k being the number of characters up to the first that fails the
+test, so O(n) when every one passes.
+
 -}
 all : (Char -> Bool) -> String -> Bool
 all isGood str =
@@ -1642,6 +1843,8 @@ characters.
 This is [count](#count)'s other answer: `count` says how many code points a
 string holds and this says how many characters it shows.
 
+It costs O(n), one segmentation step a code point.
+
 -}
 graphemes : String -> Array String
 graphemes string =
@@ -1655,6 +1858,8 @@ graphemes string =
 
     count "an\u{0303}b" == 4
 
+It costs O(n), one segmentation step a code point.
+
 -}
 graphemeLength : String -> Int
 graphemeLength string =
@@ -1665,6 +1870,9 @@ graphemeLength string =
 
     foldlGraphemes (\g acc -> acc ++ "|" ++ g) "" "an\u{0303}b"
         == "|a|n\u{0303}|b"
+
+It costs O(n), one segmentation step a code point and one call of the function
+a cluster.
 
 -}
 foldlGraphemes : (String -> b -> b) -> b -> String -> b

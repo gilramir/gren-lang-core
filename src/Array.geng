@@ -12,6 +12,23 @@ module Array exposing
 {-| You can create an `Array` using the `[1, 2, 3]` syntax. This module has a bunch of
 functions to help you work with them.
 
+## Costs
+
+On JavaScript and natively an array is a flat block of its elements, or a view
+into a buffer with room at either end: a push or `++` writes in place onto the
+latest version of a buffer, the one that ends where the buffer's written
+elements end (or starts where they start), a slice is a view while it keeps at
+least a quarter of the buffer it would hold alive, and `set`, and `insert` and
+`remove` away from the ends, copy the whole array. On the BEAM an array is a
+tuple, read in O(1), until it is at least 64 long and has been grown, sliced or
+set, and it is then a persistent 32-way tree, whose reads and writes cost
+O(log₃₂ n), at most about five steps, and whose older versions are as cheap to
+change as the latest. Making a long tuple a tree costs O(n) once, and an array
+that comes out of a whole-array function such as `map`, `keepIf` or `sort`, or
+out of `Array.Builder.toArray`, is a tuple again. So a traversal stated as O(n)
+below takes O(n log₃₂ n) on the BEAM when the array is a tree. Each cost is per
+call, n being the array's length.
+
 @docs Array
 
 @docs singleton, initialize, repeat, range
@@ -64,6 +81,9 @@ type Array a
 
 
 {-| Create an array containing a single value.
+
+It costs O(1).
+
 -}
 singleton : a -> Array a
 singleton a =
@@ -77,6 +97,9 @@ resulting from calling `fn` with `offset + index`.
 
 In the above example, we create an array containing 3 integers
 starting at 5.
+
+It costs O(n), calling the function n times.
+
 -}
 initialize : Int -> Int -> (Int -> a) -> Array a
 initialize len offset fn =
@@ -95,6 +118,8 @@ initialize len offset fn =
 
     repeat 5 3 == [ 3, 3, 3, 3, 3 ]
 
+It costs O(n).
+
 -}
 repeat : Int -> a -> Array a
 repeat n val =
@@ -106,6 +131,8 @@ repeat n val =
     range 3 6 == [3, 4, 5, 6]
     range 3 3 == [3]
     range 6 3 == []
+
+It costs O(n) in the number of elements it makes.
 
 -}
 range : Int -> Int -> Array Int
@@ -129,6 +156,8 @@ range from to =
 
 So `map func [ a, b, c ]` is the same as `[ func a, func b, func c ]`
 
+It costs O(n).
+
 -}
 map : (a -> b) -> Array a -> Array b
 map fn array =
@@ -142,6 +171,8 @@ map fn array =
 {-| Same as `map` but the function is also applied to the index of each element.
 
     indexedMap (\idx val -> [idx, val]) [ 3, 3, 3 ] == [ [ 0, 3 ], [ 1, 3 ], [ 2, 3 ] ]
+
+It costs O(n).
 
 -}
 indexedMap : (Int -> a -> b) -> Array a -> Array b
@@ -163,6 +194,9 @@ So `foldl step state [ 1, 2, 3 ]` is like saying:
         |> step 1
         |> step 2
         |> step 3
+
+It costs O(n).
+
 -}
 foldl : (a -> b -> b) -> b -> Array a -> b
 foldl fn acc array =
@@ -171,6 +205,9 @@ foldl fn acc array =
 
 {-| Reduce the array from the right. Same as `foldl` but
 the execution order is reversed.
+
+It costs O(n).
+
 -}
 foldr : (a -> b -> b) -> b -> Array a -> b
 foldr fn acc array =
@@ -182,6 +219,8 @@ passed the index of the current value.
 
     indexedFoldl (\idx val sum -> idx + val + sum) 0 [ 1, 2, 3 ] == 9
 
+It costs O(n).
+
 -}
 indexedFoldl : (Int -> a -> b -> b) -> b -> Array a -> b
 indexedFoldl fn acc array =
@@ -191,6 +230,9 @@ indexedFoldl fn acc array =
 {-| Reduce the array from the right. The reducing function
 is passed the index of the current value. Same as `indexedFoldl`
 but the execution order is reversed.
+
+It costs O(n).
+
 -}
 indexedFoldr : (Int -> a -> b -> b) -> b -> Array a -> b
 indexedFoldr fn acc array =
@@ -200,6 +242,8 @@ indexedFoldr fn acc array =
 {-| Keep values that pass the test.
 
     keepIf (\n -> n < 3) [ 1, 2, 3, 4 ] == [ 1, 2 ]
+
+It costs O(n).
 
 -}
 keepIf : (a -> Bool) -> Array a -> Array a
@@ -213,6 +257,9 @@ keepIf fn array =
 {-| Same as `keepIf` but the test is also applied to the index of each element.
 
     indexedKeepIf (\idx val -> idx + val > 4) [ 1, 2, 3, 4 ] == [ 3, 4 ]
+
+It costs O(n).
+
 -}
 indexedKeepIf : (Int -> a -> Bool) -> Array a -> Array a
 indexedKeepIf fn array =
@@ -227,6 +274,8 @@ indexedKeepIf fn array =
 
     mapAndKeepJust String.toInt [ "3", "not a number", "-5" ] == [ 3, -5 ]
     mapAndKeepJust identity [ Just 1, Nothing ] == [ 1 ]
+
+It costs O(n).
 
 -}
 mapAndKeepJust : (a -> Maybe b) -> Array a -> Array b
@@ -247,6 +296,8 @@ mapAndKeepJust mapper array =
 
     reverse [ 1, 2, 3 ] == [ 3, 2, 1 ]
 
+It costs O(n).
+
 -}
 reverse : Array a -> Array a
 reverse array =
@@ -265,6 +316,8 @@ reverse array =
     isEmpty [] == True
     isEmpty [ 1, 2, 3 ] == False
 
+It costs O(1).
+
 -}
 isEmpty : Array a -> Bool
 isEmpty array =
@@ -274,6 +327,8 @@ isEmpty array =
 {-| Return the length of an array.
 
     length [ 1, 2, 3 ] == 3
+
+It costs O(1).
 
 -}
 length : Array a -> Int
@@ -294,6 +349,8 @@ A negative index looks up an element in reverse from the end of the array.
     get 1 [ 1, 2, 3 ] == Just 2
     get 10 [ 1, 2, 3 ] == Nothing
     get -1 [ 1, 2, 3 ] == Just 3
+
+It costs O(1), and O(log n) on the BEAM when the array is a tree.
 
 -}
 @inline
@@ -321,6 +378,8 @@ get index array =
 
     findFirst (\n -> n > 0) [ -1, 0, 1, 2 ] == Just { index = 2, value = 1 }
 
+It costs O(n), stopping at the first element that passes the test.
+
 -}
 findFirst : (a -> Bool) -> Array a -> Maybe { index : Int, value : a }
 findFirst fn array =
@@ -330,6 +389,8 @@ findFirst fn array =
 {-| Find the last value that passes the test.
 
     findLast (\n -> n > 0) [ -1, 0, 1, 2 ] == Just { index = 3, value = 2 }
+
+It costs O(n), stopping at the last element that passes the test.
 
 -}
 findLast : (a -> Bool) -> Array a -> Maybe { index : Int, value : a }
@@ -341,6 +402,8 @@ findLast fn array =
 
     member 9 [1,2,3,4] == False
     member 4 [1,2,3,4] == True
+
+It costs O(n) comparisons, stopping at the first match.
 
 -}
 member : Eq a => a -> Array a -> Bool
@@ -359,6 +422,8 @@ member value array =
     any isEven [1,3] == False
     any isEven [] == False
 
+It costs O(n), stopping at the first element that passes the test.
+
 -}
 any : (a -> Bool) -> Array a -> Bool
 any fn array =
@@ -376,6 +441,8 @@ any fn array =
     all isEven [2,3] == False
     all isEven [] == True
 
+It costs O(n), stopping at the first element that fails the test.
+
 -}
 all : (a -> Bool) -> Array a -> Bool
 all fn array =
@@ -391,6 +458,8 @@ all fn array =
 
     minimum [3,2,1] == Just 1
     minimum []      == Nothing
+
+It costs O(n) comparisons.
 
 -}
 minimum : Ord a => Array a -> Maybe a
@@ -417,6 +486,8 @@ minimum array =
 
     maximum [3,2,1] == Just 3
     maximum []      == Nothing
+
+It costs O(n) comparisons.
 
 -}
 maximum : Ord a => Array a -> Maybe a
@@ -449,6 +520,11 @@ Passing a negative index means you want to replace an element counting backwards
     set 10 10 [ 1, 2, 3 ] == [ 1, 2, 3 ]
     set -1 10 [ 1, 2, 3 ] == [ 1, 2, 10 ]
 
+It costs O(n) on JavaScript and natively, where it copies the array, and O(log
+n) on the BEAM once the array is a tree, which the first set of a long array
+makes it, at O(n); to set many elements in a loop, use
+[`Array.Builder.set`](Array-Builder#set).
+
 -}
 set : Int -> a -> Array a -> Array a
 set index value array =
@@ -478,6 +554,10 @@ end (positive index).
 
     setMany 1 [ 0, 0 ] [ 1, 2, 3, 4 ] == [ 1, 0, 0, 4 ]
 
+It costs O(n + m) for m values, as [`splice`](#splice) does, rebuilding the
+array around them; to set elements one at a time in a loop, use
+[`Array.Builder.set`](Array-Builder#set).
+
 -}
 setMany : Int -> Array a -> Array a -> Array a
 setMany index values array =
@@ -488,6 +568,11 @@ setMany index values array =
 
     update 1 (\n -> n + 1) [ 1, 2, 3 ] == [ 1, 3, 3 ]
     update 10 (\n -> n + 1) [ 1, 2, 3 ] == [ 1, 2, 3 ]
+
+It costs what [`set`](#set) costs: O(n) on JavaScript and natively, where it
+copies the array, and O(log n) on the BEAM once the array is a tree; to update
+many elements in a loop, use [`Array.Builder.get`](Array-Builder#get) and
+[`Array.Builder.set`](Array-Builder#set).
 
 -}
 update : Int -> (a -> a) -> Array a -> Array a
@@ -509,6 +594,9 @@ If the provided index is out of bounds, the element will be added at the beginni
 end (positive index).
 
     insert 1 0 [ 1, 2, 3 ] == [ 1, 0, 2, 3 ]
+
+It costs O(n), copying the array, except at either end, where it is
+[`pushFirst`](#pushFirst) or [`pushLast`](#pushLast) and costs what they do.
 
 -}
 insert : Int -> a -> Array a -> Array a
@@ -537,6 +625,9 @@ values at once.
 
     insertMany 1 [ 0, 0 ] [ 1, 2, 3 ] == [ 1, 0, 0, 2, 3 ]
 
+It costs O(n + m) for m values, as [`splice`](#splice) does, and at either end
+what `++` costs.
+
 -}
 insertMany : Int -> Array a -> Array a -> Array a
 insertMany index values array =
@@ -551,6 +642,11 @@ If the index is out of bounds, no element will be removed.
 
     remove 1 [ 1, 2, 3 ] == [ 1, 3 ]
 
+It costs O(n), copying the array, except at either end, where it is a slice, as
+in [`popFirst`](#popFirst) and [`popLast`](#popLast), and costs O(1) amortized
+on JavaScript and natively and O(log n) on the BEAM, so draining an array from
+one end is linear on every target.
+
 -}
 remove : Int -> Array a -> Array a
 remove index array =
@@ -563,6 +659,9 @@ The first argument is the index from where to remove elements from, the second a
 to remove.
 
     remove 0 2 [ 1, 2, 3 ] == [ 3 ]
+
+It costs O(n), copying the array, except when the elements removed reach either
+end, where it is a [`slice`](#slice) and costs what that does.
 
 -}
 removeMany : Int -> Int -> Array a -> Array a
@@ -596,6 +695,11 @@ removeMany index toRemove array =
     pushFirst 1 []          == [ 1 ]
     pushFirst 5 [ 1, 4, 9 ] == [ 5, 1, 4, 9 ]
 
+It costs O(1) amortized on JavaScript and natively when the array is the latest
+version of its buffer at the front, as in a loop that pushes onto what the step
+before answered, and O(n) otherwise, where it copies; on the BEAM it costs
+O(log n), onto any version.
+
 -}
 pushFirst : a -> Array a -> Array a
 pushFirst value array =
@@ -607,15 +711,10 @@ pushFirst value array =
     pushLast 1 []          == [ 1 ]
     pushLast 5 [ 1, 4, 9 ] == [ 1, 4, 9, 5 ]
 
-What a push costs depends on the target. Natively and on JavaScript an
-array can have room past its end, and a push writes there, without copying,
-when no other push has been made onto the same array: a loop that pushes onto
-what the step before answered is linear. Pushing twice onto one array, or
-pushing back onto what `popLast` answered, copies. On the BEAM every push
-copies the whole array, unless the compiler has rewritten the loop to grow a
-builder, which it does for a loop that only appends to its array. To be linear
-on every target, build a long array with [`Array.Builder`](Array-Builder),
-whose `pushLast` does not copy.
+It costs O(1) amortized on JavaScript and natively when the array is the latest
+version of its buffer, as in a loop that pushes onto what the step before
+answered, and O(n) otherwise, where it copies (pushing twice onto one array, or
+onto what `popLast` answered); on the BEAM it costs O(log n), onto any version.
 
 -}
 pushLast : a -> Array a -> Array a
@@ -638,6 +737,10 @@ beginning (negative index) or at the end (positive index).
     splice 2 0 [ 0 ] [ 1, 2, 3 ] == [ 1, 2, 0, 3 ]
     splice 2 1 [ 0 ] [ 1, 2, 3 ] == [ 1, 2, 0 ]
     splice 2 1 [] [ 1, 2, 3 ] == [ 1, 2 ]
+
+It costs O(n + m) for m values, rebuilding the array around them, and at either
+end it costs what `++` costs when it removes nothing and what [`slice`](#slice)
+costs when it inserts nothing.
 
 -}
 splice : Int -> Int -> Array a -> Array a -> Array a
@@ -672,6 +775,13 @@ and the second array becomes the postfix of the resulting array.
 You can also use the `++` operator for this purpose.
 
     [ 1, 2, 3 ] ++ [ 4, 5, 6 ] == [ 1, 2, 3, 4, 5, 6 ]
+
+It costs O(n + m) where it copies both arrays into a new buffer, and on
+JavaScript and natively only the length of the side it writes when the other is
+the latest version of its buffer at that end, so `acc ++ chunk` in a loop is
+linear; on the BEAM it joins two tuples of comparable length in O(n + m), and
+otherwise pushes the shorter array's k elements onto the longer, O(k log n).
+
 -}
 prepend : Array a -> Array a -> Array a
 prepend left right =
@@ -683,6 +793,9 @@ and the second array becomes the prefix of the resulting array.
 
     append [ 1, 2, 3 ] [ 4, 5, 6 ] == [ 4, 5, 6, 1, 2, 3 ]
     
+It costs what [`prepend`](#prepend) costs, with its arguments the other way
+round.
+
 -}
 append : Array a -> Array a -> Array a
 append fst second =
@@ -692,6 +805,8 @@ append fst second =
 {-| Combine a bunch of arrays into a single array.
 
     flatten [ [ 1 ], [ 2 ], [ 4, 5 ] ] == [ 1, 2, 4, 5 ]
+
+It costs O(n) in the total length of the arrays, plus one step for each array.
 
 -}
 flatten : Array (Array a) -> Array a
@@ -703,6 +818,8 @@ flatten arrays =
 
     mapAndFlatten f xs == flatten (map f xs)
 
+It costs O(n) plus the total length of the arrays the function answers.
+
 -}
 mapAndFlatten : (a -> Array b) -> Array a -> Array b
 mapAndFlatten fn array =
@@ -712,6 +829,8 @@ mapAndFlatten fn array =
 {-| Places the given value between all members of the given array.
 
     intersperse "on" [ "turtles", "turtles", "turtles"] == [ "turtles", "on", "turtles", "on", "turtles"]
+
+It costs O(n).
 
 -}
 intersperse : a -> Array a -> Array a
@@ -728,6 +847,9 @@ intersperse sep xs =
 If one array is longer, the extra elements are dropped.
 
     map2 (\x y -> { x = x, y = y }) [ 1 ] [ 2 ] == [ { x = 1, y = 2 } ]
+
+It costs O(n) in the length of the shorter array.
+
 -}
 map2 : (a -> b -> result) -> Array a -> Array b -> Array result
 map2 fn xs ys =
@@ -742,6 +864,9 @@ map2 fn xs ys =
 If one array is longer, the extra elements are dropped.
 
     map3 (\x y z -> { x = x, y = y, z = z }) [ 1 ] [ 2 ] [ 3 ] == [ { x = 1, y = 2, z = 3 } ]
+
+It costs O(n) in the length of the shortest array.
+
 -}
 map3 : (a -> b -> c -> result) -> Array a -> Array b -> Array c -> Array result
 map3 fn xs ys zs =
@@ -759,6 +884,8 @@ map3 fn xs ys zs =
 
     first [ 1, 2, 3 ] == Just 1
 
+It costs O(1), and O(log n) on the BEAM when the array is a tree.
+
 -}
 first : Array a -> Maybe a
 first array =
@@ -768,6 +895,8 @@ first array =
 {-| Retrieve the last element of the array, if it exists.
 
     last [ 1, 2, 3 ] == Just 3
+
+It costs O(1), and O(log n) on the BEAM when the array is a tree.
 
 -}
 last : Array a -> Maybe a
@@ -787,6 +916,13 @@ of the array. Removing the last element of the array can be expressed as:
     `slice 0 -1 arr`.
 
 In the case of an impossible slice, the empty array is returned.
+
+It costs O(1) on JavaScript and natively, where it answers a view, unless the
+slice is very short or would keep under a quarter of the buffer it holds alive,
+where it copies its m elements, O(m); on the BEAM it is a view of a tree in
+O(log n) when it drops at most 32 elements from the end of a tree, or at most
+32 in all from a long tuple, which it first makes a tree at O(n), and otherwise
+it copies its m elements, O(m).
 
 -}
 slice : Int -> Int -> Array a -> Array a
@@ -813,6 +949,9 @@ slice from to array =
     dropFirst 5 [ 1 ] == []
     dropFirst 1 [ 1, 2, 3 ] == [ 2, 3 ]
 
+It costs what [`slice`](#slice) costs, and a loop of `dropFirst 1` is linear on
+every target.
+
 -}
 dropFirst : Int -> Array a -> Array a
 dropFirst n array =
@@ -822,6 +961,9 @@ dropFirst n array =
 {-| Remove the last `n` elements of the array.
 
     dropLast 1 [ 1, 2, 3 ] == [ 1, 2 ]
+
+It costs what [`slice`](#slice) costs, and a loop of `dropLast 1` is linear on
+every target.
 
 -}
 dropLast : Int -> Array a -> Array a
@@ -833,6 +975,8 @@ dropLast n array =
 
     takeFirst 2 [ 1, 2, 3 ] == [ 1, 2 ]
 
+It costs what [`slice`](#slice) costs.
+
 -}
 takeFirst : Int -> Array a -> Array a
 takeFirst n array =
@@ -842,6 +986,8 @@ takeFirst n array =
 {-| Take the last `n` elements from the array.
 
     takeLast 2 [ 1, 2, 3 ] == [ 2, 3 ]
+
+It costs what [`slice`](#slice) costs.
 
 -}
 takeLast : Int -> Array a -> Array a
@@ -856,6 +1002,10 @@ takeLast n array =
 {-| Split an array into its first element, and its remaining elements, if possible.
 
     popFirst [ 1, 2, 3 ] == Just { first = 1, rest = [ 2, 3 ] }
+
+It costs O(1) amortized on JavaScript and natively and O(log n) on the BEAM
+once the array is a tree, which the first pop of a long array makes it, at
+O(n), so a loop of `popFirst` is linear on every target.
 
 -}
 popFirst : Array a -> Maybe { first : a, rest : Array a }
@@ -875,6 +1025,10 @@ popFirst array =
 
     popFirst [ 1, 2, 3 ] == Just { last = 3, initial = [ 1, 2 ] }
 
+It costs O(1) amortized on JavaScript and natively and O(log n) on the BEAM
+once the array is a tree, which the first pop of a long array makes it, at
+O(n), so a loop of `popLast` is linear on every target.
+
 -}
 popLast : Array a -> Maybe { last : a, initial : Array a }
 popLast array =
@@ -892,6 +1046,8 @@ popLast array =
 {-| Divide elements into two arrays based on the result of a boolean test.
 
     partition (\x -> x < 3) [ 0, 1, 2, 3, 4, 5 ] == { trues = [ 0, 1, 2 ], falses = [ 3, 4, 5 ] }
+
+It costs O(n).
 
 -}
 partition : (a -> Bool) -> Array a -> { trues : Array a, falses : Array a }
@@ -925,6 +1081,8 @@ partitionHelp fn array index len trues falses =
 
     sort [ 3, 1, 5 ] == [ 1, 3, 5 ]
 
+It costs O(n log n) comparisons, and O(n) on an array already in order.
+
 -}
 sort : Ord a => Array a -> Array a
 sort array =
@@ -934,6 +1092,9 @@ sort array =
 {-| Sort values by a derived property.
 
     sortBy String.length [ "mouse", "cat" ] == [ "cat", "mouse" ]
+
+It costs O(n log n) comparisons, calling the function once for each element,
+and O(n) on an array already in order by it.
 
 -}
 sortBy : Ord b => (a -> b) -> Array a -> Array a
@@ -959,6 +1120,8 @@ sortBy toKey array =
           GT -> LT
 
 This is also the most general sort function, allowing you to define any other: `sort == sortWith compare`
+
+It costs O(n log n) comparisons, and O(n) on an array already in order.
 
 -}
 sortWith : (a -> a -> Order) -> Array a -> Array a

@@ -21,6 +21,15 @@ module Bytes exposing
 
 {-| Functions for working with sequences of bytes.
 
+## Costs
+
+A `Bytes` is a `DataView` over a range of an `ArrayBuffer` on JavaScript, a
+length and a pointer into a block natively, the same struct as a `String`,
+which is UTF-8 there, and a binary on the BEAM, where a `String` is UTF-8 too.
+A slice is a view on every target and keeps all of what it was cut from alive.
+Reading a byte is O(1) everywhere, and two `Bytes` compare in O(n), byte by
+byte. Each cost is per call, n being the length in bytes.
+
 @docs Bytes, empty, isEmpty, length
 
 ## Endianness
@@ -131,6 +140,9 @@ Unlike [`Array.get`](Array#get), a negative index does not count from the end:
 that rule takes `get` past what the native inliner opens, and a byte read in a
 loop then allocates a `Just` a byte (geng-lang `m3-bytes-access.md` D543).
 [`slice`](#slice) keeps it.
+
+It costs O(1).
+
 -}
 get : Int -> Bytes -> Maybe UInt8
 get index bytes =
@@ -148,6 +160,9 @@ its bytes with what it was cut from, so it copies nothing.
 
     slice 1 3 (fromString "abcd") == fromString "bc"
     slice 0 -1 (fromString "abcd") == fromString "abc"
+
+It costs O(1), a view that keeps all of the bytes it was cut from alive.
+
 -}
 slice : Int -> Int -> Bytes -> Bytes
 slice from to bytes =
@@ -183,6 +198,9 @@ toArray bytes =
 
 
 {-| The sequence with exactly 0 bytes.
+
+It costs O(1).
+
 -}
 empty : Bytes
 empty =
@@ -190,6 +208,9 @@ empty =
 
 
 {-| Check if the given byte sequence has 0 bytes in it.
+
+It costs O(1).
+
 -}
 isEmpty : Bytes -> Bool
 isEmpty bytes =
@@ -202,6 +223,9 @@ So if a sequence has four-hundred bytes, then `length bytes` would give back
 `400`. That may be 400 unsigned 8-bit integers, 100 signed 32-bit integers, or
 even a UTF-8 string. The content does not matter. This is just figuring out
 how many bytes there are!
+
+It costs O(1).
+
 -}
 length : Bytes -> Int
 length =
@@ -261,6 +285,9 @@ type Endianness = LE | BE
 
 
 {-| Is this program running on a big-endian or little-endian machine?
+
+It costs O(1).
+
 -}
 getHostEndianness : Task x Endianness
 getHostEndianness =
@@ -285,6 +312,11 @@ UTF-8 encoding.
 
 Some characters take one byte, while others can take up to four. Read more
 about [UTF-8](https://en.wikipedia.org/wiki/UTF-8) to learn the details!
+
+It costs O(n) on JavaScript, where it encodes the string as UTF-8, and O(1)
+natively and on the BEAM, where a string is UTF-8 bytes already, but for a
+string grown at the front on the BEAM, which it joins first, O(n).
+
 -}
 fromString : String -> Bytes
 fromString =
@@ -293,6 +325,10 @@ fromString =
 
 {-| Convert UTF-8 encoded `Bytes` to `String`. If the byte sequence isn't
 valid UTF-8, `Nothing` will be returned.
+
+It costs O(n), checking that the bytes are UTF-8, and on JavaScript decoding
+them as well.
+
 -}
 toString : Bytes -> Maybe String
 toString bytes =
@@ -316,6 +352,9 @@ different `Bytes` can give the same `String`, so keep the bytes when they are
 to be handed back.
 
     toStringLossy (fromString "café") == "café"
+
+It costs O(n).
+
 -}
 toStringLossy : Bytes -> String
 toStringLossy bytes =
@@ -333,6 +372,9 @@ easier for humans to read.
     toHexString { padding = False } (fromString "Hi") == "4869"
 
     toHexString { padding = True } (fromString "Hi") == "48 69"
+
+It costs O(n).
+
 -}
 toHexString : { padding : Bool } -> Bytes -> String
 toHexString { padding } bytes =
@@ -522,6 +564,12 @@ byteAt bytes index =
 
 
 {-| Flatten all `Bytes` in an `Array` into a single `Bytes`.
+
+It costs O(n) in the total length, copying every piece, so `flatten [ acc,
+piece ]` in a loop is quadratic; to append bytes a piece at a time, collect the
+pieces in an array and flatten it once, or build a
+[`Bytes.Encode.sequence`](Bytes-Encode#sequence) and encode it once.
+
 -}
 flatten : Array Bytes -> Bytes
 flatten arrayOfBytes =

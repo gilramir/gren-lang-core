@@ -27,6 +27,10 @@ writes comes before what the next one does, and before the program ends.
     main =
         Console.write "hello\n"
 
+It costs O(n) in the string's bytes: `write(2)` until every byte is taken
+natively, a `stream.write` on node whose task completes in its callback, and an
+`io:put_chars` to the standard I/O server on the BEAM.
+
 -}
 @extern(js, "Console", "write")
 @extern(erlang, "geng_core_console", "write")
@@ -40,6 +44,10 @@ write : String -> Task x {}
     main =
         run
             |> Task.onError (\error -> Console.writeErr (inspect error ++ "\n"))
+
+It costs O(n) in the string's bytes: `write(2)` until every byte is taken
+natively, a `stream.write` on node whose task completes in its callback, and an
+`io:put_chars` to the standard error server on the BEAM.
 
 -}
 @extern(js, "Console", "writeErr")

@@ -13,6 +13,16 @@ module Bytes.Decode exposing
 
 {-| Functions for creating things from a sequence of bytes.
 
+## Costs
+
+A `Decoder` is a function from the bytes and an offset to a value and the next
+offset, so the costs stated are those of running it: a number reads its fixed
+width in O(1), [`bytes`](#bytes) answers a view in O(1), and
+[`string`](#string) checks its bytes in O(n). The combinators add O(1) to the
+decoders they run. A byte is read in O(1) on every target: `getUint8` on a
+`DataView` on JavaScript, an index into the bytes natively, `binary:at` on the
+BEAM. Each cost is per call, n being the number of bytes read.
+
 @docs Decoder, decode, decodeWithReason
 
 ## Integers
@@ -174,6 +184,9 @@ sized width read bites offset =
 The `Decoder` specifies exactly how this should happen. This process may fail
 if the sequence of bytes is corrupted or unexpected somehow. The examples above
 show a case where there are not enough bytes.
+
+It costs what running the decoder costs.
+
 -}
 decode : Decoder a -> Bytes -> Maybe a
 decode (Decoder decoder) bs =
@@ -208,6 +221,9 @@ A decoder nested deep enough to exhaust JavaScript's stack gives offset `0` and
 (`m1b-protobuf.md` §Q14.2).
 
 This and `failWith` are the fork's, and not in `gren-lang/core` (D187).
+
+It costs what running the decoder costs.
+
 -}
 decodeWithReason : Decoder a -> Bytes -> Result { offset : Int, reason : String } a
 decodeWithReason (Decoder decoder) bs =
@@ -249,6 +265,9 @@ cannot answer. A byte that is a count, such as a length prefix, is
 `UInt8.toInt` away:
 
     unsignedInt8 |> map UInt8.toInt |> andThen bytes
+
+It costs O(1).
+
 -}
 signedInt8 : Decoder Int8
 signedInt8 =
@@ -256,6 +275,9 @@ signedInt8 =
 
 
 {-| Decode two bytes into an `Int16`.
+
+It costs O(1).
+
 -}
 signedInt16 : Endianness -> Decoder Int16
 signedInt16 endianness =
@@ -263,6 +285,9 @@ signedInt16 endianness =
 
 
 {-| Decode four bytes into an integer from `-2147483648` to `2147483647`.
+
+It costs O(1).
+
 -}
 signedInt32 : Endianness -> Decoder Int
 signedInt32 endianness =
@@ -274,6 +299,9 @@ signedInt32 endianness =
 
 
 {-| Decode one byte into a `UInt8`.
+
+It costs O(1).
+
 -}
 unsignedInt8 : Decoder UInt8
 unsignedInt8 =
@@ -287,6 +315,9 @@ unsignedInt8 =
 
 
 {-| Decode two bytes into a `UInt16`.
+
+It costs O(1).
+
 -}
 unsignedInt16 : Endianness -> Decoder UInt16
 unsignedInt16 endianness =
@@ -299,6 +330,9 @@ A `UInt32` rather than an `Int`, because an `Int` is 32 bits and signed (D2):
 until 2026-09-13 this answered an `Int` holding `4294967295`, which printed as
 that, compared unequal to `-1`, and became `-1` the moment it was added to
 anything (`m1b-protobuf.md` §Q13).
+
+It costs O(1).
+
 -}
 unsignedInt32 : Endianness -> Decoder UInt32
 unsignedInt32 endianness =
@@ -310,6 +344,9 @@ unsignedInt32 endianness =
 
 
 {-| Decode four bytes into a floating point number.
+
+It costs O(1).
+
 -}
 float32 : Endianness -> Decoder Float
 float32 endianness =
@@ -317,6 +354,9 @@ float32 endianness =
 
 
 {-| Decode eight bytes into a floating point number.
+
+It costs O(1).
+
 -}
 float64 : Endianness -> Decoder Float
 float64 endianness =
@@ -342,6 +382,9 @@ float64At isLE b o =
 {-| Read a given number of bytes as a `Bytes` sequence. It is a view of the
 input rather than a copy, so it costs the same at any length, and it holds
 only the bytes it read: a decoder run on it cannot see past them.
+
+It costs O(1), a view that keeps all of the input alive.
+
 -}
 bytes : Int -> Decoder Bytes
 bytes n =
@@ -380,6 +423,10 @@ leeway to read the length as a [Base 128 Varint][pb] for ProtoBuf, a
 
 [pb]: https://developers.google.com/protocol-buffers/docs/encoding#varints
 [sql]: https://www.sqlite.org/src4/doc/trunk/www/varint.wiki
+
+It costs O(n) for n bytes, checking that they are UTF-8, and on JavaScript
+decoding them as well.
+
 -}
 string : Int -> Decoder String
 string n =
@@ -416,6 +463,9 @@ In practice you may see something like ProtoBuf’s [ZigZag encoding][zz] which
 decreases the size of small negative numbers.
 
 [zz]: https://developers.google.com/protocol-buffers/docs/encoding#types
+
+It costs O(1) beyond the decoder it runs.
+
 -}
 map : (a -> b) -> Decoder a -> Decoder b
 map func (Decoder decodeA) =
@@ -448,6 +498,9 @@ map func (Decoder decodeA) =
     decoder : Decode.Decoder Point
     decoder =
         Decode.map2 makePoint (Decode.float32 BE) (Decode.float32 BE)
+
+It costs O(1) beyond the decoders it runs.
+
 -}
 map2 : (a -> b -> result) -> Decoder a -> Decoder b -> Decoder result
 map2 func (Decoder decodeA) (Decoder decodeB) =
@@ -467,6 +520,9 @@ map2 func (Decoder decodeA) (Decoder decodeB) =
 
 
 {-| Combine three decoders.
+
+It costs O(1) beyond the decoders it runs.
+
 -}
 map3 : (a -> b -> c -> result) -> Decoder a -> Decoder b -> Decoder c -> Decoder result
 map3 func (Decoder decodeA) (Decoder decodeB) (Decoder decodeC) =
@@ -491,6 +547,9 @@ map3 func (Decoder decodeA) (Decoder decodeB) (Decoder decodeC) =
 
 
 {-| Combine four decoders.
+
+It costs O(1) beyond the decoders it runs.
+
 -}
 map4 : (a -> b -> c -> d -> result) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder result
 map4 func (Decoder decodeA) (Decoder decodeB) (Decoder decodeC) (Decoder decodeD) =
@@ -521,6 +580,9 @@ map4 func (Decoder decodeA) (Decoder decodeB) (Decoder decodeC) (Decoder decodeD
 
 {-| Combine five decoders. If you need to combine more things, it is possible
 to define more of these with `map2` or `andThen`.
+
+It costs O(1) beyond the decoders it runs.
+
 -}
 map5 : (a -> b -> c -> d -> e -> result) -> Decoder a -> Decoder b -> Decoder c -> Decoder d -> Decoder e -> Decoder result
 map5 func (Decoder decodeA) (Decoder decodeB) (Decoder decodeC) (Decoder decodeD) (Decoder decodeE) =
@@ -572,6 +634,9 @@ how long the value is going to be:
 
 Check out the docs for [`succeed`](#succeed), [`fail`](#fail), and
 [`loop`](#loop) to see `andThen` used in more ways!
+
+It costs O(1) beyond the two decoders it runs and the callback.
+
 -}
 andThen : (a -> Decoder b) -> Decoder a -> Decoder b
 andThen callback (Decoder decodeA) =
@@ -607,6 +672,9 @@ a `Maybe` decoder:
 
 If the first byte is `00000000` then it is `Nothing`, otherwise we start
 decoding the value and put it in a `Just`.
+
+It costs O(1).
+
 -}
 succeed : a -> Decoder a
 succeed a =
@@ -643,6 +711,9 @@ decode custom types:
 The encoding chosen here uses an 8-bit unsigned integer to indicate which
 variant we are working with. If we are working with yards do this, if we are
 working with meters do that, and otherwise something went wrong!
+
+It costs O(1).
+
 -}
 fail : Decoder a
 fail =
@@ -663,6 +734,9 @@ the decoder had reached, and [`decode`](#decode) gives `Nothing`, as it does for
 
 The offset is where the decoder is when it fails, so here it is just after the
 tag byte.
+
+It costs O(1).
+
 -}
 failWith : String -> Decoder a
 failWith reason =
@@ -697,22 +771,28 @@ repeated structures, like an array:
 
     import Bytes exposing (Endianness(..))
     import Bytes.Decode as Decode exposing (..)
+    import UInt32
 
     array : Decoder a -> Decoder (Array a)
     array decoder =
       unsignedInt32 BE
-        |> andThen (\len -> loop (len, []) (arrayStep decoder))
+        |> andThen (\len -> loop { left = UInt32.toInt len, items = [] } (arrayStep decoder))
 
-    arrayStep : Decoder a -> { fst : Int, snd : Array a } -> Decoder (Step { fst Int, snd : Array a } (Array a))
-    arrayStep decoder (n, xs) =
-      if n <= 0 then
-        succeed (Done xs)
+    arrayStep : Decoder a -> { left : Int, items : Array a } -> Decoder (Step { left : Int, items : Array a } (Array a))
+    arrayStep decoder state =
+      if state.left <= 0 then
+        succeed (Done state.items)
       else
-        map (\x -> Loop (n - 1, x :: xs)) decoder
+        map (\x -> Loop { left = state.left - 1, items = Array.pushLast x state.items }) decoder
 
 The `array` decoder first reads a 32-bit unsigned integer. That determines how
 many items will be decoded. From there we use [`loop`](#loop) to track all the
 items we have parsed so far and figure out when to stop.
+
+It costs O(1) a step beyond the decoders its steps run, and to collect items it
+should push them onto its state with [`Array.pushLast`](Array#pushLast), which
+is linear on every target when it pushes onto what the step before answered.
+
 -}
 loop : state -> (state -> Decoder (Step state a)) -> Decoder a
 loop state callback =

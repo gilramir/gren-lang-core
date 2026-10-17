@@ -25,6 +25,19 @@ under their key's `Ord` (D420, D423).
 On JavaScript nothing is checked, as D200 has it for every `js` row (D419):
 the term is the value.
 
+## Costs
+
+On JavaScript nothing is checked and `inbound` answers the term (D419);
+natively it checks the shape of the boxed value once (D516); on the BEAM the
+backend generates, for each type it is used at, a walk of the term that checks
+it, so its cost grows with the term, and a `Dict` or a `Set` arrives as an
+Erlang map that is sorted under the key's order and built into a tree. Costs
+are per call.
+
+- `inbound`: It costs O(1) on JavaScript and natively, and on the BEAM O(the
+  size of the term), plus O(n log n) to sort and build each `Dict` or `Set` of
+  n entries in it.
+
 @docs Inbound
 
 -}

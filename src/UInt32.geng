@@ -24,6 +24,13 @@ disagree about (A11).
 
 ## Bounds
 
+## Costs
+
+A `UInt32` is a JavaScript number kept in `[0, 2^32)` by `>>> 0` after each
+operation, a `uint32_t` natively, and an Erlang integer masked to 32 bits on
+the BEAM, so each operation on one costs about what an `Int`'s does, and none
+is a `BigInt`. Every function here is O(1). Costs are per call.
+
 @docs minValue, maxValue
 
 
@@ -87,6 +94,9 @@ import Maybe exposing (Maybe(..))
 
 
 {-| `0`.
+
+It costs O(1): it is a constant.
+
 -}
 minValue : UInt32
 minValue =
@@ -94,6 +104,9 @@ minValue =
 
 
 {-| `4294967295`.
+
+It costs O(1): it is a constant.
+
 -}
 maxValue : UInt32
 maxValue =
@@ -110,6 +123,8 @@ maxValue =
 
     UInt32.fromInt -1 == UInt32.minValue
 
+It costs O(1).
+
 -}
 fromInt : Int -> UInt32
 fromInt n =
@@ -124,6 +139,8 @@ fromInt n =
 
     UInt32.fromIntWrap -1 == UInt32.maxValue
 
+It costs O(1).
+
 -}
 @prim("i32_as_u32")
 fromIntWrap : Int -> UInt32
@@ -134,6 +151,8 @@ fromIntWrap : Int -> UInt32
     UInt32.fromIntChecked 42 == Just (UInt32.fromInt 42)
 
     UInt32.fromIntChecked -1 == Nothing
+
+It costs O(1).
 
 -}
 fromIntChecked : Int -> Maybe UInt32
@@ -155,6 +174,8 @@ fromIntChecked n =
 
     UInt32.toInt UInt32.maxValue == 2147483647
 
+It costs O(1).
+
 -}
 toInt : UInt32 -> Int
 toInt n =
@@ -169,6 +190,8 @@ toInt n =
 
     UInt32.toIntWrap UInt32.maxValue == -1
 
+It costs O(1).
+
 -}
 @prim("u32_as_i32")
 toIntWrap : UInt32 -> Int
@@ -179,6 +202,8 @@ toIntWrap : UInt32 -> Int
     UInt32.toIntChecked (UInt32.fromInt 42) == Just 42
 
     UInt32.toIntChecked UInt32.maxValue == Nothing
+
+It costs O(1).
 
 -}
 toIntChecked : UInt32 -> Maybe Int
@@ -208,6 +233,8 @@ below `0` becomes [minValue](#minValue) and one above `4294967295` becomes
 
     UInt32.fromInt64 Int64.maxValue == UInt32.maxValue
 
+It costs O(1), and on JavaScript it reads a `BigInt`.
+
 -}
 fromInt64 : Int64 -> UInt32
 fromInt64 n =
@@ -228,6 +255,8 @@ means: drop to 32 bits, then read those bits as unsigned.
 
     UInt32.fromInt64Wrap (Int64.fromInt -1) == UInt32.maxValue
 
+It costs O(1), and on JavaScript it reads a `BigInt`.
+
 -}
 fromInt64Wrap : Int64 -> UInt32
 fromInt64Wrap n =
@@ -237,6 +266,8 @@ fromInt64Wrap n =
 {-| Narrow an `Int64`, or `Nothing` when it does not fit.
 
     UInt32.fromInt64Checked Int64.maxValue == Nothing
+
+It costs O(1), and on JavaScript it reads a `BigInt`.
 
 -}
 fromInt64Checked : Int64 -> Maybe UInt32
@@ -256,6 +287,8 @@ unsigned, so there is no lower bound to saturate at.
 
     UInt32.fromUInt64 UInt64.maxValue == UInt32.maxValue
 
+It costs O(1), and on JavaScript it reads a `BigInt`.
+
 -}
 fromUInt64 : UInt64 -> UInt32
 fromUInt64 n =
@@ -270,12 +303,17 @@ fromUInt64 n =
 
     UInt32.fromUInt64Wrap UInt64.maxValue == UInt32.maxValue
 
+It costs O(1), and on JavaScript it reads a `BigInt`.
+
 -}
 @prim("u64_to_u32")
 fromUInt64Wrap : UInt64 -> UInt32
 
 
 {-| Narrow a `UInt64`, or `Nothing` when it is above [maxValue](#maxValue).
+
+It costs O(1), and on JavaScript it reads a `BigInt`.
+
 -}
 fromUInt64Checked : UInt64 -> Maybe UInt32
 fromUInt64Checked n =
@@ -314,6 +352,8 @@ with room to spare.
 
     UInt32.toFloat UInt32.maxValue == 4294967295.0
 
+It costs O(1).
+
 -}
 toFloat : UInt32 -> Float
 toFloat n =
@@ -338,6 +378,8 @@ goes towards positive infinity.
 
     UInt32.round 1.0e30 == UInt32.maxValue
 
+It costs O(1): a floor, comparisons and a saturating conversion.
+
 -}
 round : Float -> UInt32
 round x =
@@ -347,6 +389,8 @@ round x =
 {-| Round down to a `UInt32`, **saturating** at this type's bounds.
 
     UInt32.floor 1.5 == UInt32.fromInt 1
+
+It costs O(1): a floor and a saturating conversion.
 
 -}
 floor : Float -> UInt32
@@ -358,6 +402,8 @@ floor x =
 
     UInt32.ceiling 1.5 == UInt32.fromInt 2
 
+It costs O(1): a ceiling and a saturating conversion.
+
 -}
 ceiling : Float -> UInt32
 ceiling x =
@@ -367,6 +413,8 @@ ceiling x =
 {-| Round towards zero to a `UInt32`, **saturating** at this type's bounds.
 
     UInt32.truncate -0.5 == UInt32.minValue
+
+It costs O(1): a truncation and a saturating conversion.
 
 -}
 truncate : Float -> UInt32

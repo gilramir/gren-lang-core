@@ -59,6 +59,13 @@ A source nothing can reach any more is freed sooner, like any value, and so is
 a task waiting on it that nothing else can reach (D567): on the BEAM its tree's
 scheduler finds it, a source no task, message, other process or table holds.
 
+## Costs
+
+A source is a queue of events with at most one parked reader: a JavaScript
+array on JavaScript, a ring of slots that doubles when full natively, and on
+the BEAM an Erlang process of its own holding an Erlang `queue`, so reading one
+there is a message to that process and an answer back. Costs are per call.
+
 @docs Source, new, next, close
 
 -}
@@ -80,6 +87,9 @@ type Source msg
 Running this allocates a mailbox, so running it twice gives two — as with any
 `Task`, the value is a description and the effect is the run.
 
+It costs O(1): an empty mailbox, and on the BEAM the Erlang process that holds
+it.
+
 -}
 @prim("source_new")
 new : Task x (Source msg)
@@ -90,6 +100,11 @@ new : Task x (Source msg)
 This **blocks the process** until an event arrives. It answers `Nothing` when
 the source has been closed and every event already in it has been read, so a
 reader that loops until `Nothing` sees the whole stream and then stops.
+
+It costs amortized O(1) natively, a read of a ring buffer, and on the BEAM, a
+message to the source's process and back, and on JavaScript an `Array.prototype.shift` of the
+queue, which V8 makes O(1) for a short queue and may make O(the queue's length)
+for a long one.
 
 -}
 next : Source msg -> Task x (Maybe msg)
@@ -102,6 +117,8 @@ next source =
 
 A source that is opened for the duration of a task belongs under
 `Task.bracket`, which closes it on success, on failure and on cancellation.
+
+It costs O(1), and it answers a parked reader `Nothing`.
 
 -}
 @prim("source_close")

@@ -17,6 +17,14 @@ by M. E. O'Neil. It is not cryptographically secure.
 [pcg]: http://www.pcg-random.org/
 
 
+## Costs
+
+A generator is a function from a `Seed` to a value and the next seed, and a
+seed is PCG's two `UInt32` words, so one step of it is a few 32-bit operations
+on every target, on plain numbers on JavaScript and not BigInts. The costs
+below are per draw, a run of the generator by `step` or `generate`; building a
+generator costs O(1) unless its sentence says otherwise.
+
 @docs Generator, generate, seedFromEntropy
 
 ## Primitives
@@ -70,6 +78,10 @@ import UInt32
 
 This generator *can* produce values outside of the range [[`minInt`](#minInt),
 [`maxInt`](#maxInt)] but sufficient randomness is not guaranteed.
+
+It costs O(1) per draw, expected: one step, and another for each rare draw that
+falls in the biased remainder of the range.
+
 -}
 int : Int -> Int -> Generator Int
 int a b =
@@ -137,6 +149,9 @@ offsetFrom lo offset =
 It can generate values outside of that range, but they are “not as random”.
 
 The `maxInt` that works well is `2147483647`.
+
+It costs O(1): it is a constant.
+
 -}
 maxInt : Int
 maxInt =
@@ -147,6 +162,9 @@ maxInt =
 It can generate values outside of that range, but they are “not as random”.
 
 The `minInt` that works well is `-2147483648`.
+
+It costs O(1): it is a constant.
+
 -}
 minInt : Int
 minInt =
@@ -169,6 +187,9 @@ This becomes very powerful when paired with functions like [`map`](#map) and
 [`andThen`](#andThen). Rather than dealing with twenty random float messages
 in your `update`, you can build up sophisticated logic in the `Generator`
 itself!
+
+It costs O(1) per draw: two steps.
+
 -}
 float : Float -> Float -> Generator Float
 float a b =
@@ -220,6 +241,9 @@ float a b =
     alwaysFour : Random.Generator Int
     alwaysFour =
         Random.constant 4
+
+It costs O(1) per draw.
+
 -}
 constant : a -> Generator a
 constant value =
@@ -241,6 +265,9 @@ a point in a certain 2D space:
 
 Maybe you are doing an animation with SVG and want to randomly generate some
 entities?
+
+It costs a draw of each of the two generators.
+
 -}
 pair : Generator a -> Generator b -> Generator { first : a, second : b }
 pair genA genB =
@@ -269,6 +296,10 @@ If you want to generate an array with a random length, you need to use
 
 This generator gets a random integer between five and ten **and then**
 uses that to generate a random array of digits.
+
+It costs n draws of the generator, collected in O(n) natively and on JavaScript
+and in O(n log₃₂ n) on the BEAM.
+
 -}
 array : Int -> Generator a -> Generator (Array a)
 array n (Generator gen) =
@@ -312,6 +343,12 @@ a little prettier in code, but it leads to an awkward question. What do you do
 with `uniform []`? How can it produce an `Int` or `Float`? The current API
 guarantees that we always have *at least* one value, so we never run into that
 question!
+
+It costs O(k) to build for k options, and per draw a walk of the options to the
+one it picks, O(k) natively and on JavaScript and on the BEAM O(k²) below 64
+options and O(k log₃₂ k) above, since each step of the walk there copies or
+slices the rest.
+
 -}
 uniform : a -> Array a -> Generator a
 uniform value valueArray =
@@ -349,6 +386,12 @@ then a 10% chance for each of the remaining faces.
 add up your weights into a `total`, and from there, the probablity of each case
 is `weight / total`. Negative weights do not really make sense, so I just flip
 them to be positive.
+
+It costs O(k) to build for k options, and per draw a walk of the options to the
+one it picks, O(k) natively and on JavaScript and on the BEAM O(k²) below 64
+options and O(k log₃₂ k) above, since each step of the walk there copies or
+slices the rest.
+
 -}
 weighted : { weight : Float, value : a } -> Array { weight : Float, value : a } -> Generator a
 weighted first others =
@@ -406,6 +449,9 @@ which answers a `Maybe`, because not every number is a character, and every one
 of these is.
 
 [ascii]: https://en.wikipedia.org/wiki/ASCII#Printable_characters
+
+It costs a draw of the generator and one call of the function.
+
 -}
 map : (a -> b) -> Generator a -> Generator b
 map func (Generator genA) =
@@ -457,6 +503,9 @@ that number of enemies!
 **Note:** Snapping generators together like this is very important! Always
 start by with generators for each `type` you need, and then snap them
 together.
+
+It costs a draw of each generator and one call of the function.
+
 -}
 map2 : (a -> b -> c) -> Generator a -> Generator b -> Generator c
 map2 func (Generator genA) (Generator genB) =
@@ -494,6 +543,9 @@ map2 func (Generator genA) (Generator genB) =
 
 **Note:** Always start with the types. Make a generator for each thing you need
 and then put them all together with one of these `map` functions.
+
+It costs a draw of each generator and one call of the function.
+
 -}
 map3 : (a -> b -> c -> d) -> Generator a -> Generator b -> Generator c -> Generator d
 map3 func (Generator genA) (Generator genB) (Generator genC) =
@@ -544,6 +596,9 @@ of a time you get an `Empty` tree. A third of the time you get a `Leaf` with
 some interesting value. And a third of the time you get a `Node` full of more
 QuadTree` values. How are those subtrees generated though? Well, we use our
 quadTree` generator!
+
+It costs a draw of each generator and one call of the function.
+
 -}
 andMap : Generator a -> Generator (a -> b) -> Generator b
 andMap =
@@ -565,6 +620,10 @@ example, here is how you can define `map` using `andThen`:
     map func generator =
       generator
         |> Random.andThen (\value -> Random.constant (func value))
+
+It costs a draw of the first generator, one call of the callback, and a draw of
+the generator it answers.
+
 -}
 andThen : (a -> Generator b) -> Generator a -> Generator b
 andThen callback (Generator genA) =
@@ -601,6 +660,10 @@ This is a pretty subtle issue, so I recommend reading more about it
 
 **Note:** You can delay evaluation with `andThen` too. The thing that matters
 is that you have a function call that delays the creation of the generator!
+
+It costs one call of the callback at each draw, and a draw of the generator it
+answers.
+
 -}
 lazy : ({} -> Generator a) -> Generator a
 lazy callback =
@@ -764,6 +827,9 @@ Same input, same output!
 Threading seeds around is not super fun, so if you really need this, it is
 best to build your `Generator` like normal and then just `step` it all at
 once at the top of your program.
+
+It costs one draw of the generator.
+
 -}
 step : Generator a -> Seed -> { value : a, seed : Seed }
 step (Generator generator) seed =
@@ -784,6 +850,9 @@ reproduce past games.
 
 In practice, when the runs should differ, get the seed from
 [`seedFromEntropy`](#seedFromEntropy) instead.
+
+It costs O(1): two steps.
+
 -}
 initialSeed : UInt32 -> Seed
 initialSeed x =
@@ -805,6 +874,9 @@ but can request only a fixed amount of randomness *now*.
 
 The independent seeds are extremely likely to be distinct for all practical
 purposes. However, it is not proven that there are no pathological cases.
+
+It costs O(1) per draw: three steps.
+
 -}
 independentSeed : Generator Seed
 independentSeed =
@@ -859,6 +931,11 @@ Each time you run the `newPoint` task, it produces a new 2D point like
 Every run takes its own seed, so two runs are independent of each other. To draw
 many values from one sequence, take one seed with
 [`seedFromEntropy`](#seedFromEntropy) and [`step`](#step) through it.
+
+It costs one read of the host's entropy, `crypto.getRandomValues` on
+JavaScript, `getrandom(2)` natively and `crypto:strong_rand_bytes` on the BEAM,
+and one draw of the generator.
+
 -}
 generate : Generator a -> Task x a
 generate generator =
@@ -869,6 +946,10 @@ generate generator =
 own: `crypto.getRandomValues` on JavaScript. Both halves of the seed come from
 it, the state and the increment that chooses among PCG's independent
 sequences, which [`initialSeed`](#initialSeed) fixes.
+
+It costs one read of the host's entropy, `crypto.getRandomValues` on
+JavaScript, `getrandom(2)` natively and `crypto:strong_rand_bytes` on the BEAM.
+
 -}
 seedFromEntropy : Task x Seed
 seedFromEntropy =

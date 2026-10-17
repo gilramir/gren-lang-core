@@ -54,6 +54,9 @@ import Maybe exposing (Maybe(..))
 
 
 {-| `-32768`.
+
+It costs O(1): it is a constant.
+
 -}
 minValue : Int16
 minValue =
@@ -61,6 +64,9 @@ minValue =
 
 
 {-| `32767`.
+
+It costs O(1): it is a constant.
+
 -}
 maxValue : Int16
 maxValue =
@@ -74,6 +80,8 @@ maxValue =
 {-| Widen to an `Int`. Exact.
 
     Int16.toInt Int16.maxValue == 32767
+
+It costs O(1).
 
 -}
 @prim("i16_to_i32")
@@ -92,6 +100,8 @@ toInt : Int16 -> Int
 
     Int16.fromInt 100000 == Int16.maxValue
 
+It costs O(1): two comparisons and a narrowing.
+
 -}
 fromInt : Int -> Int16
 fromInt n =
@@ -109,6 +119,8 @@ fromInt n =
 
     Int16.fromIntWrap 32768 == Int16.minValue
 
+It costs O(1).
+
 -}
 @prim("i32_to_i16")
 fromIntWrap : Int -> Int16
@@ -119,6 +131,8 @@ fromIntWrap : Int -> Int16
     Int16.fromIntChecked 42 == Just (42 : Int16)
 
     Int16.fromIntChecked 32768 == Nothing
+
+It costs O(1): two comparisons and a narrowing.
 
 -}
 fromIntChecked : Int -> Maybe Int16
@@ -140,6 +154,8 @@ fromIntChecked n =
 {-| Convert to a `Float`. Exact.
 
     Int16.toFloat Int16.maxValue == 32767.0
+
+It costs O(1).
 
 -}
 toFloat : Int16 -> Float

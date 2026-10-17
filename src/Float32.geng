@@ -18,6 +18,14 @@ negative finite value, the smallest positive normal and the smallest positive
 subnormal -- and naming one of them `minValue` would be a trap. `docs/m1b-ryu.md`
 is where the family of float constants belongs, beside the digits.
 
+## Costs
+
+A `Float32` is a JavaScript number rounded with `Math.fround` after every
+operation, a C `float` natively, and on the BEAM an Erlang float rounded
+through 32 bits after every operation, so arithmetic on one costs more than on
+a `Float` on JavaScript and the BEAM. Every function here is O(1). Costs are
+per call.
+
 @docs fromFloat, toFloat
 
 
@@ -43,12 +51,17 @@ IEEE rounding does and is not the saturation A10 gives an integer conversion.
 
     Float32.toFloat (Float32.fromFloat 0.5) == 0.5
 
+It costs O(1): one rounding to single precision.
+
 -}
 @prim("f64_to_f32")
 fromFloat : Float -> Float32
 
 
 {-| Widen to a `Float`. Exact: every `Float32` is a `Float`.
+
+It costs O(1).
+
 -}
 @prim("f32_to_f64")
 toFloat : Float32 -> Float
@@ -58,6 +71,8 @@ toFloat : Float32 -> Float
 
     Float32.toBits (Float32.fromFloat 1.0) == 1065353216
 
+It costs O(1), a reinterpretation of the bits.
+
 -}
 @prim("f32_bits")
 toBits : Float32 -> UInt32
@@ -65,6 +80,9 @@ toBits : Float32 -> UInt32
 
 {-| The `Float32` with these 32 bits. Total, and the inverse of
 [toBits](#toBits).
+
+It costs O(1), a reinterpretation of the bits.
+
 -}
 @prim("f32_from_bits")
 fromBits : UInt32 -> Float32

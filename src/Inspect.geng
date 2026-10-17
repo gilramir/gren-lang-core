@@ -12,6 +12,23 @@ its format is **written down** — `docs/representation.md` R5 pins it, so that
 `DESIGN.md` §8's differential harness can compare it byte-for-byte across
 backends. The format is unstable across Gren versions and pinned within one.
 
+## Costs
+
+`inspect` builds its text with `++` and `String.join`, so it costs what
+`String`'s appends cost. On JavaScript an append is O(1) and makes a rope;
+natively and on the BEAM it writes in place into the room beside the latest
+string grown from a buffer. A derived instance renders each constructor's
+arguments and then asks [`arg`](#arg) whether each one needs parentheses, which
+walks the argument's rendering by `String.popFirst` up to its first space
+outside brackets and quotes. Costs are per call, n being the length of what is
+written.
+
+- `Inspect`: For `core`'s instances `inspect` costs O(n) in the length n of the
+  rendering it writes, a `String`'s escaping each character, and a derived
+  instance also walks each constructor argument's rendering up to its first
+  space outside brackets and quotes ([`arg`](#arg)), so a value that nests
+  constructors inside arrays or records d deep costs O(n·d).
+
 @docs Inspect
 
 
@@ -75,6 +92,9 @@ type Proxy a
 
 {-| What `inspectAnnotation` answers for a type with no width: every type but
 the eight sized numeric types and an array of one.
+
+It costs O(1).
+
 -}
 none : Maybe String
 none =
@@ -148,6 +168,8 @@ brackets render xs =
 
     ctor "Just" [ "1" ] == "Just 1"
 
+It costs O(n) in the length of what it writes.
+
 -}
 ctor : String -> Array String -> String
 ctor name args =
@@ -163,6 +185,8 @@ reason: a Gren record is structural, so declaration order is not a property of
 its type.
 
     record [ { name = "x", value = "1" } ] == "{ x = 1 }"
+
+It costs O(n) in the length of what it writes.
 
 -}
 record : Array { name : String, value : String } -> String
@@ -192,6 +216,10 @@ exact rather than approximate: R5's grammar is closed, and a **top-level
 space** appears in exactly one of its shapes. A record's spaces are inside its
 braces, an array's inside its brackets, and a string's or character's inside
 its quotes, so tracking those three is the whole test.
+
+It costs O(k), k being the characters of the rendering before its first space
+outside brackets and quotes, so the whole rendering when there is none (a
+record, an array, a string), plus O(n) to wrap it in parentheses when there is.
 
 -}
 arg : String -> String

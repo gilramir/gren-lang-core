@@ -16,6 +16,75 @@ module Basics exposing
 
 ## Numbers
 
+## Costs
+
+Costs are per call. An `Int` is a 32-bit integer on every target (a JavaScript
+number, a C `int32_t`, an Erlang integer wrapped to 32 bits) and a `Float` an
+IEEE double, so arithmetic on either is O(1), and on the BEAM a `Float`
+operation is a guarded call, since a `Float` there may be an atom standing for
+NaN or an infinity (A1). `Int64` and `UInt64` are BigInts on JavaScript, about
+2.2 times a float on timestamp-shaped code and 20 to 30 times an `Int` in
+arithmetic-heavy loops (`int64-migration.md`), and a `Float32` is rounded after
+every operation, with `Math.fround` on JavaScript. `==` and `compare` cost what
+the instance at the type costs: O(1) at a number, `Char` or `Bool`, a walk to
+the first difference at a `String` or an `Array`, and a derived instance
+compares components in order and stops at the first that differs. `++` on
+strings and arrays writes in place onto the latest version of an operand on
+JavaScript and natively, so a loop that appends to an accumulator is linear
+there.
+
+- `(+)`: It costs O(1) at every numeric type.
+- `(-)`: It costs O(1) at every numeric type.
+- `(*)`: It costs O(1) at every numeric type.
+- `(/)`: It costs O(1), and at `Float32` a rounding to single precision after
+  the division.
+- `(//)`: It costs O(1): a test of the divisor for zero and one division.
+- `(^)`: It costs one multiplication or two for each bit of an integer
+  exponent, at most the type's width, and at `Float` and `Float32` one run of
+  fdlibm's `pow` written in Geng, a constant factor over the host's own
+  (`m2-fdlibm.md` §FD13).
+- `negate`: It costs O(1) at every numeric type.
+- `divFloor`: It costs O(1): a test of the divisor for zero, one division and
+  one remainder.
+- `remainderBy`: It costs O(1): a test of the divisor for zero and one
+  remainder.
+- `modBy`: It costs O(1): a test of the divisor for zero and one remainder.
+- `isNaN`: It costs O(1).
+- `isInfinite`: It costs O(1).
+- `(==)`: It costs what the type's `eq` costs: O(1) at a number, a `Char` or a
+  `Bool`, O(1) for two `String`s or `Array`s of different lengths and at most
+  the length otherwise, and for a derived instance a comparison of the
+  components in order that stops at the first that differs (`Dict`'s and
+  `Set`'s say their own).
+- `(/=)`: It costs what `==` costs at the type.
+- `compare`: It costs what the type's `compare` costs: O(1) at a number or a
+  `Char`, the common prefix of two `Array`s, and of two `String`s natively and
+  on the BEAM, while on JavaScript two different strings are both scanned whole
+  for a surrogate unless both are Latin-1; a derived instance orders by
+  constructor first and then compares components until the first that is not
+  `EQ`.
+- `(<)`: It costs one `compare`.
+- `(>)`: It costs one `compare`.
+- `(<=)`: It costs one `compare`.
+- `(>=)`: It costs one `compare`.
+- `(&&)`: It costs O(1), and the operator does not evaluate its right operand
+  when the left one is `False`.
+- `(||)`: It costs O(1), and the operator does not evaluate its right operand
+  when the left one is `True`.
+- `(++)`: At `String` and `Array` it costs the operand added, amortized, when
+  the other is the latest version grown at that end (on JavaScript a string
+  append is V8's, which joins the two at once and copies when the result is
+  next read), and O(n + m) otherwise, except that on the BEAM an `Array` append
+  pushes the shorter operand onto the longer as a tree, O(k log₃₂ n) for k
+  pushed, unless both are flat and longer than 32 and within a factor of four
+  of each other, which copies both.
+- `(<|)`: It costs one call.
+- `(|>)`: It costs one call.
+- `(<<)`: It costs O(1) to compose, and two calls each time the composition is
+  called.
+- `(>>)`: It costs O(1) to compose, and two calls each time the composition is
+  called.
+
 @docs Int, Num, (+), (-), (*), (^)
 
 
@@ -2214,6 +2283,8 @@ values like this:
     halfOf number =
         toFloat number / 2
 
+It costs O(1).
+
 -}
 toFloat : Int -> Float
 toFloat =
@@ -2603,6 +2674,8 @@ ge a b =
 
     min "abc" "xyz" == "abc"
 
+It costs one `compare`.
+
 -}
 min : Ord a => a -> a -> a
 min x y =
@@ -2618,6 +2691,8 @@ min x y =
     max 42 12345678 == 12345678
 
     max "abc" "xyz" == "xyz"
+
+It costs one `compare`.
 
 -}
 max : Ord a => a -> a -> a
@@ -2635,6 +2710,8 @@ max x y =
     100     if x < 100
      x      if 100 <= x < 200
     200     if 200 <= x
+
+It costs at most two `compare`s.
 
 -}
 clamp : Ord a => a -> a -> a -> a
@@ -2684,6 +2761,8 @@ type Bool
     not True == False
 
     not False == True
+
+It costs O(1).
 
 -}
 not : Bool -> Bool
@@ -2762,6 +2841,8 @@ or a b =
     xor False True == True
 
     xor False False == False
+
+It costs O(1).
 
 -}
 xor : Bool -> Bool -> Bool
@@ -2879,6 +2960,9 @@ apL f x =
 
 {-| Given a value, returns exactly the same value. This is called
 [the identity function](https://en.wikipedia.org/wiki/Identity_function).
+
+It costs O(1).
+
 -}
 identity : a -> a
 identity x =
@@ -2923,6 +3007,8 @@ messages. You could say:
 
 So the `never` function is basically telling the type system, make sure no one
 ever calls me!
+
+It costs nothing, since no value of `Never` exists to call it with.
 
 -}
 never : Never -> a

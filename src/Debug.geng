@@ -41,6 +41,9 @@ to carry a second printer that knows how a `Dict` is built (`core.md` C13's
 `debug_log` is handed the finished string). The cost is that you cannot log a
 function, a `Task`, or an abstract type whose author wrote no instance.
 
+It costs what `inspect` of the value costs, which grows with the size of its
+rendering, and one write of that line to standard error.
+
 -}
 log : Inspect a => String -> a -> a
 log tag value =
@@ -82,6 +85,8 @@ exceptions should not appear in the resulting applications.
 **Note:** For the equivalent of try/catch error handling in Gren, use modules
 like [`Maybe`](#Maybe) and [`Result`](#Result) which guarantee that no error
 goes unhandled!
+
+It costs O(1), and it ends the program.
 
 -}
 todo : String -> a

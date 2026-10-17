@@ -54,6 +54,9 @@ import Maybe exposing (Maybe(..))
 
 
 {-| `0`.
+
+It costs O(1): it is a constant.
+
 -}
 minValue : UInt8
 minValue =
@@ -61,6 +64,9 @@ minValue =
 
 
 {-| `255`.
+
+It costs O(1): it is a constant.
+
 -}
 maxValue : UInt8
 maxValue =
@@ -74,6 +80,8 @@ maxValue =
 {-| Widen to an `Int`. Exact.
 
     UInt8.toInt UInt8.maxValue == 255
+
+It costs O(1).
 
 -}
 @prim("u8_to_i32")
@@ -92,6 +100,8 @@ toInt : UInt8 -> Int
 
     UInt8.fromInt 100000 == UInt8.maxValue
 
+It costs O(1): two comparisons and a narrowing.
+
 -}
 fromInt : Int -> UInt8
 fromInt n =
@@ -109,6 +119,8 @@ fromInt n =
 
     UInt8.fromIntWrap -1 == UInt8.maxValue
 
+It costs O(1).
+
 -}
 @prim("i32_to_u8")
 fromIntWrap : Int -> UInt8
@@ -119,6 +131,8 @@ fromIntWrap : Int -> UInt8
     UInt8.fromIntChecked 42 == Just (42 : UInt8)
 
     UInt8.fromIntChecked 256 == Nothing
+
+It costs O(1): two comparisons and a narrowing.
 
 -}
 fromIntChecked : Int -> Maybe UInt8
@@ -140,6 +154,8 @@ fromIntChecked n =
 {-| Convert to a `Float`. Exact.
 
     UInt8.toFloat UInt8.maxValue == 255.0
+
+It costs O(1).
 
 -}
 toFloat : UInt8 -> Float

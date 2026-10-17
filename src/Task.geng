@@ -10,6 +10,18 @@ module Task exposing
 HTTP requests or writing to a database.
 
 
+## Costs
+
+A `Task` is a description: a tree of nodes that each target's scheduler
+interprets, JavaScript objects stepped by the helpers the compiler emits, C
+structs natively, and on the BEAM Erlang terms run by `geng_rt` in the Erlang
+process that runs the tree. Building a task costs O(1) a node, and running one
+costs a scheduler step a node on top of what the task's own functions cost.
+`concurrent`, `race` and `map2` run each task in a light-weight process of the
+scheduler's, which is not an Erlang process on the BEAM and not a thread
+anywhere; `parallel` on the BEAM is the one that starts an Erlang process for
+each task. Costs are per call.
+
 @docs Task
 
 
@@ -80,6 +92,8 @@ type alias Task x a =
         Time.now
             |> Task.andThen (\t -> Task.succeed (Time.posixToMillis t))
 
+It costs O(1): one node.
+
 -}
 @prim("task_succeed")
 succeed : a -> Task x a
@@ -94,6 +108,8 @@ used with `andThen` to check on the outcome of another task.
     notFound : Task Error a
     notFound =
         Task.fail NotFound
+
+It costs O(1): one node.
 
 -}
 @prim("task_fail")
@@ -121,6 +137,8 @@ out what time it will be in one hour:
 
 [time]: Time
 
+It costs O(1) to build, and one scheduler step beyond the task when it runs.
+
 -}
 @prim("task_map")
 map : (a -> b) -> Task x a -> Task x b
@@ -143,12 +161,21 @@ If one request fails and the other is still in-flight, the in-flight task will b
 
 [time]: Time
 
+It costs O(1) to build, and when it runs it starts both tasks in light-weight
+processes, as `concurrent` does, unless one of them is already a `succeed` or
+the first a `fail`, which makes it a `map` or the failure itself.
+
 -}
 @prim("task_map2")
 map2 : (a -> b -> result) -> Task x a -> Task x b -> Task x result
 
 
-{-| -}
+{-|
+
+It costs O(1) to build, and when it runs two nested `map2`s, three tasks in
+light-weight processes.
+
+-}
 map3 : (a -> b -> c -> result) -> Task x a -> Task x b -> Task x c -> Task x result
 map3 func taskA taskB taskC =
     succeed func
@@ -178,6 +205,8 @@ This can be used to do `Task.mapN` for any number of arguments - useful when `ma
 
 **NOTE**: for running an array of tasks at the same time see [`concurrent`](#concurrent).
 
+It costs a `map2`.
+
 -}
 andMap : Task x a -> Task x (a -> b) -> Task x b
 andMap =
@@ -190,6 +219,9 @@ array. The tasks will be run in order one-by-one and if any task fails the whole
 sequence fails.
 
     Task.sequence [ Task.succeed 1, Task.succeed 2 ] == Task.succeed [ 1, 2 ]
+
+It costs O(n log n) element copies for n tasks, which it splits in halves and
+appends, and it runs them one after another.
 
 -}
 sequence : Array (Task x a) -> Task x (Array a)
@@ -242,6 +274,10 @@ You might want to do these sequentially rather than all at once to avoid overwhe
 IO bound tasks however (e.g. make a HTTP request and wait until the response comes back) may get a noticable speed boost from `concurrent`.
 For CPU bound tasks there is [`parallel`](#parallel).
 
+It costs one light-weight process for each task, O(n) natively and on
+JavaScript and O(n log n) on the BEAM, where each result waits in an Erlang map
+until all have arrived.
+
 -}
 @prim("task_concurrent")
 concurrent : Array (Task x a) -> Task x (Array a)
@@ -259,6 +295,10 @@ On the BEAM each task runs in an Erlang process of its own, so CPU bound tasks c
 what a task captures and what it answers is copied between processes. That copy is the price: reach for `parallel`
 when each task has enough work to do to pay for it, and `concurrent` otherwise. On JavaScript, which has one thread to
 give, `parallel` is `concurrent`.
+
+It costs what `concurrent` costs, and on the BEAM also an Erlang process for
+each task, with what each task captures and answers copied between processes;
+on JavaScript and natively it is `concurrent`.
 
 -}
 @prim("task_parallel")
@@ -300,6 +340,9 @@ and say what an empty one means:
         Nothing ->
             Task.fail NoMirrors
 
+It costs one light-weight process for each task, O(n), and when the first
+settles the cancellation of the rest, release handlers included.
+
 -}
 @prim("task_race")
 race : Task x a -> Array (Task x a) -> Task x a
@@ -325,6 +368,9 @@ now:
 
 First the process sleeps for an hour **and then** it tells us what time it is.
 
+It costs O(1) to build, and one scheduler step beyond the two tasks when it
+runs.
+
 -}
 @prim("task_and_then")
 andThen : (a -> Task x b) -> Task x a -> Task x b
@@ -343,6 +389,9 @@ code where each callback involves more logic.
             Time.now
 
 (a)wait for an hour, then fetch the current time.
+
+It costs O(1) to build, and one scheduler step beyond the two tasks when it
+runs, as `andThen` does.
 
 -}
 await : Task x a -> (a -> Task x b) -> Task x b
@@ -364,6 +413,8 @@ callback to recover.
       |> Task.onError (\msg -> Task.succeed 42)
       -- Task.succeed 9
 
+It costs O(1) to build, and one scheduler step beyond the task when it fails.
+
 -}
 @prim("task_on_error")
 onError : (x -> Task y a) -> Task x a -> Task y a
@@ -382,6 +433,8 @@ types to match up.
             [ Task.mapError Http serverTask
             , Task.mapError WebGL textureTask
             ]
+
+It costs an `onError`: O(1) to build, and one step when the task fails.
 
 -}
 mapError : (x -> y) -> Task x a -> Task y a
@@ -412,6 +465,9 @@ error on the way in.
 Nested brackets release innermost-first, in the order the resources were
 acquired reversed.
 
+It costs O(1) to build, and one stack frame for the release task, which runs
+however the body ends.
+
 -}
 @prim("task_bracket")
 bracket : Task x r -> (r -> Task Never {}) -> (r -> Task x a) -> Task x a
@@ -423,6 +479,8 @@ bracket : Task x r -> (r -> Task Never {}) -> (r -> Task x a) -> Task x a
 
 This is [`bracket`](#bracket) with nothing to acquire, which is what it is for:
 a cleanup that does not depend on a resource.
+
+It costs a `bracket`: O(1) to build, and one stack frame for the release task.
 
 -}
 finally : Task Never {} -> Task x a -> Task x a

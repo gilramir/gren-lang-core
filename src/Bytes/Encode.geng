@@ -11,6 +11,17 @@ module Bytes.Encode exposing
 
 {-| Functions for turning things into bytes.
 
+## Costs
+
+An `Encoder` describes the bytes to write and holds its width, so building one
+costs only its own parts, and `encode` allocates the result once at its exact
+length and writes each piece in order at O(1) a byte: into a zero-filled buffer
+on JavaScript and natively, and on the BEAM by appending to a binary, which the
+emulator grows in place. [`bytes`](#bytes) copies its argument only when the
+encoder is encoded. So a `sequence` built up a piece at a time and encoded once
+is the linear way to join bytes, where [`Bytes.flatten`](Bytes#flatten) onto an
+accumulator copies the whole accumulator each time. Each cost is per call.
+
 @docs Encoder, encode, sequence
 
 ## Integers
@@ -76,6 +87,7 @@ value directly. This is valuable when you are encoding more elaborate data:
 
     import Bytes exposing (Endianness(..))
     import Bytes.Encode as Encode
+    import UInt16
 
     type alias Person =
       { age : UInt16
@@ -84,10 +96,14 @@ value directly. This is valuable when you are encoding more elaborate data:
 
     toEncoder : Person -> Encode.Encoder
     toEncoder person =
+      let
+        name =
+          Bytes.fromString person.name
+      in
       Encode.sequence
         [ Encode.unsignedInt16 BE person.age
-        , Encode.unsignedInt16 BE (Encode.getStringWidth person.name)
-        , Encode.string person.name
+        , Encode.unsignedInt16 BE (UInt16.fromInt (Bytes.length name))
+        , Encode.bytes name
         ]
 
     -- encode (toEncoder ({ age = 33, name = "Tom" })) == <00210003546F6D>
@@ -95,6 +111,9 @@ value directly. This is valuable when you are encoding more elaborate data:
 Did you know it was going to be seven bytes? How about when you have a hundred
 people to serialize? And when some have Japanese and Norwegian names? Having
 this intermediate `Encoder` can help reduce allocation quite a lot!
+
+It costs O(n) for the n bytes it writes, plus O(1) for each encoder in it.
+
 -}
 encode : Encoder -> Bytes
 encode encoder =
@@ -113,6 +132,9 @@ The 8- and 16-bit encoders take the type of their width rather than an `Int`
 `unsignedInt32` had until 2026-09-13 at the two narrower widths. A number that
 is already in an `Int` is `Int8.fromInt` away, which saturates, or
 `Int8.fromIntWrap`, which keeps the low bits as this used to.
+
+It costs O(1).
+
 -}
 signedInt8 : Int8 -> Encoder
 signedInt8 n =
@@ -120,6 +142,9 @@ signedInt8 n =
 
 
 {-| Encode an `Int16` in two bytes.
+
+It costs O(1).
+
 -}
 signedInt16 : Endianness -> Int16 -> Encoder
 signedInt16 e n =
@@ -127,6 +152,9 @@ signedInt16 e n =
 
 
 {-| Encode integers from `-2147483648` to `2147483647` in four bytes.
+
+It costs O(1).
+
 -}
 signedInt32 : Endianness -> Int -> Encoder
 signedInt32 e n =
@@ -134,6 +162,9 @@ signedInt32 e n =
 
 
 {-| Encode a `UInt8`, a byte, in one byte.
+
+It costs O(1).
+
 -}
 unsignedInt8 : UInt8 -> Encoder
 unsignedInt8 n =
@@ -141,6 +172,9 @@ unsignedInt8 n =
 
 
 {-| Encode a `UInt16` in two bytes.
+
+It costs O(1).
+
 -}
 unsignedInt16 : Endianness -> UInt16 -> Encoder
 unsignedInt16 e n =
@@ -152,6 +186,9 @@ unsignedInt16 e n =
 It takes a `UInt32` rather than an `Int` because an `Int` is 32 bits and signed
 (D2), so half of the range this writes is not an `Int` at all. A bit pattern
 that is already in an `Int` is `UInt32.fromIntWrap` away.
+
+It costs O(1).
+
 -}
 unsignedInt32 : Endianness -> UInt32 -> Encoder
 unsignedInt32 e n =
@@ -162,6 +199,9 @@ unsignedInt32 e n =
 
 
 {-| Encode 32-bit floating point numbers in four bytes.
+
+It costs O(1).
+
 -}
 float32 : Endianness -> Float -> Encoder
 float32 e n =
@@ -169,6 +209,9 @@ float32 e n =
 
 
 {-| Encode 64-bit floating point numbers in eight bytes.
+
+It costs O(1).
+
 -}
 float64 : Endianness -> Float -> Encoder
 float64 e n =
@@ -184,11 +227,12 @@ length though! You usually want to say something like this:
 
     import Bytes exposing (Bytes, Endianness(..))
     import Bytes.Encode as Encode
+    import UInt32
 
     png : Bytes -> Encode.Encoder
     png imageData =
       Encode.sequence
-        [ Encode.unsignedInt32 BE (Bytes.length imageData)
+        [ Encode.unsignedInt32 BE (UInt32.fromInt (Bytes.length imageData))
         , Encode.bytes imageData
         ]
 
@@ -198,6 +242,9 @@ For example, you can use [Base 128 Varints][pb] for ProtoBuf,
 
 [pb]: https://developers.google.com/protocol-buffers/docs/encoding#varints
 [sql]: https://www.sqlite.org/src4/doc/trunk/www/varint.wiki
+
+It costs O(1), and [`encode`](#encode) copies the bytes, O(n).
+
 -}
 bytes : Bytes -> Encoder
 bytes =
@@ -222,6 +269,9 @@ values for the position of a ball in 3D space, you could say:
         , Encode.float32 BE y
         , Encode.float32 BE z
         ]
+
+It costs O(k) for k encoders, adding up their widths, and a sequence holds its
+width, so nesting one in another adds O(1).
 
 -}
 sequence : Array Encoder -> Encoder
