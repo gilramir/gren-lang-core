@@ -16,8 +16,8 @@
 
 #include "geng.h"
 
-geng_cancel geng_core_time_now(void *build, geng_wait *wait) {
-    geng_succeed(wait, geng_slot_P(geng_call_I8(build, geng_now_wall())));
+geng_cancel geng_core_time_now(void *build, void *adapter, geng_wait *wait) {
+    geng_succeed(wait, geng_call(build, adapter, (geng_slot[]) {geng_slot_I8(geng_now_wall())}));
     return (geng_cancel) {0};
 }
 
@@ -28,8 +28,8 @@ static int32_t offset_minutes(void) {
     return (int32_t) (local.tm_gmtoff / 60);
 }
 
-geng_cancel geng_core_time_here(void *build, geng_wait *wait) {
-    geng_succeed(wait, geng_slot_P(geng_call_I4(build, offset_minutes())));
+geng_cancel geng_core_time_here(void *build, void *adapter, geng_wait *wait) {
+    geng_succeed(wait, geng_call(build, adapter, (geng_slot[]) {geng_slot_I4(offset_minutes())}));
     return (geng_cancel) {0};
 }
 
@@ -72,10 +72,11 @@ static geng_bytes *zone_name(void) {
     return NULL;
 }
 
-geng_cancel geng_core_time_getZoneName(void *name, void *offset, geng_wait *wait) {
+geng_cancel geng_core_time_getZoneName(void *name, void *name_adapter, void *offset, void *offset_adapter,
+                                       geng_wait *wait) {
     geng_bytes *zone = zone_name();
-    void *answer = zone != NULL ? geng_call_P(name, zone) : geng_call_I4(offset, -offset_minutes());
-    geng_succeed(wait, geng_slot_P(answer));
+    geng_succeed(wait, zone != NULL ? geng_call(name, name_adapter, (geng_slot[]) {geng_slot_P(zone)})
+                                    : geng_call(offset, offset_adapter, (geng_slot[]) {geng_slot_I4(-offset_minutes())}));
     return (geng_cancel) {0};
 }
 
@@ -83,6 +84,8 @@ typedef struct {
     double interval;
     void *source;
     void *build;
+    /* Static, the program's, so not a pointer the collector follows. */
+    void *adapter;
     geng_timer *timer;
     int stopped;
 } ticker;
@@ -90,7 +93,7 @@ typedef struct {
 static void tick(void *env) {
     ticker *t = env;
     if (t->stopped) return;
-    if (!geng_source_emit(t->source, geng_slot_P(geng_call_I8(t->build, geng_now_wall())))) {
+    if (!geng_source_emit(t->source, geng_call(t->build, t->adapter, (geng_slot[]) {geng_slot_I8(geng_now_wall())}))) {
         t->stopped = 1;
         return;
     }
@@ -98,12 +101,13 @@ static void tick(void *env) {
     geng_write_barrier(t, &t->timer, t->timer);
 }
 
-geng_cancel geng_core_time_every(double interval, void *source, void *build, geng_wait *wait) {
+geng_cancel geng_core_time_every(double interval, void *source, void *build, void *adapter, geng_wait *wait) {
     ticker *t = geng_alloc(sizeof *t, GENG_HEADER_WORDS(ticker) | GENG_HEADER_POINTER(ticker, source) |
                                           GENG_HEADER_POINTER(ticker, build) | GENG_HEADER_POINTER(ticker, timer));
     t->interval = interval > 0 && !isinf(interval) ? round(interval) : 0;
     t->source = source;
     t->build = build;
+    t->adapter = adapter;
     t->stopped = 0;
     t->timer = geng_timer_start(t->interval, tick, t);
     geng_succeed(wait, geng_slot_P(t));
