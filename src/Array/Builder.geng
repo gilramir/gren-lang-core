@@ -2,6 +2,7 @@ module Array.Builder exposing
     ( Builder
     , empty, fromArray
     , pushLast, append
+    , set, get, length
     , toArray
     )
 
@@ -12,13 +13,14 @@ in the `Array` module.
 A `Builder` *is* the `tr_` transient (`m1b-arr-prim.md` D240), and this module
 is the public face of it.
 
-@docs Builder, empty, fromArray, pushLast, append, toArray
+@docs Builder, empty, fromArray, pushLast, append, set, get, length, toArray
 
 -}
 
 import Array exposing (Array)
 import Array.Transient as T
 import Basics exposing (..)
+import Maybe exposing (Maybe(..))
 
 
 {-| An `Array` under construction.
@@ -79,6 +81,74 @@ appendHelp array index len builder =
 
 @prim("arr_get")
 unsafeGet : Array a -> Int -> a
+
+
+{-| Replace the element at the given index, or leave the builder as it is if
+the index is out of bounds. A negative index counts back from the end, as in
+[`Array.set`](Array#set).
+
+`Array.set` copies the whole array on JavaScript and natively, so a loop that
+sets one element a step is quadratic there; a builder's `set` writes in place
+when the builder is used linearly, and a loop of them is linear on every
+target (geng-lang `m3-cost.md` D753).
+
+    empty 3
+        |> pushLast 1
+        |> pushLast 2
+        |> set 0 9
+        |> toArray
+        == [ 9, 2 ]
+
+-}
+set : Int -> a -> Builder a -> Builder a
+set index value builder =
+    when actualIndex index builder is
+        Just at ->
+            T.set builder at value
+
+        Nothing ->
+            builder
+
+
+{-| The element at the given index, or `Nothing` if the index is out of
+bounds. A negative index counts back from the end, as in
+[`Array.get`](Array#get).
+-}
+get : Int -> Builder a -> Maybe a
+get index builder =
+    when actualIndex index builder is
+        Just at ->
+            Just (T.get builder at)
+
+        Nothing ->
+            Nothing
+
+
+{-| The number of elements in a [Builder](#Builder).
+-}
+length : Builder a -> Int
+length builder =
+    T.length builder
+
+
+actualIndex : Int -> Builder a -> Maybe Int
+actualIndex index builder =
+    let
+        len =
+            T.length builder
+
+        actual =
+            if index < 0 then
+                len + index
+
+            else
+                index
+    in
+    if actual < 0 || actual >= len then
+        Nothing
+
+    else
+        Just actual
 
 
 {-| Converts a [Builder](#Builder) to an `Array`.

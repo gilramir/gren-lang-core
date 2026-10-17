@@ -6,6 +6,7 @@ import Basics exposing (..)
 import Expect
 import Test exposing (..)
 import Fuzz
+import Maybe exposing (Maybe(..))
 
 
 
@@ -21,6 +22,51 @@ tests =
                         |> Builder.toArray
             in
             Expect.equalArrays [] built
+        , describe "set, get and length (m3-cost.md D753)"
+            [ test "set" <| \{} -> Builder.fromArray [ 1, 2, 3 ] |> Builder.set 1 9 |> Builder.toArray |> Expect.equalArrays [ 1, 9, 3 ]
+            , test "set -1" <| \{} -> Builder.fromArray [ 1, 2, 3 ] |> Builder.set -1 9 |> Builder.toArray |> Expect.equalArrays [ 1, 2, 9 ]
+            , test "set past the end" <| \{} -> Builder.fromArray [ 1, 2, 3 ] |> Builder.set 3 9 |> Builder.toArray |> Expect.equalArrays [ 1, 2, 3 ]
+            , test "set before the start" <| \{} -> Builder.fromArray [ 1, 2, 3 ] |> Builder.set -4 9 |> Builder.toArray |> Expect.equalArrays [ 1, 2, 3 ]
+            , test "set leaves the array it was made from" <| \{} ->
+                let
+                    original =
+                        [ 1, 2, 3 ]
+
+                    _ =
+                        Builder.fromArray original |> Builder.set 0 9 |> Builder.toArray
+                in
+                Expect.equalArrays [ 1, 2, 3 ] original
+            , test "get" <| \{} -> Expect.equal (Just 2) (Builder.get 1 (Builder.fromArray [ 1, 2, 3 ]))
+            , test "get -1" <| \{} -> Expect.equal (Just 3) (Builder.get -1 (Builder.fromArray [ 1, 2, 3 ]))
+            , test "get past the end" <| \{} -> Expect.equal Nothing (Builder.get 3 (Builder.fromArray [ 1, 2, 3 ]))
+            , test "get of empty" <| \{} -> Expect.equal Nothing (Builder.get 0 (Builder.empty 4 : Builder.Builder Int))
+            , test "length" <| \{} -> Expect.equal 4 (Builder.length (Builder.pushLast 4 (Builder.fromArray [ 1, 2, 3 ])))
+            , test "a sieve by set" <| \{} ->
+                let
+                    n =
+                        50
+
+                    mark p b =
+                        Array.foldl (\m acc -> Builder.set m False acc) b (Array.map (\k -> k * p) (Array.range 2 (n // p)))
+
+                    sieve =
+                        Array.foldl
+                            (\p b ->
+                                if Builder.get p b == Just True then
+                                    mark p b
+
+                                else
+                                    b
+                            )
+                            (Builder.fromArray (Array.repeat (n + 1) True))
+                            (Array.range 2 n)
+                in
+                Builder.toArray sieve
+                    |> Array.indexedMap (\i prime -> { i = i, prime = prime })
+                    |> Array.keepIf (\r -> r.i >= 2 && r.prime)
+                    |> Array.map .i
+                    |> Expect.equalArrays [ 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47 ]
+            ]
         , test "Can build an array using builder API" <| \{} ->
             Builder.empty 3
                 |> Builder.pushLast 1
