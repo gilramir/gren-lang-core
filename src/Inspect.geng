@@ -196,16 +196,21 @@ its quotes, so tracking those three is the whole test.
 -}
 arg : String -> String
 arg rendered =
-    if hasTopLevelSpace 0 Nothing (String.toArray rendered) then
+    if hasTopLevelSpace 0 Nothing rendered then
         "(" ++ rendered ++ ")"
 
     else
         rendered
 
 
-hasTopLevelSpace : Int -> Maybe Char -> Array Char -> Bool
+-- The rendering is walked by `String.popFirst`, which stops at the first
+-- top-level space: a constructor's own space is its fifth character or so.
+-- It was made an `Array Char` first, the whole rendering at every level of a
+-- nested value, so `inspect` of a value nested d deep cost d² (geng-lang
+-- m3-cost.md §CO4, D752).
+hasTopLevelSpace : Int -> Maybe Char -> String -> Bool
 hasTopLevelSpace depth quote chars =
-    when Array.popFirst chars is
+    when String.popFirst chars is
         Nothing ->
             False
 
@@ -213,7 +218,14 @@ hasTopLevelSpace depth quote chars =
             when quote is
                 Just quoteChar ->
                     if c == '\\' then
-                        hasTopLevelSpace depth quote (Array.dropFirst 1 rest)
+                        -- The escaped character, skipped; `String.dropFirst`
+                        -- would count the whole rest.
+                        when String.popFirst rest is
+                            Just escaped ->
+                                hasTopLevelSpace depth quote escaped.rest
+
+                            Nothing ->
+                                False
 
                     else if c == quoteChar then
                         hasTopLevelSpace depth Nothing rest

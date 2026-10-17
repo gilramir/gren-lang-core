@@ -172,6 +172,51 @@ countHelp n dict =
             countHelp (countHelp (n + 1) right) left
 
 
+-- The size, or the limit if the size is larger: it stops counting there, so
+-- it costs the smaller of the two (geng-lang m3-cost.md D752).
+countUpTo : Int -> Dict k v -> Int
+countUpTo limit dict =
+    countUpToHelp limit 0 dict
+
+
+countUpToHelp : Int -> Int -> Dict k v -> Int
+countUpToHelp limit n dict =
+    if n >= limit then
+        n
+
+    else
+        when dict is
+            RBEmpty_gren_builtin ->
+                n
+
+            RBNode_gren_builtin { left, right } ->
+                countUpToHelp limit (countUpToHelp limit (n + 1) right) left
+
+
+-- How the two sizes compare, found by counting both up to a limit that
+-- doubles until one of them is under it: O(the smaller size), where counting
+-- both would cost the larger.
+compareSizes : Dict k a -> Dict k b -> Order
+compareSizes t1 t2 =
+    compareSizesUpTo 8 t1 t2
+
+
+compareSizesUpTo : Int -> Dict k a -> Dict k b -> Order
+compareSizesUpTo limit t1 t2 =
+    let
+        n1 =
+            countUpTo limit t1
+
+        n2 =
+            countUpTo limit t2
+    in
+    if n1 < limit || n2 < limit then
+        compare n1 n2
+
+    else
+        compareSizesUpTo (limit * 2) t1 t2
+
+
 {-| Retrieve the first, or lowest, key-value pair.
 -}
 first : Dict k v -> Maybe { key : k, value : v }
@@ -944,10 +989,21 @@ intersect t1 t2 =
 
 
 {-| Keep a key-value pair when its key does not appear in the second dictionary.
+
+It costs the smaller of the two dictionaries: a small one less a big one
+keeps the small one's keys that the big one lacks, and a big one less a small
+one removes the small one's keys.
 -}
 diff : Ord k => Dict k a -> Dict k b -> Dict k a
 diff t1 t2 =
-    foldl (\k v t -> remove k t) t1 t2
+    -- Removing each of the second's keys cost the second's size whatever the
+    -- first's, so a small dictionary less a big one walked the big one
+    -- (geng-lang m3-cost.md §CO4, D752).
+    if compareSizes t1 t2 == GT then
+        foldl (\k _ t -> remove k t) t1 t2
+
+    else
+        keepIf (\k _ -> not (member k t2)) t1
 
 
 
@@ -1180,7 +1236,8 @@ toKeyValues dict =
 
 instance (Eq k, Eq v) => Eq (Dict k v) where
     eq a b =
-        keys a == keys b && values a == values b
+        -- The sizes first, which costs the smaller one (D752).
+        compareSizes a b == EQ && keys a == keys b && values a == values b
 
 
 -- `representation.md` R5: `Dict { "a" = 1 }`, which is the record shape with the

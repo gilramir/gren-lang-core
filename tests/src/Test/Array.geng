@@ -53,6 +53,27 @@ modifications =
         , test "remove" <| \{} ->
             remove 1 [ 1, 2, 3 ]
                 |> Expect.equalArrays [ 1, 3 ]
+        , describe "insert and remove at either end (m3-cost.md D752)"
+            [ test "insert at 0" <| \{} -> insert 0 0 [ 1, 2, 3 ] |> Expect.equalArrays [ 0, 1, 2, 3 ]
+            , test "insert at the length" <| \{} -> insert 3 0 [ 1, 2, 3 ] |> Expect.equalArrays [ 1, 2, 3, 0 ]
+            , test "insert past the end" <| \{} -> insert 9 0 [ 1, 2, 3 ] |> Expect.equalArrays [ 1, 2, 3, 0 ]
+            , test "insert before the start" <| \{} -> insert -9 0 [ 1, 2, 3 ] |> Expect.equalArrays [ 0, 1, 2, 3 ]
+            , test "insert at -1" <| \{} -> insert -1 0 [ 1, 2, 3 ] |> Expect.equalArrays [ 1, 2, 0, 3 ]
+            , test "insert into empty" <| \{} -> insert 0 7 [] |> Expect.equalArrays [ 7 ]
+            , test "remove 0" <| \{} -> remove 0 [ 1, 2, 3 ] |> Expect.equalArrays [ 2, 3 ]
+            , test "remove the last" <| \{} -> remove 2 [ 1, 2, 3 ] |> Expect.equalArrays [ 1, 2 ]
+            , test "remove -1" <| \{} -> remove -1 [ 1, 2, 3 ] |> Expect.equalArrays [ 1, 2 ]
+            , test "remove past the end" <| \{} -> remove 3 [ 1, 2, 3 ] |> Expect.equalArrays [ 1, 2, 3 ]
+            , test "remove the only one" <| \{} -> remove 0 [ 1 ] |> Expect.equalArrays []
+            , test "a queue drained by remove 0" <| \{} ->
+                let
+                    drain left acc =
+                        when first left is
+                            Just x -> drain (remove 0 left) (pushLast x acc)
+                            Nothing -> acc
+                in
+                drain (range 1 200) [] |> Expect.equalArrays (range 1 200)
+            ]
         , test "removeMany" <| \{} ->
             removeMany 0 2 [ 1, 2, 3 ]
                 |> Expect.equalArrays [ 3 ]

@@ -102,6 +102,15 @@ tests =
                 , test "union collison" <| \{} -> Expect.equal (Dict.singleton "Tom" "cat") (Dict.union (Dict.singleton "Tom" "cat") (Dict.singleton "Tom" "mouse"))
                 , test "intersect" <| \{} -> Expect.equal (Dict.singleton "Tom" "cat") (Dict.intersect animals (Dict.singleton "Tom" "cat"))
                 , test "diff" <| \{} -> Expect.equal (Dict.singleton "Jerry" "mouse") (Dict.diff animals (Dict.singleton "Tom" "cat"))
+                , test "diff, the first smaller" <| \{} ->
+                    Expect.equal (Dict.singleton 0 "a") (Dict.diff (Dict.set 0 "a" (Dict.singleton 50 "b")) (Array.foldl (\k d -> Dict.set k {} d) Dict.empty (Array.range 1 100)))
+                , test "diff, the first larger" <| \{} ->
+                    Expect.equal [ 1, 2, 4, 5 ] (Dict.keys (Dict.diff (Array.foldl (\k d -> Dict.set k {} d) Dict.empty (Array.range 1 5)) (Dict.singleton 3 "c")))
+                , test "diff, the second empty" <| \{} -> Expect.equal animals (Dict.diff animals (Dict.empty : Dict.Dict String Int))
+                , test "diff, the first empty" <| \{} -> Expect.equal Dict.empty (Dict.diff (Dict.empty : Dict.Dict String String) animals)
+                , test "== of two sizes" <| \{} -> Expect.equal False (animals == Dict.singleton "Tom" "cat")
+                , test "== built in two orders" <| \{} ->
+                    Expect.equal True (Array.foldl (\k d -> Dict.set k k d) Dict.empty (Array.range 1 40) == Array.foldr (\k d -> Dict.set k k d) Dict.empty (Array.range 1 40))
                 ]
 
         transformTests =

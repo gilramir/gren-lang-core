@@ -111,6 +111,18 @@ tests =
             , test "all false" <| \{} -> Expect.equal False (String.all Char.isDigit "1 2 3")
             , test "startsWith" <| \{} -> Expect.equal True (String.startsWith "start" "starting positions")
             , test "startsWith fail" <| \{} -> Expect.equal False (String.startsWith "final" "starting positions")
+            , test "startsWith empty" <| \{} -> Expect.equal True (String.startsWith "" "abc")
+            , test "startsWith longer" <| \{} -> Expect.equal False (String.startsWith "abcd" "abc")
+            , test "startsWith itself" <| \{} -> Expect.equal True (String.startsWith "αβγ" "αβγ")
+            , test "startsWith Greek" <| \{} -> Expect.equal True (String.startsWith "αβ" "αβγ")
+            , test "startsWith Greek fail" <| \{} -> Expect.equal False (String.startsWith "αγ" "αβγ")
+            , test "startsWith astral, one unit apart" <| \{} -> Expect.equal False (String.startsWith "\u{1F60E}" "\u{1F60F}x")
+            , test "endsWith empty" <| \{} -> Expect.equal True (String.endsWith "" "abc")
+            , test "endsWith longer" <| \{} -> Expect.equal False (String.endsWith "zabc" "abc")
+            , test "endsWith Greek" <| \{} -> Expect.equal True (String.endsWith "βγ" "αβγ")
+            , test "endsWith Greek fail" <| \{} -> Expect.equal False (String.endsWith "β" "αβγ")
+            , test "endsWith astral" <| \{} -> Expect.equal True (String.endsWith "\u{1F60E}" "x\u{1F60E}")
+            , test "endsWith astral, one unit apart" <| \{} -> Expect.equal False (String.endsWith "\u{1F60E}" "x\u{1F60F}")
             ]
         , describe "index functions"
             [ test "firstIndexOf code point" <| \{} -> Expect.equal (Just 4) (String.firstIndexOf "and" "try\u{1F60E}and try and try again")

@@ -48,6 +48,12 @@ tests =
                 , test "toString String single quote" <| \{} -> Expect.equal "\"not 'escaped'\"" (inspect "not 'escaped'")
                 , test "toString String double quote" <| \{} -> Expect.equal "\"are \\\"escaped\\\"\"" (inspect "are \"escaped\"")
                 , test "toString record" <| \{} -> Expect.equal "{ field = [0] }" (inspect { field = [ 0 ] })
+                , test "toString nested constructors, a string with spaces and escapes" <| \{} ->
+                    Expect.equal "Just (Just \"a \\\"b\\\" c\")" (inspect (Just (Just "a \"b\" c")))
+                , test "toString nested constructors, a string's backslash before its quote" <| \{} ->
+                    Expect.equal "Just \"x\\\\\"" (inspect (Just "x\\"))
+                , test "toString a constructor of a record" <| \{} -> Expect.equal "Just { a = 1 }" (inspect (Just { a = 1 }))
+                , test "toString a constructor of a negative" <| \{} -> Expect.equal "Just -1" (inspect (Just -1))
                 ]
         
         booleanTests =

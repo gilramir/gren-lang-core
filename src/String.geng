@@ -524,7 +524,15 @@ contains sub string =
 -}
 startsWith : String -> String -> Bool
 startsWith sub string =
-    primEnd sub <= primEnd string && primFind string sub 0 == 0
+    -- The prefix of the same width, compared: a search from 0 went on through
+    -- the whole string when the prefix was not there (geng-lang m3-cost.md
+    -- §CO4, D752). Equal strings are equal offset for offset, and a slice
+    -- that ends inside a codepoint is not equal to a whole string.
+    let
+        width =
+            primEnd sub
+    in
+    width <= primEnd string && primEq (primSlice string 0 width) sub
 
 
 {-| See if the second string ends with the first one.
@@ -537,10 +545,14 @@ startsWith sub string =
 endsWith : String -> String -> Bool
 endsWith sub string =
     let
+        end =
+            primEnd string
+
         at =
-            primEnd string - primEnd sub
+            end - primEnd sub
     in
-    at >= 0 && primFindLast string sub at == at
+    -- As `startsWith`: the suffix of the same width, compared (D752).
+    at >= 0 && primEq (primSlice string at end) sub
 
 
 {-| Find the index of the first string within the second one, if it's there.

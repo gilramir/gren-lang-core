@@ -513,7 +513,23 @@ end (positive index).
 -}
 insert : Int -> a -> Array a -> Array a
 insert index value array =
-    primInsert array (spliceStart index (unsafeLength array)) value
+    let
+        len =
+            unsafeLength array
+
+        start =
+            spliceStart index len
+    in
+    -- At either end it is a push, which writes in place where the primitive's
+    -- insert copies the whole array (geng-lang m3-cost.md §CO4, D752).
+    if start == 0 then
+        primAppend [ value ] array
+
+    else if start == len then
+        primAppend array [ value ]
+
+    else
+        primInsert array start value
 
 
 {-| This function works just like [insert](#insert) but allows you to insert multiple
@@ -564,7 +580,9 @@ removeMany index toRemove array =
     if count == 0 then
         array
 
-    else if count == 1 then
+    else if count == 1 && start > 0 && add start 1 < len then
+        -- One element at either end is a slice, which is a view where the
+        -- primitive's remove copies the whole array (D752).
         primRemove array start
 
     else
