@@ -1,9 +1,9 @@
-module Process exposing (Id, spawn, sleep, kill)
+module Process exposing (Id, spawn, sleep, kill, work)
 
 {-| A process is essentially a function running concurrently to your application.
 
 
-@docs Id, spawn, sleep, kill
+@docs Id, spawn, sleep, kill, work
 
 
 ## Future Plans
@@ -41,7 +41,7 @@ longer. That’s kind of what Gren is all about.
 
 -}
 
-import Basics exposing (Float, Never)
+import Basics exposing (Float, Int64, Never)
 import Task exposing (Task)
 
 
@@ -107,3 +107,38 @@ resources by the time `kill` answers, rather than at some point afterwards.
 -}
 @prim("task_kill")
 kill : Id -> Task x {}
+
+
+{-| A count of the work this program has done so far, for measuring how a
+function's work grows (geng-lang `m3-cost.md` D754). On the BEAM it is the
+reductions the runtime has counted, which repeat from run to run; natively and
+on JavaScript it is the CPU time the process has used, in microseconds, which
+other programs on the machine do not add to as they add to the wall clock. In
+a browser, which has no CPU time, it is the time since the page started, in
+microseconds.
+
+Only the difference between two reads on one target means anything: a
+reduction is not a microsecond, and neither starts at zero.
+
+    Task.await Process.work <| \before ->
+        Task.await (expensive 1000) <| \_ ->
+            Task.map (\after -> after - before) Process.work
+
+Reading it costs one step.
+-}
+work : Task x Int64
+work =
+    -- Built as a constructor, as `Time.now` builds a `Posix`: natively a
+    -- builder answers a boxed value, and `identity` at `Int64` answers the
+    -- integer itself (m3-cost.md §CO13).
+    Task.map (\(Work n) -> n) (workWith Work)
+
+
+type Work
+    = Work Int64
+
+
+@extern(js, "Process", "work")
+@extern(erlang, "geng_core_process", "work")
+@extern(c, "geng_core_process_work")
+workWith : (Int64 -> work) -> Task x work

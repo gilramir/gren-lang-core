@@ -7,11 +7,11 @@
 %% completions and §E18.5's cancellation all run through it.
 
 -module(geng_core_process).
--export([sleep/3]).
+-export([sleep/3, work/3]).
 
 %% D476 · these rows answer before they return in a tree of one, so it runs
 %% them in place (geng-lang m2-beam-toptier.md §TT46).
--geng_direct([{sleep, 3}]).
+-geng_direct([{sleep, 3}, {work, 3}]).
 
 %% The runtime's sleep, which a tree of one makes in place, a `receive`
 %% with nothing else to wait on, and which is otherwise a timer process whose
@@ -24,3 +24,11 @@ sleep(Ms, Succeed, _Fail) ->
 delay_ms(Ms) when is_float(Ms), Ms > 0 -> round(Ms);
 delay_ms(infinity) -> infinity;
 delay_ms(_) -> 0.
+
+%% `Process.work` (geng-lang m3-cost.md D754): the reductions the runtime has
+%% counted, every process's, which repeat from run to run where time does not
+%% (§CO12: a spread of 0.1% at most).
+work(Build, Succeed, _Fail) ->
+    {Total, _} = erlang:statistics(reductions),
+    Succeed(Build(Total)),
+    none.
