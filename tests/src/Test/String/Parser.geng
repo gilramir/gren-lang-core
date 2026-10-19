@@ -433,8 +433,44 @@ tests =
 
                     Err errs ->
                         Expect.fail <| "Unexpected failure " ++ inspect errs
+
+            -- Upstream's 3fe20b3 (core#175): from an offset past 0, 7.5.0 and
+            -- 7.6.0 stopped as far past the target as that offset.
+            , test "chompUntil after token" <| \{} ->
+                let
+                    parser =
+                        succeed identity
+                            |> skip (token "a")
+                            |> skip (chompUntil "\n")
+                            |> skip (token "\n")
+                            |> skip (token "y")
+                            |> keep getPosition
+                in
+                when run parser "a  \ny" is
+                    Ok ret ->
+                        Expect.equal { row = 2, col = 2 } ret
+
+                    Err err ->
+                        Expect.fail <| "Unexpected failure: " ++ inspect err
+
+            , test "chompUntilEndOr after token" <| \{} ->
+                let
+                    parser =
+                        succeed identity
+                            |> skip (token "a")
+                            |> skip (chompUntilEndOr "\n")
+                            |> skip (token "\n")
+                            |> skip (token "y")
+                            |> keep getPosition
+                in
+                when run parser "a  \ny" is
+                    Ok ret ->
+                        Expect.equal { row = 2, col = 2 } ret
+
+                    Err err ->
+                        Expect.fail <| "Unexpected failure: " ++ inspect err
             ]
-        
+
         , describe "Variable Functions" <|
             let
                 typeVar : Parser String
