@@ -1,4 +1,4 @@
-// `String.split` and `String.shortestDigits` on JavaScript.
+// `String.split`, `String.join` and `String.shortestDigits` on JavaScript.
 
 // `String.split` (D484, geng-lang `pre-m3-js.md` §JS8): JavaScript's own, as
 // stock Gren's kernel had it, 3.4 times faster than the Geng body on node.
@@ -11,6 +11,40 @@
 // to the Geng body, which `geng-hs-bodies` runs.
 function split(sep, string) {
   return sep === "" ? Array.from(string) : string.split(sep);
+}
+
+// `String.join` (D782, geng-lang `m3-closeout.md` §CL22). The Geng body folds
+// `primAppend`, which on V8 is a rope: linear, and `String.join "" [acc, piece]`
+// in a loop stays linear, where stock's `strs.join(sep)` flattens `acc` every
+// time (§SW12.3). But a rope holds a 32-byte cell for every piece until
+// something reads it, so joining 52 million one-byte pieces held 1.7 GB. Here a
+// piece under 64 characters joins a run that `Array.join` writes flat, at most
+// 4,096 to a run, and a longer piece goes onto the rope as it is: a short piece
+// is copied once, a long one never, so every pattern stays linear, and the rope
+// has a cell for each long piece or run.
+function join(sep, strings) {
+  var out = "", run = [];
+  function piece(s) {
+    if (s.length < 64) {
+      run.push(s);
+      if (run.length === 4096) {
+        out += run.join("");
+        run = [];
+      }
+    } else {
+      if (run.length > 0) {
+        out += run.join("");
+        run = [];
+      }
+      out += s;
+    }
+  }
+  for (var i = 0; i < strings.length; i++) {
+    if (i > 0 && sep !== "") piece(sep);
+    piece(strings[i]);
+  }
+  if (run.length > 0) out += run.join("");
+  return out;
 }
 
 // `String.shortestDigits` on JavaScript (D328, geng-lang `m1b-ryu.md` §Y16).

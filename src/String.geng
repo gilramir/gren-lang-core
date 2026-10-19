@@ -29,8 +29,8 @@ number of code points, and an index counts them.
 
 Each function below states its cost per call, n being the length of the string.
 On JavaScript a `String` is V8's: an offset is a UTF-16 unit, a slice is O(1),
-an append makes a rope that V8 flattens, O(n) once, the first time it is sliced
-or read by offset, and counting code points is a scan for surrogate pairs that
+an append makes a rope, a cell of 32 bytes held until V8 flattens it, O(n) once,
+the first time it is sliced or read by offset, and counting code points is a scan for surrogate pairs that
 V8 answers at once on a string whose characters are all below U+0100. Natively
 a `String` is UTF-8 bytes with no index: a slice is an O(1) view, counting code
 points reads every byte once and the count is kept with the string, and passed
@@ -379,10 +379,13 @@ splitHelp sep sepEnd string (Offset start) acc =
 
     join "/" [ "home", "evan", "Desktop" ] == "home/evan/Desktop"
 
-It costs O(n) in the length of the result, appending each piece onto the one
-before in place (a rope on JavaScript).
+It costs O(n) in the length of the result. Natively and on the BEAM it appends
+each piece onto the one before in place; on JavaScript it writes runs of short
+pieces flat and puts a piece of 64 characters or more onto a rope as it is, so
+`join "" [ acc, piece ]` in a loop is linear there too.
 
 -}
+@externPure(js, "String", "join")
 join : String -> Array String -> String
 join sep strings =
     when Array.popFirst strings is
