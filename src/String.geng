@@ -32,16 +32,19 @@ On JavaScript a `String` is V8's: an offset is a UTF-16 unit, a slice is O(1),
 an append makes a rope that V8 flattens, O(n) once, the first time it is sliced
 or read by offset, and counting code points is a scan for surrogate pairs that
 V8 answers at once on a string whose characters are all below U+0100. Natively
-a `String` is UTF-8 bytes with no cached length or index: a slice is an O(1)
-view, counting code points reads every byte, a search is a naive loop (O(n·m)
-at worst, m being the length of what is searched for), and an append writes in
-place into the room beside the latest string grown from a buffer. On the BEAM a
+a `String` is UTF-8 bytes with no index: a slice is an O(1) view, counting code
+points reads every byte once and the count is kept with the string, and passed
+on to a slice of a string that is all ASCII and to an append of two counted
+strings, a search finds the first byte with `memchr` and compares the rest
+there (O(n·m) at worst, m being the length of what is searched for), and an
+append writes in place into the room beside the latest string grown from a
+buffer. On the BEAM a
 `String` is a UTF-8 binary, or two parts with the front reversed once it has
 been grown at its front: slicing a binary is O(1), slicing a two-part string
 copies what it cuts, counting code points reads every byte, and an append
 extends the latest binary in place. So the functions that take a code-point
 index (`slice` and its family, `firstIndexOfFrom`) count the string at every
-call, and [`popFirst`](#popFirst) and [`popLast`](#popLast) are the O(1) way
+call, but natively on ASCII text, which is counted once, and [`popFirst`](#popFirst) and [`popLast`](#popLast) are the O(1) way
 along a string on every target.
 
 - `String`: Comparing two strings with `==` costs O(1) when their lengths (in
@@ -242,7 +245,9 @@ repeat n chunk =
     repeatHelp n chunk ""
 
 
-{-| Doubling, so that `repeat n` is O(log n) appends rather than n.
+{-| Doubling, so that `repeat n` is O(log n) appends rather than n. The chunk
+is not doubled past the last bit of `n`, where it would be a string twice the
+result's length that nothing reads (geng-lang `m3-closeout.md` §CL18).
 -}
 repeatHelp : Int -> String -> String -> String
 repeatHelp n chunk acc =
@@ -250,10 +255,22 @@ repeatHelp n chunk acc =
         acc
 
     else
-        repeatHelp
-            (Bitwise.shiftRightZfBy 1 n)
-            (primAppend chunk chunk)
-            (if Bitwise.and n 1 == 1 then primAppend acc chunk else acc)
+        let
+            rest =
+                Bitwise.shiftRightZfBy 1 n
+
+            withChunk =
+                if Bitwise.and n 1 == 1 then
+                    primAppend acc chunk
+
+                else
+                    acc
+        in
+        if rest == 0 then
+            withChunk
+
+        else
+            repeatHelp rest (primAppend chunk chunk) withChunk
 
 
 {-| Replace all occurrences of some substring.
@@ -322,7 +339,7 @@ you will get an array containing the original string.
     split "/" "home/evan/Desktop/" == [ "home", "evan", "Desktop", "" ]
 
 It costs O(n) in the length of the string: the host's `split` on JavaScript,
-`binary:split` on the BEAM, and natively a naive search, O(n·m) at worst, m
+`binary:split` on the BEAM, and natively a search, O(n·m) at worst, m
 being the length of the separator.
 
 -}
@@ -447,8 +464,9 @@ are taken starting from the _end_ of the array.
     slice -6 -1 "snakes on a plane!" == "plane"
 
 It costs O(n) at every call: it counts the string and, on any text that is not
-ASCII, walks from the start to the index (on JavaScript it counts a string
-whose characters are all below U+0100 at once, and walks only on text with a
+ASCII, walks from the start to the index (natively ASCII text is counted once,
+and slicing it costs O(1) after; on JavaScript it counts a string whose
+characters are all below U+0100 at once, and walks only on text with a
 character above U+FFFF); to walk along a string, use [`popFirst`](#popFirst),
 which costs O(1).
 
@@ -509,7 +527,7 @@ the length of the string, then the string is returned as is.
     takeFirst 8 "Mulder" == "Mulder"
 
 It is [`slice`](#slice) and costs the same, the whole string's length at every
-call however few characters it takes; to take characters one at a time, use
+call on text that is not ASCII however few characters it takes; to take characters one at a time, use
 [`popFirst`](#popFirst), which costs O(1).
 
 -}
@@ -530,7 +548,7 @@ the length of the string, then the string is returned as is.
     takeLast 8 "Scully" == "Scully"
 
 It is [`slice`](#slice) and costs the same, the whole string's length at every
-call however few characters it takes; to take characters one at a time from the
+call on text that is not ASCII however few characters it takes; to take characters one at a time from the
 end, use [`popLast`](#popLast), which costs O(1).
 
 -}
@@ -548,7 +566,7 @@ takeLast n string =
     dropFirst 2 "The Lone Gunmen" == "e Lone Gunmen"
 
 It is [`slice`](#slice) and costs the same, the whole string's length at every
-call, so `dropFirst 1` in a loop is quadratic; use [`popFirst`](#popFirst),
+call on text that is not ASCII, so `dropFirst 1` in a loop is quadratic; use [`popFirst`](#popFirst),
 which costs O(1).
 
 -}
@@ -566,7 +584,7 @@ dropFirst n string =
     dropLast 2 "Cigarette Smoking Man" == "Cigarette Smoking M"
 
 It is [`slice`](#slice) and costs the same, the whole string's length at every
-call, so `dropLast 1` in a loop is quadratic; use [`popLast`](#popLast), which
+call on text that is not ASCII, so `dropLast 1` in a loop is quadratic; use [`popLast`](#popLast), which
 costs O(1).
 
 -}
@@ -591,8 +609,7 @@ dropLast n string =
 
     contains "THE" "theory" == False
 
-It costs O(n), one search from the start (natively a naive loop, O(n·m) at
-worst, m being the length of the first string).
+It costs O(n), one search from the start (natively O(n·m) at worst, m being the length of the first string).
 
 -}
 contains : String -> String -> Bool
@@ -1270,7 +1287,8 @@ It reads everything [`fromFloat`](#fromFloat) writes, `"NaN"`, `"Infinity"` and
 `Float` but the sign of `-0.0`.
 
 It costs O(n): it checks the string, then hands it to the host's decimal reader
-(natively `strtod`, on a copy of the string).
+(natively `strtod` on a copy of the string, or one division for a decimal
+of at most 15 digits and no exponent).
 
 -}
 toFloat : String -> Maybe Float

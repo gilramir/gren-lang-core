@@ -139,8 +139,11 @@ members pairs =
         else
             pairs
 
-    else
+    else if repeatsKey (Array.map .key pairs) then
         dedupe pairs
+
+    else
+        pairs
 
 
 {-| Whether any key from `j` on appears before it: a quadratic look, for the
@@ -180,6 +183,17 @@ seenBefore pairs key i j =
 
             Nothing ->
                 False
+
+
+{-| Whether any key is there twice. Natively a `c` row with a hash set, where
+building the `Dict` of every key of a wide object took most of a decode of it
+(geng-lang `m3-closeout.md` D777); the body is what JavaScript and the BEAM
+compile.
+-}
+@externPure(c, "geng_core_json_repeats_key")
+repeatsKey : Array String -> Bool
+repeatsKey keys =
+    Dict.count (Array.foldl (\key d -> Dict.set key {} d) Dict.empty keys) /= Array.length keys
 
 
 dedupe : Array { key : String, value : a } -> Array { key : String, value : a }
@@ -689,7 +703,27 @@ stringAt s end open closing =
             backslash =
                 -2 - closing
         in
-        scan s end (primSlice s (open + 1) backslash) backslash backslash
+        when unescapeWith (\str next -> Just (Scanned { str = str, next = next })) Nothing s end (open + 1) backslash is
+            Just scanned ->
+                scanned
+
+            Nothing ->
+                scan s end (primSlice s (open + 1) backslash) backslash backslash
+
+
+{-| Native's fast path for a string with an escape (geng-lang `m3-closeout.md`
+D776): the string from `start`, its first backslash at `backslash`, decoded in
+C to its closing quote, and `found` given it and the offset after the quote. It
+answers `notFound` wherever `scan` would fail, an unknown escape, a control
+character or the end of the text, and `scan` then says why.
+
+The body is what every backend without a `c` row compiles: JavaScript, whose
+`parseWith` has already taken every document `JSON.parse` reads, and the BEAM.
+-}
+@externPure(c, "geng_core_json_unescape")
+unescapeWith : (String -> Int -> r) -> r -> String -> Int -> Int -> Int -> r
+unescapeWith _ notFound _ _ _ _ =
+    notFound
 
 
 {-| A key with an escape, which is rare enough to be read twice. -}
