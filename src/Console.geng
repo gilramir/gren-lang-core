@@ -22,6 +22,9 @@ import Task exposing (Task)
 
 The task completes once the runtime has taken the text, so what one `write`
 writes comes before what the next one does, and before the program ends.
+Writes from tasks running at the same time reach the output in an order that is
+not specified, and each arrives whole, never mixed with another of the
+program's writes.
 
     main : Task Never {}
     main =

@@ -159,6 +159,9 @@ the current month, we could use [`Time`][time] to ask:
 and if either of them fails, the whole thing fails!
 If one request fails and the other is still in-flight, the in-flight task will be automatically cancelled and cleaned up.
 
+As with [`concurrent`](#concurrent), the order the two tasks run in, and so the order their effects happen in, is not
+specified.
+
 [time]: Time
 
 It costs O(1) to build, and when it runs it starts both tasks in light-weight
@@ -256,6 +259,11 @@ array. The tasks will be run concurrently and if any task fails the whole array 
 
     Task.concurrent [ Task.succeed 1, Task.succeed 2 ] == Task.succeed [ 1, 2 ]
 
+The results are in the order the tasks were given, whatever order they finish in, and when tasks fail the answer is
+the first failure to happen. The order the tasks run in, and so the order their effects happen in, is **not
+specified**: a task that needs another's effect to come first has to wait for it, for its answer or through a
+[`Source`](Source).
+
 Additionally if any task fails, any tasks already in-flight will be cleaned up (e.g. an in-flight HTTP request will be cancelled).
 
 The failure is not the answer until that cleanup is done: a cancelled task runs the release handler of every
@@ -293,8 +301,12 @@ is only where the tasks run, which is a promise about cost and not about meaning
 
 On the BEAM each task runs in an Erlang process of its own, so CPU bound tasks can use as many cores as there are, and
 what a task captures and what it answers is copied between processes. That copy is the price: reach for `parallel`
-when each task has enough work to do to pay for it, and `concurrent` otherwise. On JavaScript, which has one thread to
-give, `parallel` is `concurrent`.
+when each task has enough work to do to pay for it, and `concurrent` otherwise. On JavaScript and natively, which run a
+program's tasks on one thread, `parallel` is `concurrent`.
+
+Tasks in different processes are ordered only by what they wait for. Between two tasks that wait for nothing of each
+other's, `core` orders no effect of one against any effect of the other: not two writes, not two readings of the clock,
+and not the ends of two [`Process.sleep`](Process#sleep)s.
 
 It costs what `concurrent` costs, and on the BEAM also an Erlang process for
 each task, with what each task captures and answers copied between processes;
@@ -326,7 +338,8 @@ inside. So by the time you see `Timeout`, the request has been aborted and
 anything it held has been given back.
 
 Which task wins when two of them finish at the same moment is **not
-specified**, and a program may not depend on it.
+specified**, and a program may not depend on it. Nor is the order the tasks
+run in, as with [`concurrent`](#concurrent).
 
 The first task is a separate argument because a race between no tasks has no
 answer to give: there is no result to return and no error to fail with. If you
