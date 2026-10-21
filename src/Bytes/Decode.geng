@@ -71,7 +71,10 @@ type Decoder a =
 -- exceptions (`m1b-bytes-prim.md` D229). It is not exposed, so the API is the
 -- kernel's. A read checks its bounds first, which `bytes_get_u8`'s
 -- precondition asks for, over `i32_lt` and `i32_add` rather than `<` and `+`,
--- which reach `Ord Int`'s `compare` (§BY4).
+-- which reach `Ord Int`'s `compare` (§BY4). It tests a width against what is
+-- left, `length - offset`, which cannot wrap since `0 <= offset <= length`;
+-- `length < offset + n` wraps for an `n` near 2^31 and let the read go on at
+-- a negative offset (geng-lang m4-refine.md §RF7.4).
 
 
 type Res a
@@ -85,6 +88,10 @@ lt : Int -> Int -> Bool
 
 @prim("i32_add")
 add : Int -> Int -> Int
+
+
+@prim("i32_sub")
+sub : Int -> Int -> Int
 
 
 @prim("i32_shl")
@@ -168,7 +175,7 @@ word16 isLE bites o =
 
 sized : Int -> (Bytes -> Int -> a) -> Bytes -> Int -> Res a
 sized width read bites offset =
-  if lt (primLength bites) (add offset width) then
+  if lt (sub (primLength bites) offset) width then
     ended bites
   else
     Good { offset = add offset width, value = read bites offset }
@@ -393,7 +400,7 @@ bytes n =
       if lt n 0 then
         Bad { offset = offset, reason = "a negative length" }
 
-      else if lt (primLength bites) (add offset n) then
+      else if lt (sub (primLength bites) offset) n then
         ended bites
 
       else
