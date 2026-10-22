@@ -1,5 +1,6 @@
 module Bytes.Encode exposing
   ( encode
+  , encodeChecked
   , Encoder
   , signedInt8, signedInt16, signedInt32
   , unsignedInt8, unsignedInt16, unsignedInt32
@@ -22,7 +23,7 @@ encoder is encoded. So a `sequence` built up a piece at a time and encoded once
 is the linear way to join bytes, where [`Bytes.flatten`](Bytes#flatten) onto an
 accumulator copies the whole accumulator each time. Each cost is per call.
 
-@docs Encoder, encode, sequence
+@docs Encoder, encode, encodeChecked, sequence
 
 ## Integers
 @docs signedInt8, signedInt16, signedInt32, unsignedInt8, unsignedInt16, unsignedInt32
@@ -81,6 +82,11 @@ type alias WithEndian a =
     encode (unsignedInt16 BE 7) -- <0007>
     encode (unsignedInt16 LE 7) -- <0700>
 
+Bytes longer than 2^31 − 1, which no `Bytes` can be, end the program with a
+message naming the limit, as running out of memory would;
+[`encodeChecked`](#encodeChecked) answers `Nothing` instead (geng-lang
+`m4-refine.md` §RF32, D863).
+
 The `encode` function is designed to minimize allocation. It figures out the
 exact length necessary to fit everything in `Bytes` and then generate that
 value directly. This is valuable when you are encoding more elaborate data:
@@ -117,7 +123,26 @@ It costs O(n) for the n bytes it writes, plus O(1) for each encoder in it.
 -}
 encode : Encoder -> Bytes
 encode encoder =
-  primToBytes (write encoder (Bytes.Transient.new (getLength encoder)) 0)
+  primToBytes (write encoder (primNewOrCrash (getLength encoder)) 0)
+
+
+{-| [`encode`](#encode), or `Nothing` where the bytes would be longer than
+2^31 − 1.
+
+    encodeChecked (unsignedInt8 7) -- Just <07>
+
+-}
+encodeChecked : Encoder -> Maybe Bytes
+encodeChecked encoder =
+  let
+    width =
+      getLength encoder
+  in
+  if width < 0 then
+    Nothing
+
+  else
+    Just (primToBytes (write encoder (Bytes.Transient.new width) 0))
 
 
 
@@ -271,7 +296,9 @@ values for the position of a ball in 3D space, you could say:
         ]
 
 It costs O(k) for k encoders, adding up their widths, and a sequence holds its
-width, so nesting one in another adds O(1).
+width, so nesting one in another adds O(1). A sequence whose width would pass
+the largest `Int` holds that it does, which [`encode`](#encode) and
+[`encodeChecked`](#encodeChecked) find.
 
 -}
 sequence : Array Encoder -> Encoder
@@ -284,12 +311,9 @@ sequence builders =
 
 -- The transient is threaded linearly, and each write's offset is worked out
 -- from the widths before it rather than returned by the write. The byte order
--- is Geng over one byte at a time (`m1b-bytes-prim.md` D232).
-
-
-set : Transient -> Int -> Int -> Transient
-set =
-  Bytes.Transient.setU8
+-- is Geng over one byte at a time (`m1b-bytes-prim.md` D232). Each write is
+-- tested against the transient's length, which `encode`'s width always
+-- passes, so that the checker proves every write (D863).
 
 
 @prim("i32_and")
@@ -340,44 +364,70 @@ f64ToF32 : Float -> Float32
 f32Bits : Float32 -> UInt32
 
 
-setWord16 : Bool -> Transient -> Int -> Int -> Transient
+setWord16 : Bool -> (t : Transient) -> (o : Int where 0 <= o && o <= Bytes.Transient.length t - 2) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
 setWord16 isLE t o n =
   if isLE then
-    set (set t o (band n 255)) (o + 1) (band (ushr n 8) 255)
+    Bytes.Transient.setU8 (Bytes.Transient.setU8 t o (band n 255)) (o + 1) (band (ushr n 8) 255)
   else
-    set (set t o (band (ushr n 8) 255)) (o + 1) (band n 255)
+    Bytes.Transient.setU8 (Bytes.Transient.setU8 t o (band (ushr n 8) 255)) (o + 1) (band n 255)
 
 
-setWord32 : Bool -> Transient -> Int -> Int -> Transient
+setWord32 : Bool -> (t : Transient) -> (o : Int where 0 <= o && o <= Bytes.Transient.length t - 4) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
 setWord32 isLE t o n =
   if isLE then
-    set (set (set (set t o (band n 255)) (o + 1) (band (ushr n 8) 255)) (o + 2) (band (ushr n 16) 255)) (o + 3) (ushr n 24)
+    Bytes.Transient.setU8 (Bytes.Transient.setU8 (Bytes.Transient.setU8 (Bytes.Transient.setU8 t o (band n 255)) (o + 1) (band (ushr n 8) 255)) (o + 2) (band (ushr n 16) 255)) (o + 3) (ushr n 24)
   else
-    set (set (set (set t o (ushr n 24)) (o + 1) (band (ushr n 16) 255)) (o + 2) (band (ushr n 8) 255)) (o + 3) (band n 255)
+    Bytes.Transient.setU8 (Bytes.Transient.setU8 (Bytes.Transient.setU8 (Bytes.Transient.setU8 t o (ushr n 24)) (o + 1) (band (ushr n 16) 255)) (o + 2) (band (ushr n 8) 255)) (o + 3) (band n 255)
 
 
 write : Encoder -> Transient -> Int -> Transient
 write builder mb offset =
-  when builder is
-    I8    n -> set mb offset (band n 255)
-    I16 { endian = e, number = n } -> setWord16 (e == LE) mb offset n
-    I32 { endian = e, number = n } -> setWord32 (e == LE) mb offset n
-    U8    n -> set mb offset (band n 255)
-    U16 { endian = e, number = n } -> setWord16 (e == LE) mb offset n
-    U32 { endian = e, number = n } -> setWord32 (e == LE) mb offset (u32AsI32 n)
-    F32 { endian = e, number = n } -> setWord32 (e == LE) mb offset (u32AsI32 (f32Bits (f64ToF32 n)))
-    F64 { endian = e, number = n } ->
-      let
-        bits = f64Bits n
-        high = u32AsI32 (u64ToU32 (ushr64 bits 32))
-        low = u32AsI32 (u64ToU32 bits)
-      in
-      if e == LE then
-        setWord32 True (setWord32 True mb offset low) (offset + 4) high
-      else
-        setWord32 False (setWord32 False mb offset high) (offset + 4) low
-    Seq { items = bs } -> writeSequence bs mb offset
-    Bytes bs -> primSetBytes mb offset bs
+  if offset < 0 then
+    mb
+
+  else
+    when builder is
+      I8 n ->
+        if offset <= Bytes.Transient.length mb - 1 then Bytes.Transient.setU8 mb offset (band n 255) else mb
+
+      I16 { endian = e, number = n } ->
+        if offset <= Bytes.Transient.length mb - 2 then setWord16 (e == LE) mb offset n else mb
+
+      I32 { endian = e, number = n } ->
+        if offset <= Bytes.Transient.length mb - 4 then setWord32 (e == LE) mb offset n else mb
+
+      U8 n ->
+        if offset <= Bytes.Transient.length mb - 1 then Bytes.Transient.setU8 mb offset (band n 255) else mb
+
+      U16 { endian = e, number = n } ->
+        if offset <= Bytes.Transient.length mb - 2 then setWord16 (e == LE) mb offset n else mb
+
+      U32 { endian = e, number = n } ->
+        if offset <= Bytes.Transient.length mb - 4 then setWord32 (e == LE) mb offset (u32AsI32 n) else mb
+
+      F32 { endian = e, number = n } ->
+        if offset <= Bytes.Transient.length mb - 4 then setWord32 (e == LE) mb offset (u32AsI32 (f32Bits (f64ToF32 n))) else mb
+
+      F64 { endian = e, number = n } ->
+        if offset <= Bytes.Transient.length mb - 8 then
+          let
+            bits = f64Bits n
+            high = u32AsI32 (u64ToU32 (ushr64 bits 32))
+            low = u32AsI32 (u64ToU32 bits)
+          in
+          if e == LE then
+            setWord32 True (setWord32 True mb offset low) (offset + 4) high
+          else
+            setWord32 False (setWord32 False mb offset high) (offset + 4) low
+
+        else
+          mb
+
+      Seq { items = bs } ->
+        writeSequence bs mb offset
+
+      Bytes bs ->
+        if primLength bs <= Bytes.Transient.length mb - offset then primSetBytes mb offset bs else mb
 
 
 writeSequence : Array Encoder -> Transient -> Int -> Transient
@@ -409,22 +459,45 @@ getLength builder =
     Bytes bs -> primLength bs
 
 
+{-| The widths added up, or -1 once the sum would pass the largest `Int` or
+an item's width is -1 itself. The test is a subtraction, which cannot wrap
+where a sum can (D863).
+-}
 getLengths : Int -> Array Encoder -> Int
 getLengths length builders =
-  Array.foldl 
+  Array.foldl
     (\builder sum ->
-      sum + getLength builder
+      let
+        width =
+          getLength builder
+      in
+      if sum < 0 || width < 0 then
+        -1
+
+      else if width <= 2147483647 - sum then
+        sum + width
+
+      else
+        -1
     )
     length
     builders
 
 
+{-| `Bytes.Transient.new` without its requirement: a width below 0 stands for
+one past 2^31 − 1, and the primitive ends the program with a message naming
+the limit (D863).
+-}
+@prim("bt_new")
+primNewOrCrash : (n : Int) -> (r : Transient where Bytes.Transient.length r == n)
+
+
 @prim("bt_set_bytes")
-primSetBytes : Transient -> Int -> Bytes -> Transient
+primSetBytes : (t : Transient) -> (i : Int where 0 <= i) -> (b : Bytes where Bytes.length b <= Bytes.Transient.length t - i) -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
 
 
 @prim("bt_to_bytes")
-primToBytes : Transient -> Bytes
+primToBytes : (t : Transient) -> (r : Bytes where Bytes.length r == Bytes.Transient.length t)
 
 
 @prim("bytes_length")

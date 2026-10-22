@@ -1,5 +1,6 @@
 module Bytes.Transient exposing
     ( Transient
+    , length
     , new
     , setU8
     )
@@ -7,6 +8,9 @@ module Bytes.Transient exposing
 {-| The bytes transient `Bytes.Encode.encode` and `Bytes.flatten` write into,
 which `core` does not expose (`m1b-bytes-prim.md` D233, after D221's
 `Json.Value`).
+
+Every write is proved within the transient's `length` by the refinement
+checker, since natively the primitives index without a check (D863).
 
 A transient is used linearly: each `bt_` primitive answers the transient it was
 given, and nothing reads one after passing it on. Nothing checks that, as nothing
@@ -18,16 +22,28 @@ which `Bytes` declares and which imports this module. `Bytes` and
 
 -}
 
-import Basics exposing (Int)
+import Basics exposing ((&&), (<), (<=), (==), Int)
 
 
 type Transient
     = Transient
 
 
+{-| A zero-filled transient of `n` bytes. `Bytes` and `Bytes.Encode` also
+declare `bt_new` without the requirement, for a length that may stand for one
+past 2^31 − 1: given one below 0, the primitive ends the program with a message
+naming the limit (D863).
+-}
 @prim("bt_new")
-new : Int -> Transient
+new : (n : Int where 0 <= n) -> (r : Transient where Bytes.Transient.length r == n)
 
 
 @prim("bt_set_u8")
-setU8 : Transient -> Int -> Int -> Transient
+setU8 : (t : Transient) -> (i : Int where 0 <= i && i < Bytes.Transient.length t) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
+
+
+{-| The length the transient was made with, the checker's measure for it, so
+that every write is proved within it (geng-lang `m4-refine.md` §RF32, D863).
+-}
+@prim("bt_length")
+length : Transient -> Int

@@ -11,8 +11,12 @@ module Bytes exposing
   , toString
   , toStringLossy
   , toHexString
+  , toHexStringChecked
+  , toHexStringAt
+  , toStringLossyChecked
   --
   , flatten
+  , flattenChecked
   --
   , get
   , getAt
@@ -37,10 +41,10 @@ byte. Each cost is per call, n being the length in bytes.
 @docs Endianness, getHostEndianness
 
 ## Strings
-@docs fromString, toString, toStringLossy, toHexString
+@docs fromString, toString, toStringLossy, toStringLossyChecked, toHexString, toHexStringChecked, toHexStringAt
 
 ## Combine
-@docs flatten
+@docs flatten, flattenChecked
 
 ## Reading
 @docs get, getAt, slice
@@ -385,6 +389,12 @@ to be handed back.
 
     toStringLossy (fromString "café") == "café"
 
+Each replacement is three bytes where it stands for as few as one, so the
+`String` can be longer than the `Bytes`. One longer than 2^31 − 1 bytes, which
+no `String` can be, ends the program with a message naming the limit, as
+running out of memory would; [`toStringLossyChecked`](#toStringLossyChecked)
+answers `Nothing` instead (geng-lang `m4-refine.md` §RF32, D863).
+
 It costs O(n).
 
 -}
@@ -397,6 +407,22 @@ toStringLossy bytes =
     primFromUtf8 (flatten (lossyFrom bytes (primLength bytes) 0 0 (Array.Builder.empty 8)))
 
 
+{-| [`toStringLossy`](#toStringLossy), or `Nothing` where the `String` would be
+longer than 2^31 − 1 bytes. Well-formed UTF-8 is always `Just`.
+
+    toStringLossyChecked (fromString "café") == Just "café"
+
+-}
+toStringLossyChecked : Bytes -> Maybe String
+toStringLossyChecked bytes =
+  if primUtf8Valid bytes then
+    Just (primFromUtf8 bytes)
+
+  else
+    flattenChecked (lossyFrom bytes (primLength bytes) 0 0 (Array.Builder.empty 8))
+      |> Maybe.map primFromUtf8
+
+
 {-| Convert any `Bytes` to a hex-encoded `String`, two lower-case digits a
 byte. Setting `padding` to `True` puts a space between every byte, which is
 easier for humans to read.
@@ -404,6 +430,13 @@ easier for humans to read.
     toHexString { padding = False } (fromString "Hi") == "4869"
 
     toHexString { padding = True } (fromString "Hi") == "48 69"
+
+A `String` longer than 2^31 − 1 bytes, which no `String` can be, is past
+715,827,882 bytes with `padding` and 1,073,741,823 without. It ends the program
+with a message naming the limit, as running out of memory would;
+[`toHexStringChecked`](#toHexStringChecked) answers `Nothing` instead, and
+[`toHexStringAt`](#toHexStringAt) is for `Bytes` the checker knows are short
+enough (geng-lang `m4-refine.md` §RF32, D863).
 
 It costs O(n).
 
@@ -414,51 +447,117 @@ toHexString { padding } bytes =
     count =
       primLength bytes
 
-    width =
-      if padding then
-        3
+    size =
+      hexSize padding count
+  in
+  primFromUtf8 (primToBytes (hexFrom bytes count padding 0 0 (primNewOrCrash size) size))
 
-      else
-        2
+
+{-| [`toHexString`](#toHexString), or `Nothing` where the `String` would be
+longer than 2^31 − 1 bytes.
+
+    toHexStringChecked { padding = True } (fromString "Hi") == Just "48 69"
+
+-}
+toHexStringChecked : { padding : Bool } -> Bytes -> Maybe String
+toHexStringChecked { padding } bytes =
+  let
+    count =
+      primLength bytes
 
     size =
-      if count == 0 then
-        0
-
-      else
-        count * width - (width - 2)
+      hexSize padding count
   in
-  primFromUtf8 (primToBytes (hexFrom bytes count width 0 (Bytes.Transient.new size)))
+  if size < 0 then
+    Nothing
+
+  else
+    Just (primFromUtf8 (primToBytes (hexFrom bytes count padding 0 0 (Bytes.Transient.new size) size)))
 
 
-{-| Writes byte `index` and every one after it at `index * width`, a space
-after each but the last when `width` is 3. Hex digits and the space are ASCII,
-so the bytes written are UTF-8.
+{-| [`toHexString`](#toHexString) for `Bytes` the refinement checker knows are
+at most 715,827,882 long, which it proves at each call, so that it cannot reach
+the limit: a call where it cannot is refused when the program is built.
+
+    toHexStringAt { padding = True } (fromString "Hi") == "48 69"
+
 -}
-hexFrom : Bytes -> Int -> Int -> Int -> Transient -> Transient
-hexFrom bytes count width index transient =
-  if index == count then
-    transient
+toHexStringAt : { padding : Bool } -> (bytes : Bytes where Bytes.length bytes <= 715827882) -> String
+toHexStringAt { padding } bytes =
+  let
+    count =
+      primLength bytes
+  in
+  if padding then
+    let
+      size =
+        if count == 0 then
+          0
+
+        else
+          count * 3 - 1
+    in
+    primFromUtf8 (primToBytes (hexFrom bytes count True 0 0 (Bytes.Transient.new size) size))
 
   else
     let
-      byte =
-        byteAt bytes index
-
-      offset =
-        index * width
-
-      digits =
-        Bytes.Transient.setU8 (Bytes.Transient.setU8 transient offset (hexDigit (Bitwise.shiftRightZfBy 4 byte))) (offset + 1) (hexDigit (Bitwise.and 15 byte))
-
-      spaced =
-        if width == 3 && index + 1 < count then
-          Bytes.Transient.setU8 digits (offset + 2) 32
-
-        else
-          digits
+      size =
+        count * 2
     in
-    hexFrom bytes count width (index + 1) spaced
+    primFromUtf8 (primToBytes (hexFrom bytes count False 0 0 (Bytes.Transient.new size) size))
+
+
+{-| How long the hex `String` of `count` bytes is, two digits a byte and a
+space between two with `padding`, or -1 past 2^31 − 1.
+-}
+hexSize : Bool -> (count : Int where 0 <= count) -> (r : Int where -1 <= r)
+hexSize padding count =
+  if count == 0 then
+    0
+
+  else if padding then
+    if count <= 715827882 then
+      count * 3 - 1
+
+    else
+      -1
+
+  else if count <= 1073741823 then
+    count * 2
+
+  else
+    -1
+
+
+{-| Writes byte `index` and every one after it at `offset`, a space first when
+`spaced` and it is not the first byte. Hex digits and the space are ASCII, so
+the bytes written are UTF-8. Each write is tested against the transient's
+length, which the size `hexSize` gives it always passes, so that the
+checker proves every write (D863).
+-}
+hexFrom : (bytes : Bytes) -> (count : Int where count == Bytes.length bytes) -> Bool -> (index : Int where 0 <= index) -> (offset : Int where 0 <= offset) -> (transient : Transient) -> (size : Int where size == Bytes.Transient.length transient) -> Transient
+hexFrom bytes count spaced index offset transient size =
+  if index >= count then
+    transient
+
+  else if spaced && index > 0 then
+    if offset <= size - 3 then
+      hexFrom bytes count spaced (index + 1) (offset + 3) (hexDigits (Bytes.Transient.setU8 transient offset 32) (offset + 1) (byteAt bytes index)) size
+
+    else
+      transient
+
+  else if offset <= size - 2 then
+    hexFrom bytes count spaced (index + 1) (offset + 2) (hexDigits transient offset (byteAt bytes index)) size
+
+  else
+    transient
+
+
+{-| A byte's two hex digits at `offset`. -}
+hexDigits : (transient : Transient) -> (offset : Int where 0 <= offset && offset <= Bytes.Transient.length transient - 2) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length transient)
+hexDigits transient offset byte =
+  Bytes.Transient.setU8 (Bytes.Transient.setU8 transient offset (hexDigit (Bitwise.shiftRightZfBy 4 byte))) (offset + 1) (hexDigit (Bitwise.and 15 byte))
 
 
 hexDigit : Int -> Int
@@ -597,6 +696,11 @@ byteAt bytes index =
 
 {-| Flatten all `Bytes` in an `Array` into a single `Bytes`.
 
+A `Bytes` longer than 2^31 − 1, which no `Bytes` can be, ends the program with
+a message naming the limit, as running out of memory would;
+[`flattenChecked`](#flattenChecked) answers `Nothing` instead (geng-lang
+`m4-refine.md` §RF32, D863).
+
 It costs O(n) in the total length, copying every piece, so `flatten [ acc,
 piece ]` in a loop is quadratic; to append bytes a piece at a time, collect the
 pieces in an array and flatten it once, or build a
@@ -606,27 +710,78 @@ pieces in an array and flatten it once, or build a
 flatten : Array Bytes -> Bytes
 flatten arrayOfBytes =
   let
+    count =
+      Array.length arrayOfBytes
+
     total =
-      Array.foldl (\b sum -> sum + length b) 0 arrayOfBytes
+      totalFrom arrayOfBytes count 0 0
   in
-  primToBytes (flattenFrom arrayOfBytes (Array.length arrayOfBytes) 0 0 (Bytes.Transient.new total))
+  primToBytes (flattenFrom arrayOfBytes count 0 0 (primNewOrCrash total) total)
+
+
+{-| [`flatten`](#flatten), or `Nothing` where the `Bytes` would be longer than
+2^31 − 1.
+-}
+flattenChecked : Array Bytes -> Maybe Bytes
+flattenChecked arrayOfBytes =
+  let
+    count =
+      Array.length arrayOfBytes
+
+    total =
+      totalFrom arrayOfBytes count 0 0
+  in
+  if total < 0 then
+    Nothing
+
+  else
+    Just (primToBytes (flattenFrom arrayOfBytes count 0 0 (Bytes.Transient.new total) total))
+
+
+{-| The pieces' lengths from `index` on added to `sum`, or -1 past the largest
+`Int`. The test is a subtraction, which cannot wrap where a sum can.
+-}
+totalFrom : (pieces : Array Bytes) -> (count : Int where count == Array.length pieces) -> (index : Int where 0 <= index) -> (sum : Int where 0 <= sum) -> Int
+totalFrom pieces count index sum =
+  if index >= count then
+    sum
+
+  else
+    let
+      n =
+        primLength (primArrGet pieces index)
+    in
+    if n <= 2147483647 - sum then
+      totalFrom pieces count (index + 1) (sum + n)
+
+    else
+      -1
 
 
 {-| Each piece copied in at its offset. A loop rather than a fold, so that the
 transient and the offset travel as two arguments and not as a record built
-for every piece (geng-lang `m3-bytes-access.md` §BA9).
+for every piece (geng-lang `m3-bytes-access.md` §BA9). Each piece is tested
+against what is left of the transient, which the total `flatten` makes it with
+always passes, so that the checker proves every write (D863).
 -}
-flattenFrom : Array Bytes -> Int -> Int -> Int -> Transient -> Transient
-flattenFrom pieces count index offset transient =
-  if index == count then
+flattenFrom : (pieces : Array Bytes) -> (count : Int where count == Array.length pieces) -> (index : Int where 0 <= index) -> (offset : Int where 0 <= offset) -> (transient : Transient) -> (size : Int where size == Bytes.Transient.length transient) -> Transient
+flattenFrom pieces count index offset transient size =
+  if index >= count then
     transient
 
   else
     let
       piece =
         primArrGet pieces index
+
+      n =
+        primLength piece
     in
-    flattenFrom pieces count (index + 1) (offset + primLength piece) (primSetBytes transient offset piece)
+    if n <= size - offset then
+      flattenFrom pieces count (index + 1) (offset + n) (primSetBytes transient offset piece) size
+
+    else
+      transient
 
 
 -- PRIMITIVES
@@ -655,12 +810,20 @@ primFromUtf8 : Bytes -> String
 -- equal to a fresh copy.
 
 
+{-| `Bytes.Transient.new` without its requirement: a length below 0 stands for
+one past 2^31 − 1, and the primitive ends the program with a message naming
+the limit, as `Array.append` does natively (D863).
+-}
+@prim("bt_new")
+primNewOrCrash : (n : Int) -> (r : Transient where Bytes.Transient.length r == n)
+
+
 @prim("bt_set_bytes")
-primSetBytes : Transient -> Int -> Bytes -> Transient
+primSetBytes : (t : Transient) -> (i : Int where 0 <= i) -> (b : Bytes where Bytes.length b <= Bytes.Transient.length t - i) -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
 
 
 @prim("bt_to_bytes")
-primToBytes : Transient -> Bytes
+primToBytes : (t : Transient) -> (r : Bytes where Bytes.length r == Bytes.Transient.length t)
 
 
 @prim("bytes_eq")
