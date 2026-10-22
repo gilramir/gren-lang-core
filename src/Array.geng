@@ -2,7 +2,7 @@ module Array exposing
     ( Array
     , singleton, initialize, repeat, range
     , map, indexedMap, foldl, foldr, indexedFoldl, indexedFoldr, keepIf, indexedKeepIf, mapAndKeepJust, reverse
-    , isEmpty, length, get, findFirst, findLast, member, any, all, minimum, maximum
+    , isEmpty, length, get, getAt, findFirst, findLast, member, any, all, minimum, maximum
     , set, setMany, update, insert, insertMany, remove, removeMany, pushFirst, pushLast, splice
     , prepend, append, flatten, mapAndFlatten, intersperse, map2, map3
     , first, last, slice, dropFirst, dropLast, takeFirst, takeLast, popFirst, popLast, partition
@@ -41,7 +41,7 @@ call, n being the array's length.
 
 ## Query
 
-@docs isEmpty, length, get, first, last, findFirst, findLast, member, any, all, minimum, maximum
+@docs isEmpty, length, get, getAt, first, last, findFirst, findLast, member, any, all, minimum, maximum
 
 
 ## Modify
@@ -159,7 +159,7 @@ So `map func [ a, b, c ]` is the same as `[ func a, func b, func c ]`
 It costs O(n).
 
 -}
-map : (a -> b) -> Array a -> Array b
+map : (a -> b) -> (array : Array a) -> (r : Array b where Array.length r == Array.length array)
 map fn array =
     let
         len =
@@ -175,7 +175,7 @@ map fn array =
 It costs O(n).
 
 -}
-indexedMap : (Int -> a -> b) -> Array a -> Array b
+indexedMap : ((i : Int where 0 <= i && i < Array.length array) -> a -> b) -> (array : Array a) -> (r : Array b where Array.length r == Array.length array)
 indexedMap fn array =
     let
         len =
@@ -222,7 +222,7 @@ passed the index of the current value.
 It costs O(n).
 
 -}
-indexedFoldl : (Int -> a -> b -> b) -> b -> Array a -> b
+indexedFoldl : ((i : Int where 0 <= i && i < Array.length array) -> a -> b -> b) -> b -> (array : Array a) -> b
 indexedFoldl fn acc array =
     indexedFoldlHelp fn acc array 0 (unsafeLength array)
 
@@ -234,7 +234,7 @@ but the execution order is reversed.
 It costs O(n).
 
 -}
-indexedFoldr : (Int -> a -> b -> b) -> b -> Array a -> b
+indexedFoldr : ((i : Int where 0 <= i && i < Array.length array) -> a -> b -> b) -> b -> (array : Array a) -> b
 indexedFoldr fn acc array =
     indexedFoldrHelp fn acc array (add (unsafeLength array) -1)
 
@@ -299,7 +299,7 @@ mapAndKeepJust mapper array =
 It costs O(n).
 
 -}
-reverse : Array a -> Array a
+reverse : (array : Array a) -> (r : Array a where Array.length r == Array.length array)
 reverse array =
     let
         len =
@@ -372,6 +372,27 @@ get index array =
 
     else
         Just (unsafeGet array actual)
+
+
+{-| Retrieve the element at an index that is inside the array.
+
+    getAt 1 [ 1, 2, 3 ] == 2
+
+The index is refined: a program is built only when every call is shown to give
+an index from 0 up to the array's length, and one where that cannot be shown is
+refused, with the reason. Use it where a test the program makes anyway keeps
+the index in range, as `i < Array.length array` does in a loop that counts up
+from 0; elsewhere [`get`](#get) answers `Nothing` outside the array. A
+negative index is not counted from the end, as it is by `get`.
+
+It costs O(1), and O(log n) on the BEAM when the array is a tree, with no test
+of the index.
+
+-}
+@inline
+getAt : (i : Int where 0 <= i && i < Array.length array) -> (array : Array a) -> a
+getAt i array =
+    unsafeGet array i
 
 
 {-| Find the first value that passes the test.
@@ -526,7 +547,7 @@ makes it, at O(n); to set many elements in a loop, use
 [`Array.Builder.set`](Array-Builder#set).
 
 -}
-set : Int -> a -> Array a -> Array a
+set : Int -> a -> (array : Array a) -> (r : Array a where Array.length r == Array.length array)
 set index value array =
     let
         len =
@@ -701,7 +722,7 @@ before answered, and O(n) otherwise, where it copies; on the BEAM it costs
 O(log n), onto any version.
 
 -}
-pushFirst : a -> Array a -> Array a
+pushFirst : a -> (array : Array a) -> (r : Array a where Array.length r == Array.length array + 1)
 pushFirst value array =
     primAppend [ value ] array
 
@@ -717,7 +738,7 @@ answered, and O(n) otherwise, where it copies (pushing twice onto one array, or
 onto what `popLast` answered); on the BEAM it costs O(log n), onto any version.
 
 -}
-pushLast : a -> Array a -> Array a
+pushLast : a -> (array : Array a) -> (r : Array a where Array.length r == Array.length array + 1)
 pushLast value array =
     primAppend array [ value ]
 
@@ -783,7 +804,7 @@ linear; on the BEAM it joins two tuples of comparable length in O(n + m), and
 otherwise pushes the shorter array's k elements onto the longer, O(k log n).
 
 -}
-prepend : Array a -> Array a -> Array a
+prepend : (left : Array a) -> (right : Array a) -> (r : Array a where Array.length r == Array.length left + Array.length right)
 prepend left right =
     primAppend left right
 
@@ -797,7 +818,7 @@ It costs what [`prepend`](#prepend) costs, with its arguments the other way
 round.
 
 -}
-append : Array a -> Array a -> Array a
+append : (fst : Array a) -> (second : Array a) -> (r : Array a where Array.length r == Array.length fst + Array.length second)
 append fst second =
     prepend second fst
 
@@ -1314,7 +1335,7 @@ initializeHelp fn offset index len acc =
         acc
 
 
-mapHelp : (a -> b) -> Array a -> Int -> Int -> Transient b -> Transient b
+mapHelp : (a -> b) -> (array : Array a) -> (index : Int where 0 <= index && index <= len) -> (len : Int where len == Array.length array) -> (acc : Transient b where T.length acc == index) -> (r : Transient b where T.length r == len)
 mapHelp fn array index len acc =
     if lt index len then
         mapHelp fn array (add index 1) len (T.push acc (fn (unsafeGet array index)))
@@ -1323,7 +1344,7 @@ mapHelp fn array index len acc =
         acc
 
 
-indexedMapHelp : (Int -> a -> b) -> Array a -> Int -> Int -> Transient b -> Transient b
+indexedMapHelp : ((i : Int where 0 <= i && i < Array.length array) -> a -> b) -> (array : Array a) -> (index : Int where 0 <= index && index <= len) -> (len : Int where len == Array.length array) -> (acc : Transient b where T.length acc == index) -> (r : Transient b where T.length r == len)
 indexedMapHelp fn array index len acc =
     if lt index len then
         indexedMapHelp fn array (add index 1) len (T.push acc (fn index (unsafeGet array index)))
@@ -1350,7 +1371,7 @@ foldrHelp fn acc array index =
         foldrHelp fn (fn (unsafeGet array index) acc) array (add index -1)
 
 
-indexedFoldlHelp : (Int -> a -> b -> b) -> b -> Array a -> Int -> Int -> b
+indexedFoldlHelp : ((i : Int where 0 <= i && i < Array.length array) -> a -> b -> b) -> b -> (array : Array a) -> (index : Int where 0 <= index) -> (len : Int where len == Array.length array) -> b
 indexedFoldlHelp fn acc array index len =
     if lt index len then
         indexedFoldlHelp fn (fn index (unsafeGet array index) acc) array (add index 1) len
@@ -1359,7 +1380,7 @@ indexedFoldlHelp fn acc array index len =
         acc
 
 
-indexedFoldrHelp : (Int -> a -> b -> b) -> b -> Array a -> Int -> b
+indexedFoldrHelp : ((i : Int where 0 <= i && i < Array.length array) -> a -> b -> b) -> b -> (array : Array a) -> (index : Int where index < Array.length array) -> b
 indexedFoldrHelp fn acc array index =
     if lt index 0 then
         acc
@@ -1406,7 +1427,7 @@ indexedKeepIfHelp fn array index len acc =
         acc
 
 
-reverseHelp : Array a -> Int -> Transient a -> Transient a
+reverseHelp : (array : Array a) -> (index : Int where 0 <= index + 1 && index < Array.length array) -> (acc : Transient a where T.length acc == Array.length array - 1 - index) -> (r : Transient a where T.length r == Array.length array)
 reverseHelp array index acc =
     if lt index 0 then
         acc

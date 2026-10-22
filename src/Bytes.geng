@@ -15,6 +15,7 @@ module Bytes exposing
   , flatten
   --
   , get
+  , getAt
   , slice
   )
 
@@ -42,7 +43,7 @@ byte. Each cost is per call, n being the length in bytes.
 @docs flatten
 
 ## Reading
-@docs get, slice
+@docs get, getAt, slice
 
 -}
 
@@ -151,6 +152,24 @@ get index bytes =
 
   else
     Nothing
+
+
+{-| The byte at an index that is inside the bytes.
+
+    getAt 0 (fromString "abc") == 97
+
+The index is refined: a program is built only when every call is shown to give
+an index from 0 up to the length of the bytes, and one where that cannot be
+shown is refused, with the reason. Use it where a test the program makes
+anyway keeps the index in range, as `i < Bytes.length bytes` does in a loop
+that counts up from 0; elsewhere [`get`](#get) answers `Nothing`.
+
+It costs O(1), with no test of the index.
+
+-}
+getAt : (index : Int where 0 <= index && index < Bytes.length bytes) -> (bytes : Bytes) -> UInt8
+getAt index bytes =
+  primGetU8 bytes index
 
 
 {-| The bytes from `start` up to, but not including, `end`, by
