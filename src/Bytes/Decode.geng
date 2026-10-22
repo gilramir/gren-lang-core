@@ -75,6 +75,11 @@ type Decoder a =
 -- left, `length - offset`, which cannot wrap since `0 <= offset <= length`;
 -- `length < offset + n` wraps for an `n` near 2^31 and let the read go on at
 -- a negative offset (geng-lang m4-refine.md §RF7.4).
+--
+-- A step is a closure the runner calls, so the checker cannot see that its
+-- offset is never negative, which is how every decoder here is built. Each
+-- step that reads tests it, one comparison, and the reads below it are proved
+-- (§RF27, D852).
 
 
 type Res a
@@ -147,7 +152,7 @@ f32ToF64 : Float32 -> Float
 f64FromBits : UInt64 -> Float
 
 
-byte : Bytes -> Int -> Int
+byte : (bites : Bytes) -> (offset : Int where 0 <= offset && offset < Bytes.length bites) -> Int
 byte bites offset =
   u8ToI32 (primGetU8 bites offset)
 
@@ -157,7 +162,7 @@ ended bites =
   Bad { offset = primLength bites, reason = "the input ended" }
 
 
-word32 : Bool -> Bytes -> Int -> Int
+word32 : Bool -> (bites : Bytes) -> (o : Int where 0 <= o && o + 4 <= Bytes.length bites) -> Int
 word32 isLE bites o =
   if isLE then
     bor (bor (bor (byte bites o) (shl (byte bites (add o 1)) 8)) (shl (byte bites (add o 2)) 16)) (shl (byte bites (add o 3)) 24)
@@ -165,7 +170,7 @@ word32 isLE bites o =
     bor (bor (bor (shl (byte bites o) 24) (shl (byte bites (add o 1)) 16)) (shl (byte bites (add o 2)) 8)) (byte bites (add o 3))
 
 
-word16 : Bool -> Bytes -> Int -> Int
+word16 : Bool -> (bites : Bytes) -> (o : Int where 0 <= o && o + 2 <= Bytes.length bites) -> Int
 word16 isLE bites o =
   if isLE then
     bor (byte bites o) (shl (byte bites (add o 1)) 8)
@@ -173,9 +178,9 @@ word16 isLE bites o =
     bor (shl (byte bites o) 8) (byte bites (add o 1))
 
 
-sized : Int -> (Bytes -> Int -> a) -> Bytes -> Int -> Res a
+sized : (width : Int where 0 <= width) -> ((b : Bytes) -> (o : Int where 0 <= o && o + width <= Bytes.length b) -> a) -> Bytes -> Int -> Res a
 sized width read bites offset =
-  if lt (sub (primLength bites) offset) width then
+  if lt offset 0 || lt (sub (primLength bites) offset) width then
     ended bites
   else
     Good { offset = add offset width, value = read bites offset }
@@ -298,7 +303,7 @@ It costs O(1).
 -}
 signedInt32 : Endianness -> Decoder Int
 signedInt32 endianness =
-  Decoder (sized 4 (word32 (endianness == LE)))
+  Decoder (sized 4 (\b o -> word32 (endianness == LE) b o))
 
 
 
@@ -314,7 +319,9 @@ unsignedInt8 : Decoder UInt8
 unsignedInt8 =
   Decoder
     (\bites offset ->
-      if lt offset (primLength bites) then
+      if lt offset 0 then
+        ended bites
+      else if lt offset (primLength bites) then
         Good { offset = add offset 1, value = primGetU8 bites offset }
       else
         ended bites
@@ -367,10 +374,10 @@ It costs O(1).
 -}
 float64 : Endianness -> Decoder Float
 float64 endianness =
-  Decoder (sized 8 (float64At (endianness == LE)))
+  Decoder (sized 8 (\b o -> float64At (endianness == LE) b o))
 
 
-float64At : Bool -> Bytes -> Int -> Float
+float64At : Bool -> (b : Bytes) -> (o : Int where 0 <= o && o + 8 <= Bytes.length b) -> Float
 float64At isLE b o =
   let
     first = u32ToU64 (asU32 (word32 isLE b o))
@@ -400,7 +407,7 @@ bytes n =
       if lt n 0 then
         Bad { offset = offset, reason = "a negative length" }
 
-      else if lt (sub (primLength bites) offset) n then
+      else if lt offset 0 || lt (sub (primLength bites) offset) n then
         ended bites
 
       else
@@ -825,7 +832,7 @@ loopHelp state callback bites offset =
 
 
 @prim("bytes_get_u8")
-primGetU8 : Bytes -> Int -> UInt8
+primGetU8 : (b : Bytes) -> (i : Int where 0 <= i && i < Bytes.length b) -> UInt8
 
 
 @prim("u8_to_i32")
@@ -837,4 +844,4 @@ primLength : Bytes -> Int
 
 
 @prim("bytes_slice")
-primSlice : Bytes -> Int -> Int -> Bytes
+primSlice : (b : Bytes) -> (from : Int where 0 <= from && from <= to) -> (to : Int where to <= Bytes.length b) -> (r : Bytes where Bytes.length r == to - from)

@@ -107,7 +107,7 @@ appendHelp array index len builder =
 
 
 @prim("arr_get")
-unsafeGet : Array a -> Int -> a
+unsafeGet : (arr : Array a) -> (i : Int where 0 <= i && i < Array.length arr) -> a
 
 
 {-| Replace the element at the given index, or leave the builder as it is if
@@ -130,12 +130,15 @@ natively (geng-lang `m3-cost.md` D753).
 -}
 set : Int -> a -> Builder a -> Builder a
 set index value builder =
-    when actualIndex index builder is
-        Just at ->
-            T.set builder at value
+    let
+        at =
+            actualIndex index builder
+    in
+    if at < 0 then
+        builder
 
-        Nothing ->
-            builder
+    else
+        T.set builder at value
 
 
 {-| The element at the given index, or `Nothing` if the index is out of
@@ -147,12 +150,15 @@ It costs O(1), and O(log n) on the BEAM.
 -}
 get : Int -> Builder a -> Maybe a
 get index builder =
-    when actualIndex index builder is
-        Just at ->
-            Just (T.get builder at)
+    let
+        at =
+            actualIndex index builder
+    in
+    if at < 0 then
+        Nothing
 
-        Nothing ->
-            Nothing
+    else
+        Just (T.get builder at)
 
 
 {-| The number of elements in a [Builder](#Builder).
@@ -165,7 +171,11 @@ length builder =
     T.length builder
 
 
-actualIndex : Int -> Builder a -> Maybe Int
+{-| The index a negative one counts back to, or -1 when it is outside the
+builder: an `Int` and not a `Maybe`, so that its refinement can say where it
+is (geng-lang `m4-refine.md` §RF27).
+-}
+actualIndex : Int -> (builder : Builder a) -> (r : Int where r == -1 || (0 <= r && r < T.length builder))
 actualIndex index builder =
     let
         len =
@@ -179,10 +189,10 @@ actualIndex index builder =
                 index
     in
     if actual < 0 || actual >= len then
-        Nothing
+        -1
 
     else
-        Just actual
+        actual
 
 
 {-| Converts a [Builder](#Builder) to an `Array`.

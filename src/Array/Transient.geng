@@ -23,7 +23,7 @@ they use them (§BY12.2).
 
 -}
 
-import Basics exposing (Int)
+import Basics exposing (Int, (&&), (+), (<), (<=), (==))
 
 
 type Transient a
@@ -31,19 +31,19 @@ type Transient a
 
 
 @prim("tr_new")
-new : Int -> Transient a
+new : Int -> (r : Transient a where Array.Transient.length r == 0)
 
 
 @prim("tr_push")
-push : Transient a -> a -> Transient a
+push : (t : Transient a) -> a -> (r : Transient a where Array.Transient.length r == Array.Transient.length t + 1)
 
 
 @prim("tr_set")
-set : Transient a -> Int -> a -> Transient a
+set : (t : Transient a) -> (i : Int where 0 <= i && i < Array.Transient.length t) -> a -> (r : Transient a where Array.Transient.length r == Array.Transient.length t)
 
 
 @prim("tr_get")
-get : Transient a -> Int -> a
+get : (t : Transient a) -> (i : Int where 0 <= i && i < Array.Transient.length t) -> a
 
 
 @prim("tr_length")

@@ -183,7 +183,7 @@ slice from to bytes =
     empty
 
 
-sliceBound : Int -> Int -> Int
+sliceBound : Int -> (count : Int where 0 <= count) -> (r : Int where 0 <= r && r <= count)
 sliceBound index count =
   if index < 0 then
     max 0 (count + index)
@@ -194,7 +194,20 @@ sliceBound index count =
 
 toArray : Bytes -> Array Int
 toArray bytes =
-    Array.initialize (primLength bytes) 0 (\index -> primU8ToI32 (primGetU8 bytes index))
+    toArrayFrom bytes (primLength bytes) 0 (Array.Builder.empty (primLength bytes))
+
+
+{-| A loop of its own rather than `Array.initialize`, whose callback's index
+nothing refines, since `initialize`'s offset can wrap it (geng-lang
+`m4-refine.md` §RF27).
+-}
+toArrayFrom : Bytes -> Int -> Int -> Array.Builder.Builder Int -> Array Int
+toArrayFrom bytes count index builder =
+    if index < count then
+        toArrayFrom bytes count (index + 1) (Array.Builder.pushLast (byteAt bytes index) builder)
+
+    else
+        Array.Builder.toArray builder
 
 
 {-| The sequence with exactly 0 bytes.
@@ -442,7 +455,7 @@ hexDigit digit =
 U+FFFD's three bytes for each maximal subpart between two (geng-lang
 `m3-os.md` D547). `start` is where the current run began.
 -}
-lossyFrom : Bytes -> Int -> Int -> Int -> Array.Builder.Builder Bytes -> Array Bytes
+lossyFrom : (bytes : Bytes) -> (count : Int where count == Bytes.length bytes) -> (start : Int where 0 <= start && start <= index) -> (index : Int where index <= count) -> Array.Builder.Builder Bytes -> Array Bytes
 lossyFrom bytes count start index found =
   if index >= count then
     Array.Builder.toArray (Array.Builder.pushLast (primSlice bytes start count) found)
@@ -478,7 +491,7 @@ lossyFrom bytes count start index found =
 {-| The run from `start` to `index` kept, and the `taken` bytes at `index`, a
 maximal subpart, replaced by one U+FFFD.
 -}
-replaced : Bytes -> Int -> Int -> Int -> Int -> Array.Builder.Builder Bytes -> Array Bytes
+replaced : (bytes : Bytes) -> (count : Int where count == Bytes.length bytes) -> (start : Int where 0 <= start && start <= index) -> (index : Int where index <= count) -> (taken : Int where 0 <= taken && index + taken <= count) -> Array.Builder.Builder Bytes -> Array Bytes
 replaced bytes count start index taken found =
   lossyFrom bytes count (index + taken) (index + taken)
     (found
@@ -491,7 +504,7 @@ replaced bytes count start index taken found =
 in range, counting the lead: the second byte's range is the lead's (Unicode's
 Table 3-7), and every later one is `80` to `BF`.
 -}
-continuations : Bytes -> Int -> Int -> Int -> Int -> Int -> Int -> Int
+continuations : (bytes : Bytes) -> (count : Int where count == Bytes.length bytes) -> (start : Int where 0 <= start && start < count) -> Int -> (taken : Int where 1 <= taken && start + taken <= count) -> Int -> Int -> (r : Int where 1 <= r && start + r <= count)
 continuations bytes count start needed taken low high =
   if taken == needed || start + taken >= count then
     taken
@@ -555,7 +568,7 @@ replacementBytes =
   primToUtf8 "\u{FFFD}"
 
 
-byteAt : Bytes -> Int -> Int
+byteAt : (bytes : Bytes) -> (index : Int where 0 <= index && index < Bytes.length bytes) -> Int
 byteAt bytes index =
   primU8ToI32 (primGetU8 bytes index)
 
@@ -640,19 +653,18 @@ primLength : Bytes -> Int
 
 
 @prim("bytes_get_u8")
-primGetU8 : Bytes -> Int -> UInt8
+primGetU8 : (b : Bytes) -> (i : Int where 0 <= i && i < Bytes.length b) -> UInt8
 
 
 @prim("u8_to_i32")
 primU8ToI32 : UInt8 -> Int
 
 
--- `arr_get`, as `Array.unsafeGet` and `Array.Builder` declare it: `flatten`'s
--- index is below the array's length.
+-- `arr_get`, as `Array.unsafeGet` and `Array.Builder` declare it.
 @prim("arr_get")
-primArrGet : Array Bytes -> Int -> Bytes
+primArrGet : (arr : Array Bytes) -> (i : Int where 0 <= i && i < Array.length arr) -> Bytes
 
 
 @prim("bytes_slice")
-primSlice : Bytes -> Int -> Int -> Bytes
+primSlice : (b : Bytes) -> (from : Int where 0 <= from && from <= to) -> (to : Int where to <= Bytes.length b) -> (r : Bytes where Bytes.length r == to - from)
 

@@ -679,7 +679,7 @@ removeMany index toRemove array =
     if count == 0 then
         array
 
-    else if count == 1 && start > 0 && add start 1 < len then
+    else if count == 1 && start > 0 && start < subtract len 1 then
         -- One element at either end is a slice, which is a view where the
         -- primitive's remove copies the whole array (D752).
         primRemove array start
@@ -1224,23 +1224,25 @@ compareFrom index a b =
 
 -- THE PRIMITIVES, AND THE HELPERS OVER THEM
 --
--- `unsafeGet` is `arr_get`: its index is in range, which every caller here has
--- checked. `transientFromArray` and `transientToArray` are the two `tr_`
+-- `unsafeGet` is `arr_get`: its index is in range, which its refinement makes
+-- every caller here prove (geng-lang `m4-refine.md` §RF27, D847). A
+-- primitive's refinements are trusted, since it has no body to prove them by,
+-- and are what `Core.Prim` says of it. `transientFromArray` and `transientToArray` are the two `tr_`
 -- operations that mention `Array`, so they cannot live in `Array.Transient`.
 -- `lt` and `add` are the `Int` primitives, since `<` and `+` on `Int` reach
 -- `Ord Int`'s `compare` (the open item on `Int` comparisons, §O12.6).
 
 
 @prim("arr_get")
-unsafeGet : Array a -> Int -> a
+unsafeGet : (arr : Array a) -> (i : Int where 0 <= i && i < Array.length arr) -> a
 
 
 @prim("tr_from_array")
-transientFromArray : Array a -> Transient a
+transientFromArray : (arr : Array a) -> (r : Transient a where T.length r == Array.length arr)
 
 
 @prim("tr_to_array")
-transientToArray : Transient a -> Array a
+transientToArray : (t : Transient a) -> (r : Array a where Array.length r == T.length t)
 
 
 @prim("i32_lt")
@@ -1258,14 +1260,18 @@ subtract : Int -> Int -> Int
 {-| Where a splice starts: a negative index counts from the end, and an index
 past either end clamps, as `toSpliced` does.
 -}
-spliceStart : Int -> Int -> Int
+spliceStart : Int -> (len : Int where 0 <= len) -> (r : Int where 0 <= r && r <= len)
 spliceStart index len =
     if lt index 0 then
-        if lt (add len index) 0 then
+        let
+            fromEnd =
+                add len index
+        in
+        if lt fromEnd 0 then
             0
 
         else
-            add len index
+            fromEnd
 
     else if lt len index then
         len
@@ -1279,14 +1285,18 @@ for term, the rules `spliceStart` writes out for `toSpliced`'s index. The two
 are kept apart because they are two rules that happen to agree, not one rule
 used twice: a change to either is a change to one method's behaviour.
 -}
-sliceBound : Int -> Int -> Int
+sliceBound : Int -> (len : Int where 0 <= len) -> (r : Int where 0 <= r && r <= len)
 sliceBound index len =
     if lt index 0 then
-        if lt (add len index) 0 then
+        let
+            fromEnd =
+                add len index
+        in
+        if lt fromEnd 0 then
             0
 
         else
-            add len index
+            fromEnd
 
     else if lt len index then
         len
@@ -1507,17 +1517,31 @@ runEnd fn array at len =
 {-| A bottom-up merge sort: runs of `width` are merged from `src` into `dst`,
 then the two swap, until a run covers the array. Stable, because a merge takes
 from the left run when the two compare `EQ`.
+
+Each bound is compared before it is added, `width < len - width` rather than
+`width + width < len`, since past 2^30 elements the sum wraps negative and
+the merge would read and write outside the transients (geng-lang
+`m4-refine.md` §RF27, D851). The refinements are what the checker proves
+every read and write by.
 -}
-sortPasses : (a -> a -> Order) -> Transient a -> Transient a -> Int -> Int -> Transient a
+sortPasses : (a -> a -> Order) -> (src : Transient a) -> (dst : Transient a where T.length dst == T.length src) -> (width : Int where 0 < width) -> (len : Int where len == T.length src) -> Transient a
 sortPasses fn src dst width len =
     if not (lt width len) then
         src
 
     else
-        sortPasses fn (mergePass fn src dst 0 width len) src (add width width) len
+        let
+            merged =
+                mergePass fn src dst 0 width len
+        in
+        if lt width (subtract len width) then
+            sortPasses fn merged src (add width width) len
+
+        else
+            merged
 
 
-mergePass : (a -> a -> Order) -> Transient a -> Transient a -> Int -> Int -> Int -> Transient a
+mergePass : (a -> a -> Order) -> (src : Transient a) -> (dst : Transient a where T.length dst == T.length src) -> (lo : Int where 0 <= lo) -> (width : Int where 0 < width) -> (len : Int where len == T.length src) -> (r : Transient a where T.length r == T.length dst)
 mergePass fn src dst lo width len =
     if not (lt lo len) then
         dst
@@ -1525,15 +1549,23 @@ mergePass fn src dst lo width len =
     else
         let
             mid =
-                min (add lo width) len
+                if lt width (subtract len lo) then
+                    add lo width
+
+                else
+                    len
 
             hi =
-                min (add mid width) len
+                if lt width (subtract len mid) then
+                    add mid width
+
+                else
+                    len
         in
-        mergePass fn src (mergeRuns fn src dst lo mid mid hi lo) (add lo (add width width)) width len
+        mergePass fn src (mergeRuns fn src dst lo mid mid hi lo) hi width len
 
 
-mergeRuns : (a -> a -> Order) -> Transient a -> Transient a -> Int -> Int -> Int -> Int -> Int -> Transient a
+mergeRuns : (a -> a -> Order) -> (src : Transient a) -> (dst : Transient a where T.length dst == T.length src) -> (i : Int where 0 <= i && i <= mid) -> (mid : Int where mid <= j) -> (j : Int where j <= hi) -> (hi : Int where hi <= T.length src) -> (out : Int where out == i + j - mid) -> (r : Transient a where T.length r == T.length dst)
 mergeRuns fn src dst i mid j hi out =
     if lt i mid then
         if lt j hi then
@@ -1562,20 +1594,20 @@ mergeRuns fn src dst i mid j hi out =
 
 
 @prim("arr_set")
-primSet : Array a -> Int -> a -> Array a
+primSet : (arr : Array a) -> (i : Int where 0 <= i && i < Array.length arr) -> a -> (r : Array a where Array.length r == Array.length arr)
 
 
 @prim("arr_slice")
-primSlice : Array a -> Int -> Int -> Array a
+primSlice : (arr : Array a) -> (from : Int where 0 <= from && from <= to) -> (to : Int where to <= Array.length arr) -> (r : Array a where Array.length r == to - from)
 
 
 @prim("arr_append")
-primAppend : Array a -> Array a -> Array a
+primAppend : (arr : Array a) -> (other : Array a) -> (r : Array a where Array.length r == Array.length arr + Array.length other)
 
 
 @prim("arr_insert")
-primInsert : Array a -> Int -> a -> Array a
+primInsert : (arr : Array a) -> (i : Int where 0 <= i && i <= Array.length arr) -> a -> (r : Array a where Array.length r == Array.length arr + 1)
 
 
 @prim("arr_remove")
-primRemove : Array a -> Int -> Array a
+primRemove : (arr : Array a) -> (i : Int where 0 <= i && i < Array.length arr) -> (r : Array a where Array.length r == Array.length arr - 1)
