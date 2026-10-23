@@ -1,6 +1,7 @@
 module Time exposing
   ( Posix
   , now
+  , monotonic
   , Timer
   , every
   , cancel
@@ -64,6 +65,9 @@ one moment a breaking change to `Time` was free.
 @docs Duration, milliseconds, seconds, minutes, hours, days
 @docs inMilliseconds, inSeconds, inMinutes, inHours, inDays
 @docs add, diff
+
+## Elapsed Time
+@docs monotonic
 
 ## Time Zones
 @docs Zone, utc, here
@@ -294,6 +298,41 @@ It costs O(1): one `Int64` subtraction.
 diff : Posix -> Posix -> Duration
 diff (Posix from) (Posix to) =
   Duration (to - from)
+
+
+
+-- MONOTONIC
+
+
+{-| Read a clock that never goes backwards, as the time since some fixed moment
+the host chose.
+
+Only the difference between two readings means anything: the moment is
+unrelated to `now`'s clock, can differ from one run to the next, and can make a
+reading negative. Setting the wall clock does not move this one, so it is the
+clock to measure how long something took or how long to wait:
+
+    elapsed : Duration -> Duration -> Int64
+    elapsed start end =
+        Time.inMilliseconds end - Time.inMilliseconds start
+
+It counts whole milliseconds. On JavaScript it is `performance.now()`, whose
+moment is when the program started; on the BEAM, `erlang:monotonic_time`; and
+natively `CLOCK_MONOTONIC`, which on Linux does not count time the machine
+spends suspended.
+
+It costs one read of the clock, and on JavaScript a `BigInt` built from it.
+
+-}
+monotonic : Task x Duration
+monotonic =
+  monotonicWith milliseconds
+
+
+@extern(js, "Time", "monotonic")
+@extern(erlang, "geng_core_time", "monotonic")
+@extern(c, "geng_core_time_monotonic")
+monotonicWith : (Int64 -> duration) -> Task x duration
 
 
 

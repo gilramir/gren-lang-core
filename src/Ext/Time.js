@@ -7,6 +7,13 @@ function now(build, succeed, fail) {
   succeed(build(BigInt(Date.now())));
 }
 
+// `performance.now()` is on node and in browsers, where `process.hrtime` is
+// node's alone. It is a Number of milliseconds with a fraction, from when the
+// program started, and never goes backwards; `Time.monotonic` counts whole ones.
+function monotonic(build, succeed, fail) {
+  succeed(build(BigInt(Math.floor(performance.now()))));
+}
+
 function here(build, succeed, fail) {
   succeed(build(-new Date().getTimezoneOffset()));
 }

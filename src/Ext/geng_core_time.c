@@ -21,6 +21,15 @@ geng_cancel geng_core_time_now(void *build, void *adapter, geng_wait *wait) {
     return (geng_cancel) {0};
 }
 
+/* `CLOCK_MONOTONIC` in whole milliseconds, computed in integers. */
+geng_cancel geng_core_time_monotonic(void *build, void *adapter, geng_wait *wait) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    int64_t millis = (int64_t) ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+    geng_succeed(wait, geng_call(build, adapter, (geng_slot[]) {geng_slot_I8(millis)}));
+    return (geng_cancel) {0};
+}
+
 static int32_t offset_minutes(void) {
     time_t now = time(NULL);
     struct tm local;
