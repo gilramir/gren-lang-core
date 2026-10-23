@@ -1,5 +1,5 @@
 module Basics exposing
-    ( Int, Num, (+), (-), (*), (^)
+    ( Int, Nat, Num, (+), (-), (*), (^)
     , Integral, (//)
     , Float, Fractional, (/), toFloat
     , Int64, UInt32, UInt64, Float32
@@ -85,7 +85,7 @@ there.
 - `(>>)`: It costs O(1) to compose, and two calls each time the composition is
   called.
 
-@docs Int, Num, (+), (-), (*), (^)
+@docs Int, Nat, Num, (+), (-), (*), (^)
 
 
 ## Integers
@@ -218,6 +218,22 @@ this abbreviation.
 -}
 type Int
     = Int -- NOTE: The compiler provides the real implementation.
+
+
+{-| An `Int` that is never negative: a count, a size or an index.
+
+    half : Nat -> Int
+    half n =
+        n // 2
+
+The refinement checker asks every call of `half` to show its argument is at
+least 0, and lets `half`'s body know it is. A name written on it is the
+argument's, and a predicate written after it is asked too:
+`(i : Nat where i < Array.length array)` is `0 <= i && i < Array.length array`
+(geng-lang `m4-refine.md` §RF35, D870).
+-}
+type alias Nat =
+    (n : Int where 0 <= n)
 
 
 {-| A `Float` is a [floating-point number][fp]. Valid syntax for floats includes:

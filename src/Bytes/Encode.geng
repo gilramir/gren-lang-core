@@ -493,7 +493,7 @@ primNewOrCrash : (n : Int) -> (r : Transient where Bytes.Transient.length r == n
 
 
 @prim("bt_set_bytes")
-primSetBytes : (t : Transient) -> (i : Int where 0 <= i) -> (b : Bytes where Bytes.length b <= Bytes.Transient.length t - i) -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
+primSetBytes : (t : Transient) -> (i : Nat) -> (b : Bytes where Bytes.length b <= Bytes.Transient.length t - i) -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
 
 
 @prim("bt_to_bytes")

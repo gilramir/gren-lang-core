@@ -206,7 +206,7 @@ slice from to bytes =
     empty
 
 
-sliceBound : Int -> (count : Int where 0 <= count) -> (r : Int where 0 <= r && r <= count)
+sliceBound : Int -> (count : Nat) -> (r : Int where 0 <= r && r <= count)
 sliceBound index count =
   if index < 0 then
     max 0 (count + index)
@@ -510,7 +510,7 @@ toHexStringAt { padding } bytes =
 {-| How long the hex `String` of `count` bytes is, two digits a byte and a
 space between two with `padding`, or -1 past 2^31 − 1.
 -}
-hexSize : Bool -> (count : Int where 0 <= count) -> (r : Int where -1 <= r)
+hexSize : Bool -> (count : Nat) -> (r : Int where -1 <= r)
 hexSize padding count =
   if count == 0 then
     0
@@ -535,7 +535,7 @@ the bytes written are UTF-8. Each write is tested against the transient's
 length, which the size `hexSize` gives it always passes, so that the
 checker proves every write (D863).
 -}
-hexFrom : (bytes : Bytes) -> (count : Int where count == Bytes.length bytes) -> Bool -> (index : Int where 0 <= index) -> (offset : Int where 0 <= offset) -> (transient : Transient) -> (size : Int where size == Bytes.Transient.length transient) -> Transient
+hexFrom : (bytes : Bytes) -> (count : Int where count == Bytes.length bytes) -> Bool -> (index : Nat) -> (offset : Nat) -> (transient : Transient) -> (size : Int where size == Bytes.Transient.length transient) -> Transient
 hexFrom bytes count spaced index offset transient size =
   if index >= count then
     transient
@@ -741,7 +741,7 @@ flattenChecked arrayOfBytes =
 {-| The pieces' lengths from `index` on added to `sum`, or -1 past the largest
 `Int`. The test is a subtraction, which cannot wrap where a sum can.
 -}
-totalFrom : (pieces : Array Bytes) -> (count : Int where count == Array.length pieces) -> (index : Int where 0 <= index) -> (sum : Int where 0 <= sum) -> Int
+totalFrom : (pieces : Array Bytes) -> (count : Int where count == Array.length pieces) -> (index : Nat) -> (sum : Nat) -> Int
 totalFrom pieces count index sum =
   if index >= count then
     sum
@@ -764,7 +764,7 @@ for every piece (geng-lang `m3-bytes-access.md` §BA9). Each piece is tested
 against what is left of the transient, which the total `flatten` makes it with
 always passes, so that the checker proves every write (D863).
 -}
-flattenFrom : (pieces : Array Bytes) -> (count : Int where count == Array.length pieces) -> (index : Int where 0 <= index) -> (offset : Int where 0 <= offset) -> (transient : Transient) -> (size : Int where size == Bytes.Transient.length transient) -> Transient
+flattenFrom : (pieces : Array Bytes) -> (count : Int where count == Array.length pieces) -> (index : Nat) -> (offset : Nat) -> (transient : Transient) -> (size : Int where size == Bytes.Transient.length transient) -> Transient
 flattenFrom pieces count index offset transient size =
   if index >= count then
     transient
@@ -819,7 +819,7 @@ primNewOrCrash : (n : Int) -> (r : Transient where Bytes.Transient.length r == n
 
 
 @prim("bt_set_bytes")
-primSetBytes : (t : Transient) -> (i : Int where 0 <= i) -> (b : Bytes where Bytes.length b <= Bytes.Transient.length t - i) -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
+primSetBytes : (t : Transient) -> (i : Nat) -> (b : Bytes where Bytes.length b <= Bytes.Transient.length t - i) -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
 
 
 @prim("bt_to_bytes")

@@ -178,7 +178,7 @@ word16 isLE bites o =
     bor (shl (byte bites o) 8) (byte bites (add o 1))
 
 
-sized : (width : Int where 0 <= width) -> ((b : Bytes) -> (o : Int where 0 <= o && o + width <= Bytes.length b) -> a) -> Bytes -> Int -> Res a
+sized : (width : Nat) -> ((b : Bytes) -> (o : Int where 0 <= o && o + width <= Bytes.length b) -> a) -> Bytes -> Int -> Res a
 sized width read bites offset =
   if lt offset 0 || lt (sub (primLength bites) offset) width then
     ended bites

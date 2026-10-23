@@ -1281,7 +1281,7 @@ subtract : Int -> Int -> Int
 {-| Where a splice starts: a negative index counts from the end, and an index
 past either end clamps, as `toSpliced` does.
 -}
-spliceStart : Int -> (len : Int where 0 <= len) -> (r : Int where 0 <= r && r <= len)
+spliceStart : Int -> (len : Nat) -> (r : Int where 0 <= r && r <= len)
 spliceStart index len =
     if lt index 0 then
         let
@@ -1306,7 +1306,7 @@ for term, the rules `spliceStart` writes out for `toSpliced`'s index. The two
 are kept apart because they are two rules that happen to agree, not one rule
 used twice: a change to either is a change to one method's behaviour.
 -}
-sliceBound : Int -> (len : Int where 0 <= len) -> (r : Int where 0 <= r && r <= len)
+sliceBound : Int -> (len : Nat) -> (r : Int where 0 <= r && r <= len)
 sliceBound index len =
     if lt index 0 then
         let
@@ -1371,7 +1371,7 @@ foldrHelp fn acc array index =
         foldrHelp fn (fn (unsafeGet array index) acc) array (add index -1)
 
 
-indexedFoldlHelp : ((i : Int where 0 <= i && i < Array.length array) -> a -> b -> b) -> b -> (array : Array a) -> (index : Int where 0 <= index) -> (len : Int where len == Array.length array) -> b
+indexedFoldlHelp : ((i : Int where 0 <= i && i < Array.length array) -> a -> b -> b) -> b -> (array : Array a) -> (index : Nat) -> (len : Int where len == Array.length array) -> b
 indexedFoldlHelp fn acc array index len =
     if lt index len then
         indexedFoldlHelp fn (fn index (unsafeGet array index) acc) array (add index 1) len
@@ -1562,7 +1562,7 @@ sortPasses fn src dst width len =
             merged
 
 
-mergePass : (a -> a -> Order) -> (src : Transient a) -> (dst : Transient a where T.length dst == T.length src) -> (lo : Int where 0 <= lo) -> (width : Int where 0 < width) -> (len : Int where len == T.length src) -> (r : Transient a where T.length r == T.length dst)
+mergePass : (a -> a -> Order) -> (src : Transient a) -> (dst : Transient a where T.length dst == T.length src) -> (lo : Nat) -> (width : Int where 0 < width) -> (len : Int where len == T.length src) -> (r : Transient a where T.length r == T.length dst)
 mergePass fn src dst lo width len =
     if not (lt lo len) then
         dst

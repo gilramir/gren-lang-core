@@ -22,7 +22,7 @@ which `Bytes` declares and which imports this module. `Bytes` and
 
 -}
 
-import Basics exposing ((&&), (<), (<=), (==), Int)
+import Basics exposing ((&&), (<), (<=), (==), Int, Nat)
 
 
 type Transient
@@ -35,7 +35,7 @@ past 2^31 − 1: given one below 0, the primitive ends the program with a messag
 naming the limit (D863).
 -}
 @prim("bt_new")
-new : (n : Int where 0 <= n) -> (r : Transient where Bytes.Transient.length r == n)
+new : (n : Nat) -> (r : Transient where Bytes.Transient.length r == n)
 
 
 @prim("bt_set_u8")
