@@ -14,8 +14,10 @@ module Array.Transient exposing
 
 A transient is used linearly: each `tr_` primitive answers the transient it was
 given, and nothing reads one after passing it on. A non-linear use is still
-correct — the primitive copies before it writes — but it costs a copy, and
-nothing checks for one.
+correct, and nothing checks for one: a write in place keeps what it overwrote
+in the transient it was given, so an older transient reads what it held through
+those records, and a write to an older transient copies first (geng-lang
+`m4-visiterm.md` D903). It costs a walk of the records, or a copy.
 
 `tr_from_array` and `tr_to_array` are not here, because they mention `Array`,
 which imports this module. `Array` and `Array.Builder` each declare them where

@@ -67,6 +67,79 @@ tests =
                     |> Array.map .i
                     |> Expect.equalArrays [ 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47 ]
             ]
+        , describe "an older builder reads what it held (geng-lang m4-visiterm.md D903)"
+            [ test "set, then the older read" <| \{} ->
+                let
+                    older =
+                        Builder.fromArray [ 1, 2, 3 ] |> Builder.pushLast 4
+
+                    newer =
+                        Builder.set 0 9 older
+                in
+                Expect.equal { older = [ 1, 2, 3, 4 ], newer = [ 9, 2, 3, 4 ] } { older = Builder.toArray older, newer = Builder.toArray newer }
+            , test "set, then the older read by get" <| \{} ->
+                let
+                    older =
+                        Builder.fromArray [ 1, 2, 3 ] |> Builder.pushLast 4
+
+                    newer =
+                        Builder.set 0 9 older
+                in
+                Expect.equal { older = Just 1, newer = Just 9 } { older = Builder.get 0 older, newer = Builder.get 0 newer }
+            , test "an array toArray handed out does not change" <| \{} ->
+                let
+                    builder =
+                        Builder.fromArray [ 1, 2, 3 ] |> Builder.pushLast 4
+
+                    frozen =
+                        Builder.toArray builder
+
+                    _ =
+                        Builder.set 1 7 builder
+                in
+                Expect.equalArrays [ 1, 2, 3, 4 ] frozen
+            , test "a write through an older builder, after two at one index on the newer" <| \{} ->
+                let
+                    older =
+                        Builder.fromArray [ 1, 2, 3 ] |> Builder.pushLast 4
+
+                    newer =
+                        older |> Builder.set 0 9 |> Builder.set 0 8
+
+                    other =
+                        Builder.set 1 7 older
+                in
+                Expect.equal
+                    { newer = [ 8, 2, 3, 4 ], other = [ 1, 7, 3, 4 ], older = [ 1, 2, 3, 4 ] }
+                    { newer = Builder.toArray newer, other = Builder.toArray other, older = Builder.toArray older }
+            , fuzz (Fuzz.array (Fuzz.intRange 0 1000)) "every builder of a chain of sets reads as the array of the same sets" <| \writes ->
+                let
+                    start =
+                        Array.range 0 9
+
+                    versions =
+                        Array.foldl
+                            (\w acc ->
+                                when Array.last acc is
+                                    Just last ->
+                                        Array.pushLast
+                                            { builder = Builder.set (modBy 10 w) w last.builder
+                                            , array = Array.set (modBy 10 w) w last.array
+                                            }
+                                            acc
+
+                                    Nothing ->
+                                        acc
+                            )
+                            [ { builder = Builder.fromArray start |> Builder.pushLast 10, array = Array.pushLast 10 start } ]
+                            writes
+                in
+                -- newest first, so that each older one is read after every
+                -- write past it
+                Expect.equalArrays
+                    (Array.map .array (Array.reverse versions))
+                    (Array.map (\v -> Builder.toArray v.builder) (Array.reverse versions))
+            ]
         , test "Can build an array using builder API" <| \{} ->
             Builder.empty 3
                 |> Builder.pushLast 1

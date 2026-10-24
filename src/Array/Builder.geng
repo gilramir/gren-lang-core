@@ -17,9 +17,15 @@ is the public face of it.
 
 On JavaScript and natively a builder is a mutable buffer with the count of its
 elements, written in place while it is used linearly, each call given the
-builder the call before answered; a write to a builder already passed on, or
-handed out by `toArray`, copies it first, O(n), so a non-linear use stays
-correct and costs a copy. On the BEAM a builder is the same persistent 32-way
+builder the call before answered. A write in place keeps what it overwrote in
+the builder it was given, so every older builder still reads what it held
+(geng-lang `m4-visiterm.md` D903): a `get` on one finds its element within 32
+of the records, and past that the builder copies its elements once, O(n), and
+reads them at O(1) after. A write to an older builder, or to one `toArray`
+handed out, copies it first, O(n). So that the records do not pile up, the
+buffer is copied once in as many writes in place as it has room for elements,
+and natively once after each minor collection the builder has lived through,
+for a buffer of at most 1 MiB; both are O(1) amortized. On the BEAM a builder is the same persistent 32-way
 tree an `Array` becomes, where a push, `set` or `get` costs O(log₃₂ n), at most
 about five steps, however the builder is used, and `toArray` builds a tuple.
 Each cost is per call, n being the builder's length.
@@ -121,9 +127,9 @@ the index is out of bounds. A negative index counts back from the end, as in
         |> toArray
         == [ 9, 2 ]
 
-It costs O(1) on JavaScript and natively when the builder is the one the call
-before answered, and O(n) otherwise, where it copies, and O(log n) on the BEAM,
-so a loop of builder sets is linear on every target where a loop of
+It costs O(1) amortized on JavaScript and natively when the builder is the one
+the call before answered, and O(n) otherwise, where it copies, and O(log n) on
+the BEAM, so a loop of builder sets is linear on every target where a loop of
 [`Array.set`](Array#set) copies the array at each step on JavaScript and
 natively (geng-lang `m3-cost.md` D753).
 
@@ -145,7 +151,9 @@ set index value builder =
 bounds. A negative index counts back from the end, as in
 [`Array.get`](Array#get).
 
-It costs O(1), and O(log n) on the BEAM.
+It costs O(1) on JavaScript and natively on the builder the call before
+answered, and on an older one at most 32 steps, or a copy once, O(n) (see
+Costs); O(log n) on the BEAM.
 
 -}
 get : Int -> Builder a -> Maybe a
@@ -197,9 +205,10 @@ actualIndex index builder =
 
 {-| Converts a [Builder](#Builder) to an `Array`.
 
-It costs O(1) on JavaScript and natively, handing over the builder's buffer,
-after which the next write to that builder copies it, O(n), and O(n) on the
-BEAM, where it builds a tuple; so a loop that calls `toArray` at every step is
+It costs O(1) on JavaScript and natively on the builder the call before
+answered, handing over the builder's buffer, after which a write to that
+builder, or a second `toArray` of it, copies, O(n); O(n) on an older builder;
+and O(n) on the BEAM, where it builds a tuple; so a loop that calls `toArray` at every step is
 quadratic on every target, and should read the builder with [`get`](#get) and
 [`length`](#length) instead.
 
