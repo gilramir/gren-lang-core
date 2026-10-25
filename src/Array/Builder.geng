@@ -5,7 +5,7 @@ module Array.Builder exposing
     , set, get, length
     , update, swap
     , setMany, fill, copyWithin, moveWithin
-    , toArray
+    , slice, copy, toArray
     )
 
 {-| The functions in this module allows you to build an `Array` more efficiently.
@@ -48,9 +48,15 @@ an element has one owner while it is out, where one taken out with `get` and
 put back with `set` has two, the builder still holding it. Today each costs
 what the `get` and `set` it is made of cost.
 
+[`slice`](#slice) and [`copy`](#copy) only look at the builder they are
+given, and copy what they answer out of it, O(n) (geng-lang `m4-own.md`
+D931): a copy that leaves the builder where it is, for a builder of
+builders, where [`toArray`](#toArray) would take it.
+
 @docs Builder, empty, fromArray, pushLast, append, set, get, length
 @docs update, swap
-@docs setMany, fill, copyWithin, moveWithin, toArray
+@docs setMany, fill, copyWithin, moveWithin
+@docs slice, copy, toArray
 
 -}
 
@@ -455,6 +461,75 @@ actualIndex index builder =
 
     else
         actual
+
+
+{-| A fresh array of the elements from the first index up to, but not
+including, the second, which count back from the end when negative and stop
+at the ends, as [`Array.slice`](Array#slice)'s do. The builder is left as it
+was.
+
+    fromArray [ 1, 2, 3, 4, 5 ]
+        |> slice 1 -1
+        == [ 2, 3, 4 ]
+
+Where [`toArray`](#toArray) hands over the builder's buffer, `slice` copies,
+so it is how an array is read out of a builder that stays where it is, such as
+a row of a builder of rows.
+
+It costs O(m) for m elements copied on JavaScript and natively, and O(m log n)
+on the BEAM.
+
+-}
+slice : Int -> Int -> Builder a -> Array a
+slice from to builder =
+    let
+        len =
+            T.length builder
+
+        lo =
+            bound from len
+
+        hi =
+            bound to len
+    in
+    if lo < hi then
+        toArray (copyRange builder lo hi (T.new (hi - lo)))
+
+    else
+        []
+
+
+{-| A second builder with the same elements and a buffer of its own, so that
+the two are written apart. The builder is left as it was.
+
+    let
+        start =
+            fromArray [ 1, 2 ]
+    in
+    { a = toArray (pushLast 3 (copy start)), b = toArray (pushLast 4 start) }
+        == { a = [ 1, 2, 3 ], b = [ 1, 2, 4 ] }
+
+It costs O(n) on JavaScript and natively, and O(n log n) on the BEAM.
+
+-}
+copy : Builder a -> Builder a
+copy builder =
+    let
+        len =
+            T.length builder
+    in
+    copyRange builder 0 len (T.new len)
+
+
+{-| The elements of a builder from `i` up to, but not including, `to`, pushed
+onto another. -}
+copyRange : (b : Builder a) -> (i : Int where 0 <= i) -> (to : Int where to <= T.length b) -> Builder a -> Builder a
+copyRange b i to acc =
+    if i < to then
+        copyRange b (i + 1) to (T.push acc (T.get b i))
+
+    else
+        acc
 
 
 {-| Converts a [Builder](#Builder) to an `Array`.

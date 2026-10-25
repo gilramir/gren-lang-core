@@ -185,6 +185,50 @@ tests =
             , test "moveWithin up, overlapping" <| \{} -> Builder.fromArray [ 1, 2, 3, 4, 5 ] |> Builder.moveWithin 0 1 5 0 |> Builder.toArray |> Expect.equalArrays [ 2, 3, 4, 5, 0 ]
             , test "moveWithin onto itself" <| \{} -> Builder.fromArray [ 1, 2, 3 ] |> Builder.moveWithin 1 1 3 0 |> Builder.toArray |> Expect.equalArrays [ 1, 2, 3 ]
             , test "moveWithin cut at the end" <| \{} -> Builder.fromArray [ 1, 2, 3, 4, 5 ] |> Builder.moveWithin 3 0 5 0 |> Builder.toArray |> Expect.equalArrays [ 0, 0, 3, 1, 2 ]
+            , test "slice" <| \{} -> Builder.fromArray [ 1, 2, 3, 4, 5 ] |> Builder.slice 1 3 |> Expect.equalArrays [ 2, 3 ]
+            , test "slice -1" <| \{} -> Builder.fromArray [ 1, 2, 3, 4, 5 ] |> Builder.slice 1 -1 |> Expect.equalArrays [ 2, 3, 4 ]
+            , test "slice past both ends" <| \{} -> Builder.fromArray [ 1, 2, 3 ] |> Builder.slice -9 9 |> Expect.equalArrays [ 1, 2, 3 ]
+            , test "slice, the ends crossed" <| \{} -> Builder.fromArray [ 1, 2, 3 ] |> Builder.slice 2 1 |> Expect.equalArrays []
+            , test "slice of an empty builder" <| \{} ->
+                let
+                    built : Array Int
+                    built =
+                        Builder.empty 4 |> Builder.slice 0 4
+                in
+                Expect.equalArrays [] built
+            , test "slice leaves the builder to be written" <| \{} ->
+                let
+                    b =
+                        Builder.fromArray [ 1, 2, 3 ] |> Builder.pushLast 4
+
+                    sliced =
+                        Builder.slice 0 2 b
+
+                    written =
+                        Builder.set 0 9 b |> Builder.toArray
+                in
+                Expect.equal { sliced = [ 1, 2 ], written = [ 9, 2, 3, 4 ] } { sliced = sliced, written = written }
+            , test "slice of a row of a builder of rows" <| \{} ->
+                Builder.fromArray [ Builder.fromArray [ 1, 2, 3 ], Builder.fromArray [ 4, 5, 6 ] ]
+                    |> Builder.get 1
+                    |> Maybe.map (Builder.slice 0 2)
+                    |> Expect.equal (Just [ 4, 5 ])
+            , test "copy" <| \{} -> Builder.fromArray [ 1, 2, 3 ] |> Builder.pushLast 4 |> Builder.copy |> Builder.toArray |> Expect.equalArrays [ 1, 2, 3, 4 ]
+            , test "copy of an empty builder" <| \{} -> Builder.empty 4 |> Builder.copy |> Builder.pushLast 1 |> Builder.toArray |> Expect.equalArrays [ 1 ]
+            , test "copy and the builder copied are written apart" <| \{} ->
+                let
+                    start =
+                        Builder.fromArray [ 1, 2 ] |> Builder.pushLast 3
+
+                    a =
+                        Builder.copy start |> Builder.set 0 7 |> Builder.pushLast 8
+
+                    b =
+                        start |> Builder.set 0 9 |> Builder.pushLast 10
+                in
+                Expect.equal
+                    { a = [ 7, 2, 3, 8 ], b = [ 9, 2, 3, 10 ] }
+                    { a = Builder.toArray a, b = Builder.toArray b }
             , fuzz (Fuzz.array (Fuzz.intRange 0 1000000)) "every builder of a chain of writes of runs reads as the array of the same writes" <| \writes ->
                 let
                     versions =
@@ -325,8 +369,8 @@ tests =
 
 {-| One write chosen by `w`, made on the builder and, by definitions of its
 own, on the array: a set, a `setMany`, a `fill`, a `copyWithin`, a push, an
-`append`, an `update`, a `swap` or a `moveWithin`, at indexes from 3 before
-the start to 3 past the end. -}
+`append`, an `update`, a `swap`, a `moveWithin`, a `copy`, or a `slice` made a
+builder again, at indexes from 3 before the start to 3 past the end. -}
 runWrite : Int -> { builder : Builder.Builder Int, array : Array Int } -> { builder : Builder.Builder Int, array : Array Int }
 runWrite w { builder, array } =
     let
@@ -339,7 +383,7 @@ runWrite w { builder, array } =
         value =
             1000 + modBy 1000 w
     in
-    when modBy 9 w is
+    when modBy 11 w is
         0 ->
             { builder = Builder.set (at 6) value builder, array = Array.set (at 6) value array }
 
@@ -367,6 +411,12 @@ runWrite w { builder, array } =
 
         7 ->
             { builder = Builder.moveWithin (at 6) (at 60) (at 600) value builder, array = moveWithinOf (at 6) (at 60) (at 600) value array }
+
+        8 ->
+            { builder = Builder.copy builder, array = array }
+
+        9 ->
+            { builder = Builder.fromArray (Builder.slice (at 6) (at 60) builder), array = Array.slice (at 6) (at 60) array }
 
         _ ->
             { builder = Builder.append [ value, value + 1 ] builder, array = array ++ [ value, value + 1 ] }
