@@ -1082,8 +1082,9 @@ out the implementation and customize it for your case. It is better to
 get nice error messages with a lower-level implementation than to try
 to hack high-level parsers to do things they are not made for.
 
-It costs O(1) per item and separator beyond the parsers it runs, collecting the
-items in an `Array.Builder`, so a sequence of k items is linear in k.
+It costs O(1) per item and separator beyond the parsers it runs, pushing each
+item onto the newest array, which writes in place, so a sequence of k items is
+linear in k (on the BEAM a push is O(log₃₂ k)).
 
 -}
 sequence
