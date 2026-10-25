@@ -1901,17 +1901,17 @@ foldlGraphemes fn initial string =
     let
         step c acc =
             let
-                answer =
+                state =
                     Unicode.Grapheme.step c acc.state
             in
-            if answer.break then
-                { state = answer.state
+            if Unicode.Grapheme.isBoundary state then
+                { state = state
                 , current = fromChar c
                 , value = closeGrapheme fn acc
                 }
 
             else
-                { state = answer.state
+                { state = state
                 , current = pushLast c acc.current
                 , value = acc.value
                 }

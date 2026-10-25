@@ -1,0 +1,131 @@
+module Test.Grapheme exposing (tests)
+
+{-| `Unicode.Grapheme`, the walk a program carries from one piece of text to
+the next (geng-lang `m4-visiterm.md` D906). `corpus/accept/graphemes` holds the
+rules to `GraphemeBreakTest.txt` through `String.graphemes`; these hold the
+walk itself, and the context the rules carry across a printable ASCII
+character, which `step` answers without a table.
+-}
+
+import Array
+import Basics exposing (..)
+import Expect
+import Fuzz
+import String
+import Test exposing (..)
+import Unicode.Grapheme as Grapheme
+
+
+{-| Whether there is a boundary before each character. -}
+boundaries : String -> Array Bool
+boundaries string =
+    String.foldl
+        (\c acc ->
+            let
+                state =
+                    Grapheme.step c acc.state
+            in
+            { state = state, marks = Array.pushLast (Grapheme.isBoundary state) acc.marks }
+        )
+        { state = Grapheme.start, marks = [] }
+        string
+        |> .marks
+
+
+{-| The clusters of a text handed over in two pieces, the walk carried from the
+first to the second. -}
+inTwoPieces : String -> String -> Array String
+inTwoPieces first second =
+    let
+        walk piece acc =
+            String.foldl
+                (\c a ->
+                    let
+                        state =
+                            Grapheme.step c a.state
+                    in
+                    if Grapheme.isBoundary state then
+                        { state = state, done = pushCurrent a, current = String.fromChar c }
+
+                    else
+                        { state = state, done = a.done, current = a.current ++ String.fromChar c }
+                )
+                acc
+                piece
+
+        pushCurrent a =
+            if a.current == "" then
+                a.done
+
+            else
+                Array.pushLast a.current a.done
+    in
+    { state = Grapheme.start, done = [], current = "" }
+        |> walk first
+        |> walk second
+        |> pushCurrent
+
+
+{-| Characters each rule is about, so that a random text of them meets the
+rules that read what came before. -}
+palette : Array Char
+palette =
+    [ 'a'
+    , ' '
+    , '\r'
+    , '\n'
+    , '\u{0301}' -- Extend
+    , '\u{200C}' -- ZWNJ: Extend, no InCB
+    , '\u{200D}' -- ZWJ
+    , '\u{0600}' -- Prepend
+    , '\u{0903}' -- SpacingMark
+    , '\u{0915}' -- InCB=Consonant
+    , '\u{094D}' -- InCB=Linker
+    , '\u{1100}' -- L
+    , '\u{1161}' -- V
+    , '\u{11A8}' -- T
+    , '\u{AC00}' -- LV
+    , '\u{AC01}' -- LVT
+    , '\u{1F1EF}' -- Regional_Indicator
+    , '\u{1F1F5}' -- Regional_Indicator
+    , '\u{1F468}' -- Extended_Pictographic
+    , '\u{0E33}' -- SARA AM: SpacingMark
+    ]
+
+
+text : Fuzz.Fuzzer String
+text =
+    Fuzz.array (Fuzz.intRange 0 (Array.length palette - 1))
+        |> Fuzz.map (\picks -> String.fromArray (Array.mapAndKeepJust (\i -> Array.get i palette) picks))
+
+
+tests : Test
+tests =
+    describe "Unicode.Grapheme"
+        [ test "start is before any character, so it is no boundary" <| \{} ->
+            Expect.equal False (Grapheme.isBoundary Grapheme.start)
+        , describe "a boundary before each character"
+            [ test "two letters" <| \{} -> Expect.equal [ True, True ] (boundaries "ab")
+            , test "a letter and a combining mark (GB9)" <| \{} -> Expect.equal [ True, False ] (boundaries "e\u{0301}")
+            , test "CR LF (GB3)" <| \{} -> Expect.equal [ True, False ] (boundaries "\r\n")
+            , test "a Prepend and a printable ASCII character (GB9b)" <| \{} -> Expect.equal [ True, False ] (boundaries "\u{0600}a")
+            , test "a Prepend and a line feed (GB5)" <| \{} -> Expect.equal [ True, True ] (boundaries "\u{0600}\n")
+            , test "a control and a printable ASCII character (GB4)" <| \{} -> Expect.equal [ True, True ] (boundaries "\u{0007}a")
+            , test "Hangul jamo L V T (GB6, GB7)" <| \{} -> Expect.equal [ True, False, False ] (boundaries "\u{1100}\u{1161}\u{11A8}")
+            , test "five regional indicators are two flags and one more (GB12, GB13)" <| \{} ->
+                Expect.equal [ True, False, True, False, True ] (boundaries "\u{1F1EF}\u{1F1F5}\u{1F1F0}\u{1F1F7}\u{1F1EB}")
+            , test "an emoji, a ZWJ and an emoji (GB11)" <| \{} -> Expect.equal [ True, False, False ] (boundaries "\u{1F468}\u{200D}\u{1F469}")
+            , test "a letter, a ZWJ and an emoji" <| \{} -> Expect.equal [ True, False, True ] (boundaries "a\u{200D}\u{1F469}")
+            , test "a consonant, a virama and a consonant (GB9c)" <| \{} -> Expect.equal [ True, False, False ] (boundaries "\u{0915}\u{094D}\u{0937}")
+            , test "a ZWNJ ends the conjunct" <| \{} -> Expect.equal [ True, False, False, True ] (boundaries "\u{0915}\u{094D}\u{200C}\u{0937}")
+            , test "Thai SARA AM joins its consonant (GB9a)" <| \{} -> Expect.equal [ True, False ] (boundaries "\u{0E01}\u{0E33}")
+            ]
+        , describe "a printable ASCII character ends what the rules carry"
+            [ test "an emoji sequence" <| \{} -> Expect.equal [ True, False, True, True ] (boundaries "\u{1F468}\u{200D}a\u{1F469}")
+            , test "a run of regional indicators" <| \{} -> Expect.equal [ True, True, True ] (boundaries "\u{1F1EF}a\u{1F1F5}")
+            , test "a conjunct" <| \{} -> Expect.equal [ True, False, True, True ] (boundaries "\u{0915}\u{094D}a\u{0937}")
+            , test "a Prepend, which it joins" <| \{} -> Expect.equal [ True, False, True ] (boundaries "\u{0600}ab")
+            ]
+        , fuzz2 text (Fuzz.intRange 0 64) "a walk carried from one piece to the next makes the clusters String.graphemes makes of the whole" <| \whole at ->
+            Expect.equal (String.graphemes whole) (inTwoPieces (String.takeFirst at whole) (String.dropFirst at whole))
+        ]

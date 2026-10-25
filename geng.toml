@@ -70,4 +70,5 @@ runtime = "any"
 ]
 "Unicode" = [
     "Unicode",
+    "Unicode.Grapheme",
 ]

@@ -12,6 +12,7 @@ import Test.Char as Char
 import Test.CodeGen as CodeGen
 import Test.Dict as Dict
 import Test.Equality as Equality
+import Test.Grapheme as Grapheme
 import Test.Json as Json
 import Test.Math as Math
 import Test.Maybe as Maybe
@@ -39,6 +40,7 @@ main =
             , CodeGen.tests
             , Dict.tests
             , Equality.tests
+            , Grapheme.tests
             , Json.tests
             , Result.tests
             , Set.tests

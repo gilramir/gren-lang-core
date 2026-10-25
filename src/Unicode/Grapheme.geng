@@ -1,22 +1,49 @@
-module Unicode.Grapheme exposing (State, start, step)
+module Unicode.Grapheme exposing (State, start, step, isBoundary)
 
 {-| UAX #29's extended grapheme cluster boundaries, one character at a time.
 
 A grapheme cluster is what a reader calls a character: `e` followed by a
 combining acute is one, a family emoji joined by zero-width joiners is one, and
-a Hangul syllable written as three jamo is one. `String.graphemes` is what a
-program calls; this is the rule set under it, kept in its own module because it
-is a state machine with sixteen rules in it and because `String` may not be
-where the rules live — `Unicode.Lookup` answers about a codepoint, this answers
-about a *boundary*, and neither may mention a `String` (`docs/m1b-str.md` §T19).
+a Hangul syllable written as three jamo is one. `String.graphemes` is the
+function over a whole string; this is the rule set under it, for a program
+whose text arrives a piece at a time — a terminal reading a pty, a parser
+reading a stream — and that must carry where it was from one piece to the
+next. The rules are the ones at the Unicode version
+[`Unicode.version`](Unicode#version) names, the same as `String`'s.
+
+    clusters : String -> Int
+    clusters string =
+        String.foldl
+            (\c acc ->
+                let
+                    state =
+                        Unicode.Grapheme.step c acc.state
+                in
+                { state = state
+                , count =
+                    if Unicode.Grapheme.isBoundary state then
+                        acc.count + 1
+
+                    else
+                        acc.count
+                }
+            )
+            { state = Unicode.Grapheme.start, count = 0 }
+            string
+            |> .count
 
 **Left to right, and that is not a detail.** Four of the rules — GB9c, GB11,
-GB12 and GB13 — are about what came *before* the pair being judged, and a
+GB12 and GB13 — are about what came _before_ the pair being judged, and a
 right-to-left walk would have to be a different algorithm rather than a mirror
-of this one. So there is no `foldr` over graphemes in `String`, and this module
-has no backwards `step`.
+of this one. So there is no backwards `step`.
 
-@docs State, start, step
+## Costs
+
+`step` is O(1): an ASCII character is answered without a table, and any other
+reads one table by a binary search of fixed size. A `State` is an `Int` and
+nothing is allocated. Costs are per call.
+
+@docs State, start, step, isBoundary
 
 -}
 
@@ -27,59 +54,153 @@ import Unicode.Lookup
 import Unicode.Tables as Tables
 
 
-{-| What the walk remembers.
+{-| Where a walk is: what it has seen of the characters before the next one,
+and whether there was a boundary before the last one.
 
-`previous` is the packed class of the character before the one being judged, and
-`-1` before there is one. The other three are what the four context rules need,
-and they are the whole reason a boundary is not a function of two characters:
-
-  - `oddIndicators` — whether an odd number of regional indicators has been seen
-    in the run ending at `previous` (GB12, GB13), so that a flag is two
-    codepoints and a third starts another one.
-  - `pictographic` — `1` after an `Extended_Pictographic` and any `Extend`s
-    following it, `2` when a `ZWJ` has closed that sequence, `0` otherwise
-    (GB11).
-  - `conjunct` — `1` after an `InCB=Consonant` and any `InCB=Extend` or
-    `InCB=Linker` following it, `2` once one of those was a linker, `0`
-    otherwise (GB9c).
+A boundary is not a function of two characters. A flag is two regional
+indicators and a third starts another; an emoji joined by a zero-width joiner
+joins the emoji after it; a Devanagari consonant joins one after a virama and
+any marks. So a `State` remembers what those rules need.
 
 -}
-type alias State =
-    { previous : Int
-    , oddIndicators : Bool
-    , pictographic : Int
-    , conjunct : Int
-    }
+type State
+    = State Int
 
 
-{-| Before the first character. GB1 says a cluster begins there, which is what
-`previous == -1` is for: `step` answers `True` for the first character of a
-string and the caller starts a cluster rather than special-casing it.
+
+-- THE BITS
+--
+-- One Int, so that a step allocates nothing:
+--
+--   bits 0-6   the previous character's packed class (Unicode.Tables.graphemeClasses:
+--              the Grapheme_Cluster_Break class in the low four, Extended_Pictographic
+--              in the fifth, the InCB value in the sixth and seventh)
+--   bit 7      set before the first character, when there is no previous one (GB1)
+--   bit 8      an odd number of regional indicators ends at the previous character
+--              (GB12, GB13), so that a flag is two codepoints and a third starts
+--              another one
+--   bits 9-10  pictographic: 1 after an Extended_Pictographic and any Extends after
+--              it, 2 once a ZWJ has closed that sequence, 0 otherwise (GB11)
+--   bits 11-12 conjunct: 1 after an InCB=Consonant and any InCB=Extend or
+--              InCB=Linker after it, 2 once one of those was a linker, 0 otherwise
+--              (GB9c)
+--   bit 13     there is a boundary before the previous character
+
+
+classBits : Int
+classBits =
+    0x7F
+
+
+noPrevious : Int
+noPrevious =
+    0x80
+
+
+oddIndicatorsBit : Int
+oddIndicatorsBit =
+    0x0100
+
+
+{-| The two bits of the pictographic sequence, and its two values: an
+`Extended_Pictographic` and `Extend`s, and that closed by a `ZWJ`. -}
+pictographicBits : Int
+pictographicBits =
+    0x0600
+
+
+pictographicOpen : Int
+pictographicOpen =
+    0x0200
+
+
+pictographicJoined : Int
+pictographicJoined =
+    0x0400
+
+
+{-| The two bits of the conjunct, and its two values: a consonant and marks,
+and that with a linker among the marks. -}
+conjunctBits : Int
+conjunctBits =
+    0x1800
+
+
+conjunctOpen : Int
+conjunctOpen =
+    0x0800
+
+
+conjunctLinked : Int
+conjunctLinked =
+    0x1000
+
+
+boundaryBit : Int
+boundaryBit =
+    0x2000
+
+
+{-| Before the first character. GB1 says a cluster begins there, so `step`
+answers a boundary before the first character of a text, and the caller starts
+a cluster rather than special-casing it.
+
+    isBoundary start == False
+
 -}
 start : State
 start =
-    { previous = -1
-    , oddIndicators = False
-    , pictographic = 0
-    , conjunct = 0
-    }
+    State noPrevious
 
 
-{-| Is there a cluster boundary *before* this character, and what does the walk
-remember afterwards?
+{-| The walk after one more character.
 
-    step 'a' start == { break = True, state = ... }
+    isBoundary (step 'a' start) == True
+
+    isBoundary (step '\u{0301}' (step 'e' start)) == False
+
+It costs O(1).
 
 -}
-step : Char -> State -> { break : Bool, state : State }
-step c state =
+step : Char -> State -> State
+step c (State bits) =
     let
-        class =
-            Unicode.Lookup.graphemeClass c
+        code =
+            Char.toCode c
     in
-    { break = breaks state class
-    , state = advance state class
-    }
+    if code >= 0x20 && code < 0x7F then
+        -- A printable ASCII character is `Other`, not pictographic and with no
+        -- InCB value, so of the rules below only GB1, GB4 and GB9b can join or
+        -- break before it, and the walk after it is the same whatever came
+        -- before: GB9b joins it to a Prepend and everything else breaks.
+        if Bitwise.and bits classBits == Tables.graphemeClasses.prepend then
+            State 0
+
+        else
+            State boundaryBit
+
+    else
+        let
+            class =
+                Unicode.Lookup.graphemeClass c
+        in
+        if breaks bits class then
+            State (Bitwise.or boundaryBit (advance bits class))
+
+        else
+            State (advance bits class)
+
+
+{-| Is there a cluster boundary before the last character `step` was given?
+
+    isBoundary (step 'b' (step 'a' start)) == True
+
+It costs O(1).
+
+-}
+isBoundary : State -> Bool
+isBoundary (State bits) =
+    Bitwise.and bits boundaryBit == boundaryBit
 
 
 
@@ -90,12 +211,12 @@ step c state =
 they must be asked in: GB4 and GB5 cut a `Control` off on both sides before
 anything else may join it, and GB999 breaks whatever no rule above has joined.
 
-The rules with no test here are the ones about the pair alone; the four that
-read `state` are the ones the table in `State` explains.
+The rules with no test of the state here are the ones about the pair alone; the
+four that read it are the ones `State`'s bits are for.
 
 -}
-breaks : State -> Int -> Bool
-breaks state class =
+breaks : Int -> Int -> Bool
+breaks bits class =
     let
         classes =
             Tables.graphemeClasses
@@ -104,9 +225,9 @@ breaks state class =
             Bitwise.and class classes.gcbMask
 
         before =
-            Bitwise.and state.previous classes.gcbMask
+            Bitwise.and bits classes.gcbMask
     in
-    if state.previous < 0 then
+    if Bitwise.and bits noPrevious == noPrevious then
         -- GB1: sot ÷ Any
         True
 
@@ -166,8 +287,8 @@ breaks state class =
         False
 
     else if
-        state.conjunct
-            == 2
+        Bitwise.and bits conjunctBits
+            == conjunctLinked
             && Bitwise.and class classes.incbMask
             == classes.incbConsonant
     then
@@ -175,15 +296,15 @@ breaks state class =
         False
 
     else if
-        state.pictographic
-            == 2
+        Bitwise.and bits pictographicBits
+            == pictographicJoined
             && Bitwise.and class classes.pictographic
-            /= 0
+            == classes.pictographic
     then
         -- GB11: ExtPict Extend* ZWJ × ExtPict
         False
 
-    else if this == classes.regionalIndicator && state.oddIndicators then
+    else if this == classes.regionalIndicator && Bitwise.and bits oddIndicatorsBit == oddIndicatorsBit then
         -- GB12, GB13: an odd regional indicator joins the one before it
         False
 
@@ -192,20 +313,20 @@ breaks state class =
         True
 
 
-{-| The walk's memory after this character.
+{-| The walk's memory after this character, with no boundary bit.
 
 Each of the three context states is "extend it, restart it, or lose it", and
-the one worth reading twice is `conjunct`: it is extended by `InCB=Extend` and
+the one worth reading twice is the conjunct: it is extended by `InCB=Extend` and
 `InCB=Linker`, not by `Grapheme_Cluster_Break`'s `Extend`, and at Unicode 17.0.0
 those two sets differ by exactly one codepoint — **U+200C ZERO WIDTH
 NON-JOINER**, which is `GCB=Extend` and has no `InCB` value at all. A ZWNJ is
-what an author writes to *stop* a conjunct from forming, so a segmenter that
+what an author writes to _stop_ a conjunct from forming, so a segmenter that
 asked the break class here would join across the one character whose job is to
 separate.
 
 -}
-advance : State -> Int -> State
-advance state class =
+advance : Int -> Int -> Int
+advance bits class =
     let
         classes =
             Tables.graphemeClasses
@@ -216,41 +337,49 @@ advance state class =
         incb =
             Bitwise.and class classes.incbMask
 
-        isPictographic =
-            Bitwise.and class classes.pictographic /= 0
+        pictographic =
+            Bitwise.and bits pictographicBits
+
+        conjunct =
+            Bitwise.and bits conjunctBits
+
+        oddIndicators =
+            if this == classes.regionalIndicator && Bitwise.and bits oddIndicatorsBit == 0 then
+                oddIndicatorsBit
+
+            else
+                0
+
+        nextPictographic =
+            if Bitwise.and class classes.pictographic == classes.pictographic then
+                pictographicOpen
+
+            else if pictographic == pictographicOpen && this == classes.extend then
+                pictographicOpen
+
+            else if pictographic == pictographicOpen && this == classes.zwj then
+                pictographicJoined
+
+            else
+                0
+
+        nextConjunct =
+            if incb == classes.incbConsonant then
+                conjunctOpen
+
+            else if conjunct == 0 then
+                0
+
+            else if incb == classes.incbLinker then
+                conjunctLinked
+
+            else if incb == classes.incbExtend then
+                conjunct
+
+            else
+                0
     in
-    { previous = class
-    , oddIndicators =
-        if this == classes.regionalIndicator then
-            not state.oddIndicators
-
-        else
-            False
-    , pictographic =
-        if isPictographic then
-            1
-
-        else if state.pictographic == 1 && this == classes.extend then
-            1
-
-        else if state.pictographic == 1 && this == classes.zwj then
-            2
-
-        else
-            0
-    , conjunct =
-        if incb == classes.incbConsonant then
-            1
-
-        else if state.conjunct == 0 then
-            0
-
-        else if incb == classes.incbLinker then
-            2
-
-        else if incb == classes.incbExtend then
-            state.conjunct
-
-        else
-            0
-    }
+    class
+        |> Bitwise.or oddIndicators
+        |> Bitwise.or nextPictographic
+        |> Bitwise.or nextConjunct
