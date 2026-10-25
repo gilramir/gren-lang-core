@@ -3,7 +3,8 @@ module Array.Builder exposing
     , empty, fromArray
     , pushLast, append
     , set, get, length
-    , setMany, fill, copyWithin
+    , update, swap
+    , setMany, fill, copyWithin, moveWithin
     , toArray
     )
 
@@ -39,8 +40,17 @@ keeps the elements it replaced, as a `set` keeps one, so an older builder still
 reads what it held; those m count toward the copy once in as many elements as
 the buffer has room for.
 
+[`update`](#update) and [`swap`](#swap) take an element out of a builder
+while it is written, and [`moveWithin`](#moveWithin) moves elements and says
+what is left where they were (geng-lang `m4-unique.md` D913). They are for a
+builder of builders, or of other values written in place: written with them,
+an element has one owner while it is out, where one taken out with `get` and
+put back with `set` has two, the builder still holding it. Today each costs
+what the `get` and `set` it is made of cost.
+
 @docs Builder, empty, fromArray, pushLast, append, set, get, length
-@docs setMany, fill, copyWithin, toArray
+@docs update, swap
+@docs setMany, fill, copyWithin, moveWithin, toArray
 
 -}
 
@@ -149,6 +159,71 @@ set index value builder =
         T.set builder at value
 
 
+{-| Replace the element at the given index with what the function makes of
+it, or leave the builder as it is, without calling the function, if the index
+is out of bounds. A negative index counts back from the end, as in
+[`set`](#set).
+
+    fromArray [ 1, 2, 3 ]
+        |> update 1 (\n -> n * 10)
+        |> toArray
+        == [ 1, 20, 3 ]
+
+The builder gives the element up while the function runs, so a builder of
+row builders writes a row as
+
+    update y (set x cell) screen
+
+where `set x cell (get y screen)` and a `set` back would leave the row in
+the screen while it is written.
+
+It costs a [`get`](#get) and a [`set`](#set), and what the function costs.
+
+-}
+update : Int -> (a -> a) -> Builder a -> Builder a
+update index f builder =
+    let
+        at =
+            actualIndex index builder
+    in
+    if at < 0 then
+        builder
+
+    else
+        T.set builder at (f (T.get builder at))
+
+
+{-| Put a value at the given index and answer the element that was there,
+with the builder; out of bounds, `old` is `Nothing` and the builder is as it
+was. A negative index counts back from the end, as in [`set`](#set).
+
+    swap 0 0 (fromArray [ 7, 8 ])
+        |> (\{ old, builder } -> { old = old, array = toArray builder })
+        == { old = Just 7, array = [ 0, 8 ] }
+
+It is [`update`](#update) for a write that answers more than the element:
+take the element out, leaving a placeholder, write it, and `set` it back.
+
+It costs a [`get`](#get) and a [`set`](#set).
+
+-}
+swap : Int -> a -> Builder a -> { old : Maybe a, builder : Builder a }
+swap index value builder =
+    let
+        at =
+            actualIndex index builder
+    in
+    if at < 0 then
+        { old = Nothing, builder = builder }
+
+    else
+        let
+            old =
+                T.get builder at
+        in
+        { old = Just old, builder = T.set builder at value }
+
+
 {-| Replace the elements from the given index on with an array's, as
 [`Array.setMany`](Array#setMany) does: a negative index counts back from the
 end, and elements that go past the end make the builder longer.
@@ -243,6 +318,61 @@ copyWithin at from to builder =
     in
     if count > 0 then
         T.copyWithin builder target start count
+
+    else
+        builder
+
+
+{-| [`copyWithin`](#copyWithin), with the elements it copied from that it
+did not also copy over set to the given value, so that each element moved is
+in one place afterwards.
+
+    fromArray [ 1, 2, 3, 4, 5 ]
+        |> moveWithin 0 3 5 0
+        |> toArray
+        == [ 4, 5, 3, 0, 0 ]
+
+    fromArray [ 1, 2, 3, 4, 5 ]
+        |> moveWithin 1 0 4 0
+        |> toArray
+        == [ 0, 1, 2, 3, 4 ]
+
+It costs a [`copyWithin`](#copyWithin) and a [`fill`](#fill) of what was
+left.
+
+-}
+moveWithin : Int -> Int -> Int -> a -> Builder a -> Builder a
+moveWithin at from to vacated builder =
+    let
+        len =
+            T.length builder
+
+        target =
+            bound at len
+
+        start =
+            bound from len
+
+        count =
+            min (bound to len - start) (len - target)
+    in
+    if count > 0 then
+        let
+            moved =
+                T.copyWithin builder target start count
+        in
+        if start < target then
+            T.fill moved start (min count (target - start)) vacated
+
+        else if target < start then
+            let
+                lo =
+                    max start (target + count)
+            in
+            T.fill moved lo (start + count - lo) vacated
+
+        else
+            moved
 
     else
         builder
