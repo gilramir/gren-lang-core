@@ -3,6 +3,7 @@ module Array.Builder exposing
     , empty, fromArray
     , pushLast, append
     , set, get, length
+    , setMany, fill, copyWithin
     , toArray
     )
 
@@ -30,7 +31,16 @@ tree an `Array` becomes, where a push, `set` or `get` costs O(log₃₂ n), at m
 about five steps, however the builder is used, and `toArray` builds a tuple.
 Each cost is per call, n being the builder's length.
 
-@docs Builder, empty, fromArray, pushLast, append, set, get, length, toArray
+[`append`](#append), [`setMany`](#setMany), [`fill`](#fill) and
+[`copyWithin`](#copyWithin) write a run of m elements in one call (geng-lang
+`m4-visiterm.md` D904): on JavaScript and natively one builder and O(m), where
+a loop of `pushLast` or `set` makes a builder an element. A run written in place
+keeps the elements it replaced, as a `set` keeps one, so an older builder still
+reads what it held; those m count toward the copy once in as many elements as
+the buffer has room for.
+
+@docs Builder, empty, fromArray, pushLast, append, set, get, length
+@docs setMany, fill, copyWithin, toArray
 
 -}
 
@@ -95,25 +105,17 @@ pushLast value builder =
 
 {-| Adds the elements of an `Array` to the end of a [Builder](#Builder).
 
-It costs O(m) for an array of m elements, which it pushes one by one.
+It costs O(m) for an array of m elements, copied in at once on JavaScript and
+natively, and pushed one by one on the BEAM, O(m log n).
 
 -}
 append : Array a -> Builder a -> Builder a
 append array builder =
-    appendHelp array 0 (Array.length array) builder
+    primSetArray builder (T.length builder) array
 
 
-appendHelp : Array a -> Int -> Int -> Builder a -> Builder a
-appendHelp array index len builder =
-    if index < len then
-        appendHelp array (index + 1) len (T.push builder (unsafeGet array index))
-
-    else
-        builder
-
-
-@prim("arr_get")
-unsafeGet : (arr : Array a) -> (i : Int where 0 <= i && i < Array.length arr) -> a
+@prim("tr_set_array")
+primSetArray : (t : Builder a) -> (i : Int where 0 <= i && i <= T.length t) -> (arr : Array a) -> (r : Builder a where (i + Array.length arr <= T.length t && T.length r == T.length t) || (T.length t < i + Array.length arr && T.length r == i + Array.length arr))
 
 
 {-| Replace the element at the given index, or leave the builder as it is if
@@ -145,6 +147,128 @@ set index value builder =
 
     else
         T.set builder at value
+
+
+{-| Replace the elements from the given index on with an array's, as
+[`Array.setMany`](Array#setMany) does: a negative index counts back from the
+end, and elements that go past the end make the builder longer.
+
+    fromArray [ 1, 2, 3, 4 ]
+        |> setMany 1 [ 0, 0 ]
+        |> toArray
+        == [ 1, 0, 0, 4 ]
+
+    fromArray [ 1, 2, 3, 4 ]
+        |> setMany 3 [ 8, 9 ]
+        |> toArray
+        == [ 1, 2, 3, 8, 9 ]
+
+It costs O(m) for an array of m elements on JavaScript and natively when the
+builder is the one the call before answered, and O(n + m) otherwise, where it
+copies; O(m log n) on the BEAM.
+
+-}
+setMany : Int -> Array a -> Builder a -> Builder a
+setMany index values builder =
+    primSetArray builder (bound index (T.length builder)) values
+
+
+{-| Write a value into the elements from the first index up to, but not
+including, the second, which count back from the end when negative and stop
+at the ends, as [`Array.slice`](Array#slice)'s do. The builder's length does
+not change.
+
+    fromArray [ 1, 2, 3, 4 ]
+        |> fill 1 3 0
+        |> toArray
+        == [ 1, 0, 0, 4 ]
+
+It costs O(m) for m elements written, on the terms [`setMany`](#setMany) has.
+
+-}
+fill : Int -> Int -> a -> Builder a -> Builder a
+fill from to value builder =
+    let
+        len =
+            T.length builder
+
+        lo =
+            bound from len
+
+        hi =
+            bound to len
+    in
+    if lo < hi then
+        T.fill builder lo (hi - lo) value
+
+    else
+        builder
+
+
+{-| Copy the elements from the second index up to, but not including, the
+third, to start at the first, as JavaScript's
+[`copyWithin`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/copyWithin)
+does: each index counts back from the end when negative and stops at the
+ends, as many are copied as fit before the end, and where the two runs
+overlap, the elements are read before they are written. The builder's length
+does not change.
+
+    fromArray [ 1, 2, 3, 4, 5 ]
+        |> copyWithin 0 3 5
+        |> toArray
+        == [ 4, 5, 3, 4, 5 ]
+
+    fromArray [ 1, 2, 3, 4, 5 ]
+        |> copyWithin 1 0 4
+        |> toArray
+        == [ 1, 1, 2, 3, 4 ]
+
+It costs O(m) for m elements copied, on the terms [`setMany`](#setMany) has.
+
+-}
+copyWithin : Int -> Int -> Int -> Builder a -> Builder a
+copyWithin at from to builder =
+    let
+        len =
+            T.length builder
+
+        target =
+            bound at len
+
+        start =
+            bound from len
+
+        count =
+            min (bound to len - start) (len - target)
+    in
+    if count > 0 then
+        T.copyWithin builder target start count
+
+    else
+        builder
+
+
+{-| An index as [`Array.slice`](Array#slice) takes one: a negative one counts
+back from the end, and one past either end stops there.
+-}
+bound : Int -> (len : Nat) -> (r : Int where 0 <= r && r <= len)
+bound index len =
+    if index < 0 then
+        let
+            fromEnd =
+                len + index
+        in
+        if fromEnd < 0 then
+            0
+
+        else
+            fromEnd
+
+    else if len < index then
+        len
+
+    else
+        index
 
 
 {-| The element at the given index, or `Nothing` if the index is out of

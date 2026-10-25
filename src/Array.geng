@@ -98,7 +98,8 @@ resulting from calling `fn` with `offset + index`.
 In the above example, we create an array containing 3 integers
 starting at 5.
 
-It costs O(n), calling the function n times.
+It costs O(n), calling the function n times, and on JavaScript and natively
+allocates the array once (geng-lang `m4-visiterm.md` D905).
 
 -}
 initialize : Int -> Int -> (Int -> a) -> Array a
@@ -111,19 +112,25 @@ initialize len offset fn =
         []
 
     else
-        transientToArray (initializeHelp fn offset 0 len (T.new len))
+        transientToArray (T.generate (T.new len) offset len fn)
 
 
 {-| Create an array with `n` copies of a value:
 
     repeat 5 3 == [ 3, 3, 3, 3, 3 ]
 
-It costs O(n).
+It costs O(n), one write of the value into each element on JavaScript and
+natively (geng-lang `m4-visiterm.md` D905).
 
 -}
 repeat : Int -> a -> Array a
 repeat n val =
-    initialize n 0 (\_ -> val)
+    -- As `initialize`, a count below one is the empty array.
+    if lt n 1 then
+        []
+
+    else
+        transientToArray (T.fill (T.new n) 0 n val)
 
 
 {-| Create an array of numbers, every element increasing by one. You give the lowest and highest number that should be in the array.
@@ -827,7 +834,9 @@ append fst second =
 
     flatten [ [ 1 ], [ 2 ], [ 4, 5 ] ] == [ 1, 2, 4, 5 ]
 
-It costs O(n) in the total length of the arrays, plus one step for each array.
+It costs O(n) in the total length of the arrays, plus one step for each array,
+which on JavaScript and natively copies the array into the result at once
+(geng-lang `m4-visiterm.md` D905).
 
 -}
 flatten : Array (Array a) -> Array a
@@ -1266,6 +1275,10 @@ transientFromArray : (arr : Array a) -> (r : Transient a where T.length r == Arr
 transientToArray : (t : Transient a) -> (r : Array a where Array.length r == T.length t)
 
 
+@prim("tr_set_array")
+transientSetArray : (t : Transient a) -> (i : Int where 0 <= i && i <= T.length t) -> (arr : Array a) -> (r : Transient a where (i + Array.length arr <= T.length t && T.length r == T.length t) || (T.length t < i + Array.length arr && T.length r == i + Array.length arr))
+
+
 @prim("i32_lt")
 lt : Int -> Int -> Bool
 
@@ -1324,15 +1337,6 @@ sliceBound index len =
 
     else
         index
-
-
-initializeHelp : (Int -> a) -> Int -> Int -> Int -> Transient a -> Transient a
-initializeHelp fn offset index len acc =
-    if lt index len then
-        initializeHelp fn offset (add index 1) len (T.push acc (fn (add offset index)))
-
-    else
-        acc
 
 
 mapHelp : (a -> b) -> (array : Array a) -> (index : Int where 0 <= index && index <= len) -> (len : Int where len == Array.length array) -> (acc : Transient b where T.length acc == index) -> (r : Transient b where T.length r == len)
@@ -1473,7 +1477,7 @@ findLastHelp fn array index =
 flattenHelp : Array (Array a) -> Int -> Int -> Transient a -> Transient a
 flattenHelp arrays index len acc =
     if lt index len then
-        flattenHelp arrays (add index 1) len (pushAll (unsafeGet arrays index) 0 acc)
+        flattenHelp arrays (add index 1) len (pushAll (unsafeGet arrays index) acc)
 
     else
         acc
@@ -1482,19 +1486,16 @@ flattenHelp arrays index len acc =
 mapAndFlattenHelp : (a -> Array b) -> Array a -> Int -> Int -> Transient b -> Transient b
 mapAndFlattenHelp fn array index len acc =
     if lt index len then
-        mapAndFlattenHelp fn array (add index 1) len (pushAll (fn (unsafeGet array index)) 0 acc)
+        mapAndFlattenHelp fn array (add index 1) len (pushAll (fn (unsafeGet array index)) acc)
 
     else
         acc
 
 
-pushAll : Array a -> Int -> Transient a -> Transient a
-pushAll array index acc =
-    if lt index (unsafeLength array) then
-        pushAll array (add index 1) (T.push acc (unsafeGet array index))
-
-    else
-        acc
+{-| The array's elements pushed onto the transient, in one call (D905). -}
+pushAll : Array a -> Transient a -> Transient a
+pushAll array acc =
+    transientSetArray acc (T.length acc) array
 
 
 map2Help : (a -> b -> result) -> Array a -> Array b -> Int -> Int -> Transient result -> Transient result

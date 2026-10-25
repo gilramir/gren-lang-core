@@ -2,6 +2,7 @@ module Test.Array exposing (tests)
 
 import Basics exposing (..)
 import Math
+import Fuzz
 import Expect
 import Array exposing (..)
 import Maybe exposing (Maybe(..))
@@ -17,11 +18,24 @@ tests =
             [ test "negative" <| \{} -> Expect.equal [] (initialize -1 0 identity)
             , test "zero" <| \{} -> Expect.equal [] (initialize 0 0 identity)
             , test "positive" <| \{} -> Expect.equal [ 0, 1, 2 ] (initialize 3 0 identity)
+            , test "the offset wraps as Int does" <| \{} -> Expect.equal [ 2147483647, -2147483648 ] (initialize 2 2147483647 identity)
+            , fuzz2 (Fuzz.intRange 0 300) Fuzz.int "is a push of each call, the offset added (m4-visiterm.md D905)" <| \n offset ->
+                Expect.equal
+                    (foldl (\i acc -> pushLast ((offset + i) * 3) acc) [] (range 0 (n - 1)))
+                    (initialize n offset (\i -> i * 3))
             ]
         , describe "repeat"
             [ test "negative" <| \{} -> Expect.equal [] (repeat -1 1)
             , test "zero" <| \{} -> Expect.equal [] (repeat 0 1)
             , test "positive" <| \{} -> Expect.equal [ 1, 1, 1 ] (repeat 3 1)
+            , fuzz (Fuzz.intRange 0 300) "is a push of the value each time (m4-visiterm.md D905)" <| \n ->
+                Expect.equal (foldl (\_ acc -> pushLast "x" acc) [] (range 1 n)) (repeat n "x")
+            ]
+        , describe "flatten"
+            [ fuzz (Fuzz.array (Fuzz.array Fuzz.int)) "is each array appended in turn (m4-visiterm.md D905)" <| \arrays ->
+                Expect.equal (foldl (\a acc -> acc ++ a) [] arrays) (flatten arrays)
+            , fuzz (Fuzz.array (Fuzz.intRange 0 6)) "mapAndFlatten is map then each appended" <| \counts ->
+                Expect.equal (foldl (\n acc -> acc ++ repeat n n) [] counts) (mapAndFlatten (\n -> repeat n n) counts)
             ]
         , testArrayOfN 0
         , testArrayOfN 1

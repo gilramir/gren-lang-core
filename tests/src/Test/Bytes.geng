@@ -56,6 +56,22 @@ tests =
                 Expect.equal
                     "54 68 65 73 65 20 61 72 65 20 6d 79 20 f0 9f 98 8e 20 42 79 74 65 73"
                     (Bytes.toHexString { padding = True } (Bytes.fromString "These are my \u{1F60E} Bytes"))
+            , fuzz (Fuzz.array (Fuzz.intRange 0 0x10FFFF)) "fromCodePoints is fromString of the same characters (m4-visiterm.md D905)" <| \codePoints ->
+                let
+                    scalars =
+                        Array.keepIf (\c -> c < 0xD800 || c > 0xDFFF) codePoints
+                in
+                Expect.equal
+                    (Ok (Bytes.fromString (String.fromArray (Array.mapAndKeepJust Char.fromCode scalars))))
+                    (Bytes.fromCodePoints scalars)
+            , fuzz2 (Fuzz.array (Fuzz.intRange 0 0xD7FF)) (Fuzz.intRange 0xD800 0xDFFF) "fromCodePoints answers where the first surrogate is" <| \before surrogate ->
+                Expect.equal
+                    (Err (Array.length before))
+                    (Bytes.fromCodePoints (before ++ [ surrogate, 0x41, -1 ]))
+            , test "fromCodePoints refuses past 0x10FFFF and below 0" <| \{} ->
+                Expect.equal
+                    [ Err 0, Err 1, Ok (Bytes.fromString "\u{10FFFF}") ]
+                    [ Bytes.fromCodePoints [ 0x110000 ], Bytes.fromCodePoints [ 0x41, -1 ], Bytes.fromCodePoints [ 0x10FFFF ] ]
             , test "toHexString empty" <| \{} ->
                 Expect.equal
                     ""

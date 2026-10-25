@@ -140,6 +140,31 @@ tests =
                     (Array.map .array (Array.reverse versions))
                     (Array.map (\v -> Builder.toArray v.builder) (Array.reverse versions))
             ]
+        , describe "setMany, fill and copyWithin (m4-visiterm.md D904)"
+            [ test "setMany within" <| \{} -> Builder.fromArray [ 1, 2, 3, 4 ] |> Builder.setMany 1 [ 0, 0 ] |> Builder.toArray |> Expect.equalArrays [ 1, 0, 0, 4 ]
+            , test "setMany past the end" <| \{} -> Builder.fromArray [ 1, 2, 3, 4 ] |> Builder.setMany 3 [ 8, 9 ] |> Builder.toArray |> Expect.equalArrays [ 1, 2, 3, 8, 9 ]
+            , test "fill" <| \{} -> Builder.fromArray [ 1, 2, 3, 4 ] |> Builder.fill 1 3 0 |> Builder.toArray |> Expect.equalArrays [ 1, 0, 0, 4 ]
+            , test "copyWithin" <| \{} -> Builder.fromArray [ 1, 2, 3, 4, 5 ] |> Builder.copyWithin 0 3 5 |> Builder.toArray |> Expect.equalArrays [ 4, 5, 3, 4, 5 ]
+            , test "copyWithin overlapping" <| \{} -> Builder.fromArray [ 1, 2, 3, 4, 5 ] |> Builder.copyWithin 1 0 4 |> Builder.toArray |> Expect.equalArrays [ 1, 1, 2, 3, 4 ]
+            , fuzz (Fuzz.array (Fuzz.intRange 0 1000000)) "every builder of a chain of writes of runs reads as the array of the same writes" <| \writes ->
+                let
+                    versions =
+                        Array.foldl
+                            (\w acc ->
+                                when Array.last acc is
+                                    Just last ->
+                                        Array.pushLast (runWrite w last) acc
+
+                                    Nothing ->
+                                        acc
+                            )
+                            [ { builder = Array.foldl Builder.pushLast (Builder.empty 8) (Array.range 0 7), array = Array.range 0 7 } ]
+                            writes
+                in
+                Expect.equalArrays
+                    (Array.map .array (Array.reverse versions))
+                    (Array.map (\v -> Builder.toArray v.builder) (Array.reverse versions))
+            ]
         , test "Can build an array using builder API" <| \{} ->
             Builder.empty 3
                 |> Builder.pushLast 1
@@ -257,3 +282,99 @@ tests =
                 ]
                 {}
         ]
+
+
+{-| One write chosen by `w`, made on the builder and, by definitions of its
+own, on the array: a set, a `setMany`, a `fill`, a `copyWithin`, a push or an
+`append`, at indexes from 3 before the start to 3 past the end. -}
+runWrite : Int -> { builder : Builder.Builder Int, array : Array Int } -> { builder : Builder.Builder Int, array : Array Int }
+runWrite w { builder, array } =
+    let
+        len =
+            Array.length array
+
+        at k =
+            modBy (len + 7) (w // k) - 3
+
+        value =
+            1000 + modBy 1000 w
+    in
+    when modBy 6 w is
+        0 ->
+            { builder = Builder.set (at 6) value builder, array = Array.set (at 6) value array }
+
+        1 ->
+            let
+                values =
+                    Array.initialize (modBy 5 (w // 7)) value identity
+            in
+            { builder = Builder.setMany (at 6) values builder, array = Array.setMany (at 6) values array }
+
+        2 ->
+            { builder = Builder.fill (at 6) (at 60) value builder, array = fillOf (at 6) (at 60) value array }
+
+        3 ->
+            { builder = Builder.copyWithin (at 6) (at 60) (at 600) builder, array = copyWithinOf (at 6) (at 60) (at 600) array }
+
+        4 ->
+            { builder = Builder.pushLast value builder, array = Array.pushLast value array }
+
+        _ ->
+            { builder = Builder.append [ value, value + 1 ] builder, array = array ++ [ value, value + 1 ] }
+
+
+{-| An index as `slice` reads it. -}
+boundOf : Int -> Int -> Int
+boundOf index len =
+    if index < 0 then
+        max 0 (len + index)
+
+    else
+        min len index
+
+
+fillOf : Int -> Int -> a -> Array a -> Array a
+fillOf from to value array =
+    let
+        lo =
+            boundOf from (Array.length array)
+
+        hi =
+            boundOf to (Array.length array)
+    in
+    Array.indexedMap
+        (\i x ->
+            if lo <= i && i < hi then
+                value
+
+            else
+                x
+        )
+        array
+
+
+{-| JavaScript's `copyWithin`, read from the array as it was. -}
+copyWithinOf : Int -> Int -> Int -> Array a -> Array a
+copyWithinOf at from to array =
+    let
+        len =
+            Array.length array
+
+        target =
+            boundOf at len
+
+        start =
+            boundOf from len
+
+        count =
+            min (boundOf to len - start) (len - target)
+    in
+    Array.indexedMap
+        (\i x ->
+            if target <= i && i < target + count then
+                Maybe.withDefault x (Array.get (start + i - target) array)
+
+            else
+                x
+        )
+        array
