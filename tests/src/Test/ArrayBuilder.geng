@@ -377,7 +377,7 @@ tests =
 own, on the array: a set, a `setMany`, a `fill`, a `copyWithin`, a push, an
 `append`, an `update`, a `swap`, a `moveWithin`, a `copy`, or a `slice` made a
 builder again, at indexes from 3 before the start to 3 past the end. -}
-runWrite : Int -> { builder : Builder.Builder Int, array : Array Int } -> { builder : Builder.Builder Int, array : Array Int }
+runWrite : Int -> (moved state : { builder : Builder.Builder Int, array : Array Int }) -> { builder : Builder.Builder Int, array : Array Int }
 runWrite w { builder, array } =
     let
         len =
