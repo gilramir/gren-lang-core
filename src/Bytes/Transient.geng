@@ -25,6 +25,10 @@ which `Bytes` declares and which imports this module. `Bytes` and
 import Basics exposing ((&&), (<), (<=), (==), Int, Nat)
 
 
+{-| Written in place, so a value of it is used at most once (geng-lang
+`m4-own.md` D921, D922).
+-}
+@affine
 type Transient
     = Transient
 

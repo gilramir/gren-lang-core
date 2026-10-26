@@ -36,6 +36,10 @@ they use them (§BY12.2).
 import Basics exposing (Int, (&&), (||), (+), (-), (<), (<=), (==))
 
 
+{-| Written in place, so a value of it is used at most once (geng-lang
+`m4-own.md` D921, D922): `Array.Builder.Builder` is this type.
+-}
+@affine
 type Transient a
     = Transient
 
