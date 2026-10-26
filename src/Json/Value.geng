@@ -267,13 +267,17 @@ inObject =
     2
 
 
-noElements : Builder Value
-noElements =
+{-| An empty builder, made at each use: a builder is used once, and a
+top-level one would be one builder shared by every use (geng-lang `m4-own.md`
+§OW27).
+-}
+noElements : {} -> Builder Value
+noElements {} =
     Builder.empty 0
 
 
-noPairs : Builder { key : String, value : Value }
-noPairs =
+noPairs : {} -> Builder { key : String, value : Value }
+noPairs {} =
     Builder.empty 0
 
 
@@ -341,7 +345,7 @@ parseGeng s =
         end =
             primEnd s
     in
-    run s end (skipWs s end 0) Top atTop noElements noPairs "" 0 False False Null
+    run s end (skipWs s end 0) Top atTop (noElements {}) (noPairs {}) "" 0 False False Null
 
 
 codeAt : String -> Int -> Int
@@ -410,7 +414,7 @@ run s end i stack kind elements pairs key hashes clash have v =
                         codeAt s j
                 in
                 if c == 0x2C then
-                    run s end (skipWs s end (j + 1)) stack inArray more noPairs "" 0 False False Null
+                    run s end (skipWs s end (j + 1)) stack inArray more (noPairs {}) "" 0 False False Null
 
                 else if c == 0x5D then
                     let
@@ -422,7 +426,7 @@ run s end i stack kind elements pairs key hashes clash have v =
                             run s end (j + 1) f.below f.kind f.elements f.pairs f.key f.hashes f.clash True done
 
                         Top ->
-                            run s end (j + 1) Top atTop noElements noPairs "" 0 False True done
+                            run s end (j + 1) Top atTop (noElements {}) (noPairs {}) "" 0 False True done
 
                 else
                     Err { offset = j, reason = "Expected ',' or ']' after an array element, but found " ++ describe s end j }
@@ -474,7 +478,7 @@ run s end i stack kind elements pairs key hashes clash have v =
                             bit =
                                 keyBit newKey
                         in
-                        run s end (skipWs s end (colon + 1)) stack inObject noElements more newKey (primOr hashes bit) (clash || primAnd hashes bit /= 0) False Null
+                        run s end (skipWs s end (colon + 1)) stack inObject (noElements {}) more newKey (primOr hashes bit) (clash || primAnd hashes bit /= 0) False Null
 
                 else if c == 0x7D then
                     let
@@ -495,7 +499,7 @@ run s end i stack kind elements pairs key hashes clash have v =
                             run s end (j + 1) f.below f.kind f.elements f.pairs f.key f.hashes f.clash True done
 
                         Top ->
-                            run s end (j + 1) Top atTop noElements noPairs "" 0 False True done
+                            run s end (j + 1) Top atTop (noElements {}) (noPairs {}) "" 0 False True done
 
                 else
                     Err { offset = j, reason = "Expected ',' or '}' after an object member, but found " ++ describe s end j }
@@ -588,7 +592,7 @@ run s end i stack kind elements pairs key hashes clash have v =
                                 , below = stack
                                 }
                     in
-                    run s end (skipWs s end (colon + 1)) outer inObject noElements (Builder.empty 0) newKey (keyBit newKey) False False Null
+                    run s end (skipWs s end (colon + 1)) outer inObject (noElements {}) (Builder.empty 0) newKey (keyBit newKey) False False Null
 
         else if c == 0x5B then
             let
@@ -611,7 +615,7 @@ run s end i stack kind elements pairs key hashes clash have v =
                             , below = stack
                             }
                 in
-                run s end k outer inArray (Builder.empty 0) noPairs "" 0 False False Null
+                run s end k outer inArray (Builder.empty 0) (noPairs {}) "" 0 False False Null
 
         else if c == 0x74 && word s end i "true" then
             run s end (i + 4) stack kind elements pairs key hashes clash True (Bool True)

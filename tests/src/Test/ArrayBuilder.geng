@@ -67,52 +67,56 @@ tests =
                     |> Array.map .i
                     |> Expect.equalArrays [ 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47 ]
             ]
-        , describe "an older builder reads what it held (geng-lang m4-visiterm.md D903)"
-            [ test "set, then the older read" <| \{} ->
+        -- These were tests of D903's older builders, which read what they held
+        -- (geng-lang m4-visiterm.md D903). A builder is used once now, and a
+        -- program that reads one after writing it is refused (m4-own.md
+        -- §OW27), so each older builder is a copy made first.
+        , describe "a copy reads what it held (geng-lang m4-own.md D931)"
+            [ test "set, then the copied read" <| \{} ->
                 let
                     older =
                         Builder.fromArray [ 1, 2, 3 ] |> Builder.pushLast 4
 
                     newer =
-                        Builder.set 0 9 older
+                        Builder.set 0 9 (Builder.copy older)
                 in
                 Expect.equal { older = [ 1, 2, 3, 4 ], newer = [ 9, 2, 3, 4 ] } { older = Builder.toArray older, newer = Builder.toArray newer }
-            , test "set, then the older read by get" <| \{} ->
+            , test "set, then the copied read by get" <| \{} ->
                 let
                     older =
                         Builder.fromArray [ 1, 2, 3 ] |> Builder.pushLast 4
 
                     newer =
-                        Builder.set 0 9 older
+                        Builder.set 0 9 (Builder.copy older)
                 in
                 Expect.equal { older = Just 1, newer = Just 9 } { older = Builder.get 0 older, newer = Builder.get 0 newer }
-            , test "an array toArray handed out does not change" <| \{} ->
+            , test "an array toArray handed out of a copy does not change" <| \{} ->
                 let
                     builder =
                         Builder.fromArray [ 1, 2, 3 ] |> Builder.pushLast 4
 
                     frozen =
-                        Builder.toArray builder
+                        Builder.toArray (Builder.copy builder)
 
                     _ =
                         Builder.set 1 7 builder
                 in
                 Expect.equalArrays [ 1, 2, 3, 4 ] frozen
-            , test "a write through an older builder, after two at one index on the newer" <| \{} ->
+            , test "a write through a second copy, after two at one index on the first" <| \{} ->
                 let
                     older =
                         Builder.fromArray [ 1, 2, 3 ] |> Builder.pushLast 4
 
                     newer =
-                        older |> Builder.set 0 9 |> Builder.set 0 8
+                        Builder.copy older |> Builder.set 0 9 |> Builder.set 0 8
 
                     other =
-                        Builder.set 1 7 older
+                        Builder.set 1 7 (Builder.copy older)
                 in
                 Expect.equal
                     { newer = [ 8, 2, 3, 4 ], other = [ 1, 7, 3, 4 ], older = [ 1, 2, 3, 4 ] }
                     { newer = Builder.toArray newer, other = Builder.toArray other, older = Builder.toArray older }
-            , fuzz (Fuzz.array (Fuzz.intRange 0 1000)) "every builder of a chain of sets reads as the array of the same sets" <| \writes ->
+            , fuzz (Fuzz.array (Fuzz.intRange 0 1000)) "every builder of a chain of sets on copies reads as the array of the same sets" <| \writes ->
                 let
                     start =
                         Array.range 0 9
@@ -123,7 +127,7 @@ tests =
                                 when Array.last acc is
                                     Just last ->
                                         Array.pushLast
-                                            { builder = Builder.set (modBy 10 w) w last.builder
+                                            { builder = Builder.set (modBy 10 w) w (Builder.copy last.builder)
                                             , array = Array.set (modBy 10 w) w last.array
                                             }
                                             acc
@@ -134,11 +138,9 @@ tests =
                             [ { builder = Builder.fromArray start |> Builder.pushLast 10, array = Array.pushLast 10 start } ]
                             writes
                 in
-                -- newest first, so that each older one is read after every
-                -- write past it
                 Expect.equalArrays
-                    (Array.map .array (Array.reverse versions))
-                    (Array.map (\v -> Builder.toArray v.builder) (Array.reverse versions))
+                    (Array.map (\v -> v.array) versions)
+                    (Array.map (\v -> Builder.slice 0 (Builder.length v.builder) v.builder) versions)
             ]
         , describe "setMany, fill and copyWithin (m4-visiterm.md D904)"
             [ test "setMany within" <| \{} -> Builder.fromArray [ 1, 2, 3, 4 ] |> Builder.setMany 1 [ 0, 0 ] |> Builder.toArray |> Expect.equalArrays [ 1, 0, 0, 4 ]
@@ -154,18 +156,19 @@ tests =
                     rows =
                         Builder.fromArray [ Builder.fromArray [ 1, 2 ], Builder.fromArray [ 3, 4 ] ]
                 in
+                -- Array.map lends each row (D956), so each is copied out.
                 rows
                     |> Builder.update 1 (Builder.set 0 9)
                     |> Builder.toArray
-                    |> Array.map Builder.toArray
+                    |> Array.map (\row -> Builder.slice 0 (Builder.length row) row)
                     |> Expect.equal [ [ 1, 2 ], [ 9, 4 ] ]
-            , test "update leaves the older builder" <| \{} ->
+            , test "update of a copy leaves the builder copied" <| \{} ->
                 let
                     older =
                         Builder.fromArray [ 1, 2, 3 ]
 
                     _ =
-                        Builder.update 0 (\n -> n + 1) older
+                        Builder.update 0 (\n -> n + 1) (Builder.copy older)
                 in
                 Expect.equalArrays [ 1, 2, 3 ] (Builder.toArray older)
             , test "swap" <| \{} ->
@@ -229,14 +232,14 @@ tests =
                 Expect.equal
                     { a = [ 7, 2, 3, 8 ], b = [ 9, 2, 3, 10 ] }
                     { a = Builder.toArray a, b = Builder.toArray b }
-            , fuzz (Fuzz.array (Fuzz.intRange 0 1000000)) "every builder of a chain of writes of runs reads as the array of the same writes" <| \writes ->
+            , fuzz (Fuzz.array (Fuzz.intRange 0 1000000)) "every builder of a chain of writes of runs on copies reads as the array of the same writes" <| \writes ->
                 let
                     versions =
                         Array.foldl
                             (\w acc ->
                                 when Array.last acc is
                                     Just last ->
-                                        Array.pushLast (runWrite w last) acc
+                                        Array.pushLast (runWrite w { builder = Builder.copy last.builder, array = last.array }) acc
 
                                     Nothing ->
                                         acc
@@ -245,8 +248,8 @@ tests =
                             writes
                 in
                 Expect.equalArrays
-                    (Array.map .array (Array.reverse versions))
-                    (Array.map (\v -> Builder.toArray v.builder) (Array.reverse versions))
+                    (Array.map (\v -> v.array) versions)
+                    (Array.map (\v -> Builder.slice 0 (Builder.length v.builder) v.builder) versions)
             ]
         , test "Can build an array using builder API" <| \{} ->
             Builder.empty 3
@@ -279,6 +282,9 @@ tests =
             Array.foldl (\val builder -> Builder.pushLast val builder) (Builder.empty 0) array
                 |> Builder.toArray
                 |> Expect.equalArrays array
+        -- Upstream's three "Cannot detect mutation" tests write one builder
+        -- twice. A builder is used once (m4-own.md §OW27), so each write is of
+        -- a copy, and each test is that the copies are written apart.
         , test "Cannot detect mutation" <| \{} ->
             let
                 empty : Builder.Builder String
@@ -286,10 +292,10 @@ tests =
                     Builder.empty 0
 
                 first =
-                    Builder.pushLast "first" empty
+                    Builder.pushLast "first" (Builder.copy empty)
 
                 second =
-                    Builder.pushLast "second" empty
+                    Builder.pushLast "second" (Builder.copy empty)
             in
             Expect.all
                 [ \{} -> Expect.equalArrays [] (Builder.toArray empty)
@@ -304,10 +310,10 @@ tests =
                     Builder.empty 0
 
                 first =
-                    Builder.pushLast "first" empty
+                    Builder.pushLast "first" (Builder.copy empty)
 
                 firstArray =
-                    Builder.toArray first
+                    Builder.toArray (Builder.copy first)
 
                 secondArray =
                     first
@@ -337,10 +343,10 @@ tests =
                     Builder.empty 0
 
                 first =
-                    Builder.append [ 1, 2 ] init
+                    Builder.append [ 1, 2 ] (Builder.copy init)
 
                 second =
-                    Builder.pushLast 3 init
+                    Builder.pushLast 3 (Builder.copy init)
             in
             Expect.all
                 [ \{} -> Expect.equalArrays [] (Builder.toArray init)
