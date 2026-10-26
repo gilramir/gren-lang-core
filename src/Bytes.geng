@@ -226,7 +226,7 @@ toArray bytes =
 nothing refines, since `initialize`'s offset can wrap it (geng-lang
 `m4-refine.md` §RF27).
 -}
-toArrayFrom : Bytes -> Int -> Int -> Array.Builder.Builder Int -> Array Int
+toArrayFrom : Bytes -> Int -> Int -> (moved builder : Array.Builder.Builder Int) -> Array Int
 toArrayFrom bytes count index builder =
     if index < count then
         toArrayFrom bytes count (index + 1) (Array.Builder.pushLast (byteAt bytes index) builder)
@@ -451,7 +451,7 @@ one a scalar value. Each is tested against what is left of the transient,
 which the size `fromCodePoints` makes it with always passes, so that the
 checker proves every write (D863).
 -}
-utf8From : (codePoints : Array Int) -> (count : Int where count == Array.length codePoints) -> (index : Nat) -> (offset : Nat) -> (transient : Transient) -> (size : Int where size == Bytes.Transient.length transient) -> Transient
+utf8From : (codePoints : Array Int) -> (count : Int where count == Array.length codePoints) -> (index : Nat) -> (offset : Nat) -> (moved transient : Transient) -> (size : Int where size == Bytes.Transient.length transient) -> Transient
 utf8From codePoints count index offset transient size =
   if index >= count then
     transient
@@ -489,7 +489,7 @@ utf8From codePoints count index offset transient size =
       transient
 
 
-utf8Two : (transient : Transient) -> (offset : Int where 0 <= offset && offset <= Bytes.Transient.length transient - 2) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length transient)
+utf8Two : (moved transient : Transient) -> (offset : Int where 0 <= offset && offset <= Bytes.Transient.length transient - 2) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length transient)
 utf8Two transient offset codePoint =
   Bytes.Transient.setU8
     (Bytes.Transient.setU8 transient offset (Bitwise.or 0xC0 (Bitwise.shiftRightZfBy 6 codePoint)))
@@ -497,7 +497,7 @@ utf8Two transient offset codePoint =
     (continuation codePoint 0)
 
 
-utf8Three : (transient : Transient) -> (offset : Int where 0 <= offset && offset <= Bytes.Transient.length transient - 3) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length transient)
+utf8Three : (moved transient : Transient) -> (offset : Int where 0 <= offset && offset <= Bytes.Transient.length transient - 3) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length transient)
 utf8Three transient offset codePoint =
   Bytes.Transient.setU8
     (Bytes.Transient.setU8
@@ -509,7 +509,7 @@ utf8Three transient offset codePoint =
     (continuation codePoint 0)
 
 
-utf8Four : (transient : Transient) -> (offset : Int where 0 <= offset && offset <= Bytes.Transient.length transient - 4) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length transient)
+utf8Four : (moved transient : Transient) -> (offset : Int where 0 <= offset && offset <= Bytes.Transient.length transient - 4) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length transient)
 utf8Four transient offset codePoint =
   Bytes.Transient.setU8
     (Bytes.Transient.setU8
@@ -707,7 +707,7 @@ the bytes written are UTF-8. Each write is tested against the transient's
 length, which the size `hexSize` gives it always passes, so that the
 checker proves every write (D863).
 -}
-hexFrom : (bytes : Bytes) -> (count : Int where count == Bytes.length bytes) -> Bool -> (index : Nat) -> (offset : Nat) -> (transient : Transient) -> (size : Int where size == Bytes.Transient.length transient) -> Transient
+hexFrom : (bytes : Bytes) -> (count : Int where count == Bytes.length bytes) -> Bool -> (index : Nat) -> (offset : Nat) -> (moved transient : Transient) -> (size : Int where size == Bytes.Transient.length transient) -> Transient
 hexFrom bytes count spaced index offset transient size =
   if index >= count then
     transient
@@ -727,7 +727,7 @@ hexFrom bytes count spaced index offset transient size =
 
 
 {-| A byte's two hex digits at `offset`. -}
-hexDigits : (transient : Transient) -> (offset : Int where 0 <= offset && offset <= Bytes.Transient.length transient - 2) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length transient)
+hexDigits : (moved transient : Transient) -> (offset : Int where 0 <= offset && offset <= Bytes.Transient.length transient - 2) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length transient)
 hexDigits transient offset byte =
   Bytes.Transient.setU8 (Bytes.Transient.setU8 transient offset (hexDigit (Bitwise.shiftRightZfBy 4 byte))) (offset + 1) (hexDigit (Bitwise.and 15 byte))
 
@@ -745,7 +745,7 @@ hexDigit digit =
 U+FFFD's three bytes for each maximal subpart between two (geng-lang
 `m3-os.md` D547). `start` is where the current run began.
 -}
-lossyFrom : (bytes : Bytes) -> (count : Int where count == Bytes.length bytes) -> (start : Int where 0 <= start && start <= index) -> (index : Int where index <= count) -> Array.Builder.Builder Bytes -> Array Bytes
+lossyFrom : (bytes : Bytes) -> (count : Int where count == Bytes.length bytes) -> (start : Int where 0 <= start && start <= index) -> (index : Int where index <= count) -> (moved found : Array.Builder.Builder Bytes) -> Array Bytes
 lossyFrom bytes count start index found =
   if index >= count then
     Array.Builder.toArray (Array.Builder.pushLast (primSlice bytes start count) found)
@@ -781,7 +781,7 @@ lossyFrom bytes count start index found =
 {-| The run from `start` to `index` kept, and the `taken` bytes at `index`, a
 maximal subpart, replaced by one U+FFFD.
 -}
-replaced : (bytes : Bytes) -> (count : Int where count == Bytes.length bytes) -> (start : Int where 0 <= start && start <= index) -> (index : Int where index <= count) -> (taken : Int where 0 <= taken && index + taken <= count) -> Array.Builder.Builder Bytes -> Array Bytes
+replaced : (bytes : Bytes) -> (count : Int where count == Bytes.length bytes) -> (start : Int where 0 <= start && start <= index) -> (index : Int where index <= count) -> (taken : Int where 0 <= taken && index + taken <= count) -> (moved found : Array.Builder.Builder Bytes) -> Array Bytes
 replaced bytes count start index taken found =
   lossyFrom bytes count (index + taken) (index + taken)
     (found
@@ -936,7 +936,7 @@ for every piece (geng-lang `m3-bytes-access.md` §BA9). Each piece is tested
 against what is left of the transient, which the total `flatten` makes it with
 always passes, so that the checker proves every write (D863).
 -}
-flattenFrom : (pieces : Array Bytes) -> (count : Int where count == Array.length pieces) -> (index : Nat) -> (offset : Nat) -> (transient : Transient) -> (size : Int where size == Bytes.Transient.length transient) -> Transient
+flattenFrom : (pieces : Array Bytes) -> (count : Int where count == Array.length pieces) -> (index : Nat) -> (offset : Nat) -> (moved transient : Transient) -> (size : Int where size == Bytes.Transient.length transient) -> Transient
 flattenFrom pieces count index offset transient size =
   if index >= count then
     transient
@@ -991,11 +991,11 @@ primNewOrCrash : (n : Int) -> (r : Transient where Bytes.Transient.length r == n
 
 
 @prim("bt_set_bytes")
-primSetBytes : (t : Transient) -> (i : Nat) -> (b : Bytes where Bytes.length b <= Bytes.Transient.length t - i) -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
+primSetBytes : (moved t : Transient) -> (i : Nat) -> (b : Bytes where Bytes.length b <= Bytes.Transient.length t - i) -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
 
 
 @prim("bt_to_bytes")
-primToBytes : (t : Transient) -> (r : Bytes where Bytes.length r == Bytes.Transient.length t)
+primToBytes : (moved t : Transient) -> (r : Bytes where Bytes.length r == Bytes.Transient.length t)
 
 
 @prim("bytes_eq")

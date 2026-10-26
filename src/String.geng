@@ -357,7 +357,7 @@ split sep string =
         splitHelp sep (primEnd sep) string (Offset 0) (Array.Builder.empty 0)
 
 
-splitHelp : String -> Int -> String -> Offset -> Array.Builder.Builder String -> Array String
+splitHelp : String -> Int -> String -> Offset -> (moved acc : Array.Builder.Builder String) -> Array String
 splitHelp sep sepEnd string (Offset start) acc =
     let
         found =
@@ -427,7 +427,7 @@ words string =
 
 {-| Move a half-built word into the answer, unless there is no word there.
 -}
-closeWord : { done : Array.Builder.Builder String, current : String } -> Array.Builder.Builder String
+closeWord : (moved acc : { done : Array.Builder.Builder String, current : String }) -> Array.Builder.Builder String
 closeWord acc =
     if acc.current == "" then
         acc.done
@@ -811,7 +811,7 @@ indices sub string =
 {-| Each match's index is the last one's plus the codepoints between them, so
 the conversion is one walk over the string however many matches there are.
 -}
-indicesHelp : String -> Int -> String -> Offset -> Int -> Offset -> Array.Builder.Builder Int -> Array Int
+indicesHelp : String -> Int -> String -> Offset -> Int -> Offset -> (moved acc : Array.Builder.Builder Int) -> Array Int
 indicesHelp sub subEnd string (Offset from) lastIndex (Offset lastOffset) acc =
     let
         found =

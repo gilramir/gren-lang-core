@@ -484,7 +484,7 @@ many (Parser parse) =
     manyHelp False parse (Builder.empty 0) s
 
 
-manyHelp : Bool -> (State c -> PStep c x a) -> Builder a -> State c -> PStep c x (Array a)
+manyHelp : Bool -> (State c -> PStep c x a) -> (moved items : Builder a) -> State c -> PStep c x (Array a)
 manyHelp p parse items s0 =
   when parse s0 is
     Good { pred = p1, value = item, state = s1 } ->

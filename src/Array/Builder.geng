@@ -114,7 +114,7 @@ the call before answered, and O(n) otherwise, where it copies; on the BEAM it
 costs O(log n), onto any version.
 
 -}
-pushLast : a -> Builder a -> Builder a
+pushLast : a -> (moved builder : Builder a) -> Builder a
 pushLast value builder =
     T.push builder value
 
@@ -125,13 +125,13 @@ It costs O(m) for an array of m elements, copied in at once on JavaScript and
 natively, and pushed one by one on the BEAM, O(m log n).
 
 -}
-append : Array a -> Builder a -> Builder a
+append : Array a -> (moved builder : Builder a) -> Builder a
 append array builder =
     primSetArray builder (T.length builder) array
 
 
 @prim("tr_set_array")
-primSetArray : (t : Builder a) -> (i : Int where 0 <= i && i <= T.length t) -> (arr : Array a) -> (r : Builder a where (i + Array.length arr <= T.length t && T.length r == T.length t) || (T.length t < i + Array.length arr && T.length r == i + Array.length arr))
+primSetArray : (moved t : Builder a) -> (i : Int where 0 <= i && i <= T.length t) -> (arr : Array a) -> (r : Builder a where (i + Array.length arr <= T.length t && T.length r == T.length t) || (T.length t < i + Array.length arr && T.length r == i + Array.length arr))
 
 
 {-| Replace the element at the given index, or leave the builder as it is if
@@ -152,7 +152,7 @@ the BEAM, so a loop of builder sets is linear on every target where a loop of
 natively (geng-lang `m3-cost.md` D753).
 
 -}
-set : Int -> a -> Builder a -> Builder a
+set : Int -> a -> (moved builder : Builder a) -> Builder a
 set index value builder =
     let
         at =
@@ -186,7 +186,7 @@ the screen while it is written.
 It costs a [`get`](#get) and a [`set`](#set), and what the function costs.
 
 -}
-update : Int -> (a -> a) -> Builder a -> Builder a
+update : Int -> (a -> a) -> (moved builder : Builder a) -> Builder a
 update index f builder =
     let
         at =
@@ -213,7 +213,7 @@ take the element out, leaving a placeholder, write it, and `set` it back.
 It costs a [`get`](#get) and a [`set`](#set).
 
 -}
-swap : Int -> a -> Builder a -> { old : Maybe a, builder : Builder a }
+swap : Int -> a -> (moved builder : Builder a) -> { old : Maybe a, builder : Builder a }
 swap index value builder =
     let
         at =
@@ -249,7 +249,7 @@ builder is the one the call before answered, and O(n + m) otherwise, where it
 copies; O(m log n) on the BEAM.
 
 -}
-setMany : Int -> Array a -> Builder a -> Builder a
+setMany : Int -> Array a -> (moved builder : Builder a) -> Builder a
 setMany index values builder =
     primSetArray builder (bound index (T.length builder)) values
 
@@ -267,7 +267,7 @@ not change.
 It costs O(m) for m elements written, on the terms [`setMany`](#setMany) has.
 
 -}
-fill : Int -> Int -> a -> Builder a -> Builder a
+fill : Int -> Int -> a -> (moved builder : Builder a) -> Builder a
 fill from to value builder =
     let
         len =
@@ -307,7 +307,7 @@ does not change.
 It costs O(m) for m elements copied, on the terms [`setMany`](#setMany) has.
 
 -}
-copyWithin : Int -> Int -> Int -> Builder a -> Builder a
+copyWithin : Int -> Int -> Int -> (moved builder : Builder a) -> Builder a
 copyWithin at from to builder =
     let
         len =
@@ -347,7 +347,7 @@ It costs a [`copyWithin`](#copyWithin) and a [`fill`](#fill) of what was
 left.
 
 -}
-moveWithin : Int -> Int -> Int -> a -> Builder a -> Builder a
+moveWithin : Int -> Int -> Int -> a -> (moved builder : Builder a) -> Builder a
 moveWithin at from to vacated builder =
     let
         len =
@@ -523,7 +523,7 @@ copy builder =
 
 {-| The elements of a builder from `i` up to, but not including, `to`, pushed
 onto another. -}
-copyRange : (b : Builder a) -> (i : Int where 0 <= i) -> (to : Int where to <= T.length b) -> Builder a -> Builder a
+copyRange : (b : Builder a) -> (i : Int where 0 <= i) -> (to : Int where to <= T.length b) -> (moved acc : Builder a) -> Builder a
 copyRange b i to acc =
     if i < to then
         copyRange b (i + 1) to (T.push acc (T.get b i))
@@ -543,4 +543,4 @@ quadratic on every target, and should read the builder with [`get`](#get) and
 
 -}
 @prim("tr_to_array")
-toArray : Builder a -> Array a
+toArray : (moved builder : Builder a) -> Array a

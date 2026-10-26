@@ -1085,7 +1085,7 @@ partition fn array =
     partitionHelp fn array 0 (unsafeLength array) (T.new 0) (T.new 0)
 
 
-partitionHelp : (a -> Bool) -> Array a -> Int -> Int -> Transient a -> Transient a -> { trues : Array a, falses : Array a }
+partitionHelp : (a -> Bool) -> Array a -> Int -> Int -> (moved trues : Transient a) -> (moved falses : Transient a) -> { trues : Array a, falses : Array a }
 partitionHelp fn array index len trues falses =
     if lt index len then
         let
@@ -1272,11 +1272,11 @@ transientFromArray : (arr : Array a) -> (r : Transient a where T.length r == Arr
 
 
 @prim("tr_to_array")
-transientToArray : (t : Transient a) -> (r : Array a where Array.length r == T.length t)
+transientToArray : (moved t : Transient a) -> (r : Array a where Array.length r == T.length t)
 
 
 @prim("tr_set_array")
-transientSetArray : (t : Transient a) -> (i : Int where 0 <= i && i <= T.length t) -> (arr : Array a) -> (r : Transient a where (i + Array.length arr <= T.length t && T.length r == T.length t) || (T.length t < i + Array.length arr && T.length r == i + Array.length arr))
+transientSetArray : (moved t : Transient a) -> (i : Int where 0 <= i && i <= T.length t) -> (arr : Array a) -> (r : Transient a where (i + Array.length arr <= T.length t && T.length r == T.length t) || (T.length t < i + Array.length arr && T.length r == i + Array.length arr))
 
 
 @prim("i32_lt")
@@ -1339,7 +1339,7 @@ sliceBound index len =
         index
 
 
-mapHelp : (a -> b) -> (array : Array a) -> (index : Int where 0 <= index && index <= len) -> (len : Int where len == Array.length array) -> (acc : Transient b where T.length acc == index) -> (r : Transient b where T.length r == len)
+mapHelp : (a -> b) -> (array : Array a) -> (index : Int where 0 <= index && index <= len) -> (len : Int where len == Array.length array) -> (moved acc : Transient b where T.length acc == index) -> (r : Transient b where T.length r == len)
 mapHelp fn array index len acc =
     if lt index len then
         mapHelp fn array (add index 1) len (T.push acc (fn (unsafeGet array index)))
@@ -1348,7 +1348,7 @@ mapHelp fn array index len acc =
         acc
 
 
-indexedMapHelp : ((i : Int where 0 <= i && i < Array.length array) -> a -> b) -> (array : Array a) -> (index : Int where 0 <= index && index <= len) -> (len : Int where len == Array.length array) -> (acc : Transient b where T.length acc == index) -> (r : Transient b where T.length r == len)
+indexedMapHelp : ((i : Int where 0 <= i && i < Array.length array) -> a -> b) -> (array : Array a) -> (index : Int where 0 <= index && index <= len) -> (len : Int where len == Array.length array) -> (moved acc : Transient b where T.length acc == index) -> (r : Transient b where T.length r == len)
 indexedMapHelp fn array index len acc =
     if lt index len then
         indexedMapHelp fn array (add index 1) len (T.push acc (fn index (unsafeGet array index)))
@@ -1393,7 +1393,7 @@ indexedFoldrHelp fn acc array index =
         indexedFoldrHelp fn (fn index (unsafeGet array index) acc) array (add index -1)
 
 
-keepIfHelp : (a -> Bool) -> Array a -> Int -> Int -> Transient a -> Transient a
+keepIfHelp : (a -> Bool) -> Array a -> Int -> Int -> (moved acc : Transient a) -> Transient a
 keepIfHelp fn array index len acc =
     if lt index len then
         let
@@ -1412,7 +1412,7 @@ keepIfHelp fn array index len acc =
         acc
 
 
-indexedKeepIfHelp : (Int -> a -> Bool) -> Array a -> Int -> Int -> Transient a -> Transient a
+indexedKeepIfHelp : (Int -> a -> Bool) -> Array a -> Int -> Int -> (moved acc : Transient a) -> Transient a
 indexedKeepIfHelp fn array index len acc =
     if lt index len then
         let
@@ -1431,7 +1431,7 @@ indexedKeepIfHelp fn array index len acc =
         acc
 
 
-reverseHelp : (array : Array a) -> (index : Int where 0 <= index + 1 && index < Array.length array) -> (acc : Transient a where T.length acc == Array.length array - 1 - index) -> (r : Transient a where T.length r == Array.length array)
+reverseHelp : (array : Array a) -> (index : Int where 0 <= index + 1 && index < Array.length array) -> (moved acc : Transient a where T.length acc == Array.length array - 1 - index) -> (r : Transient a where T.length r == Array.length array)
 reverseHelp array index acc =
     if lt index 0 then
         acc
@@ -1474,7 +1474,7 @@ findLastHelp fn array index =
             findLastHelp fn array (add index -1)
 
 
-flattenHelp : Array (Array a) -> Int -> Int -> Transient a -> Transient a
+flattenHelp : Array (Array a) -> Int -> Int -> (moved acc : Transient a) -> Transient a
 flattenHelp arrays index len acc =
     if lt index len then
         flattenHelp arrays (add index 1) len (pushAll (unsafeGet arrays index) acc)
@@ -1483,7 +1483,7 @@ flattenHelp arrays index len acc =
         acc
 
 
-mapAndFlattenHelp : (a -> Array b) -> Array a -> Int -> Int -> Transient b -> Transient b
+mapAndFlattenHelp : (a -> Array b) -> Array a -> Int -> Int -> (moved acc : Transient b) -> Transient b
 mapAndFlattenHelp fn array index len acc =
     if lt index len then
         mapAndFlattenHelp fn array (add index 1) len (pushAll (fn (unsafeGet array index)) acc)
@@ -1493,12 +1493,12 @@ mapAndFlattenHelp fn array index len acc =
 
 
 {-| The array's elements pushed onto the transient, in one call (D905). -}
-pushAll : Array a -> Transient a -> Transient a
+pushAll : Array a -> (moved acc : Transient a) -> Transient a
 pushAll array acc =
     transientSetArray acc (T.length acc) array
 
 
-map2Help : (a -> b -> result) -> Array a -> Array b -> Int -> Int -> Transient result -> Transient result
+map2Help : (a -> b -> result) -> Array a -> Array b -> Int -> Int -> (moved acc : Transient result) -> Transient result
 map2Help fn xs ys index len acc =
     if lt index len then
         map2Help fn xs ys (add index 1) len (T.push acc (fn (unsafeGet xs index) (unsafeGet ys index)))
@@ -1507,7 +1507,7 @@ map2Help fn xs ys index len acc =
         acc
 
 
-map3Help : (a -> b -> c -> result) -> Array a -> Array b -> Array c -> Int -> Int -> Transient result -> Transient result
+map3Help : (a -> b -> c -> result) -> Array a -> Array b -> Array c -> Int -> Int -> (moved acc : Transient result) -> Transient result
 map3Help fn xs ys zs index len acc =
     if lt index len then
         map3Help fn xs ys zs (add index 1) len (T.push acc (fn (unsafeGet xs index) (unsafeGet ys index) (unsafeGet zs index)))
@@ -1546,7 +1546,7 @@ the merge would read and write outside the transients (geng-lang
 `m4-refine.md` §RF27, D851). The refinements are what the checker proves
 every read and write by.
 -}
-sortPasses : (a -> a -> Order) -> (src : Transient a) -> (dst : Transient a where T.length dst == T.length src) -> (width : Int where 0 < width) -> (len : Int where len == T.length src) -> Transient a
+sortPasses : (a -> a -> Order) -> (moved src : Transient a) -> (moved dst : Transient a where T.length dst == T.length src) -> (width : Int where 0 < width) -> (len : Int where len == T.length src) -> Transient a
 sortPasses fn src dst width len =
     if not (lt width len) then
         src
@@ -1563,7 +1563,7 @@ sortPasses fn src dst width len =
             merged
 
 
-mergePass : (a -> a -> Order) -> (src : Transient a) -> (dst : Transient a where T.length dst == T.length src) -> (lo : Nat) -> (width : Int where 0 < width) -> (len : Int where len == T.length src) -> (r : Transient a where T.length r == T.length dst)
+mergePass : (a -> a -> Order) -> (src : Transient a) -> (moved dst : Transient a where T.length dst == T.length src) -> (lo : Nat) -> (width : Int where 0 < width) -> (len : Int where len == T.length src) -> (r : Transient a where T.length r == T.length dst)
 mergePass fn src dst lo width len =
     if not (lt lo len) then
         dst
@@ -1587,7 +1587,7 @@ mergePass fn src dst lo width len =
         mergePass fn src (mergeRuns fn src dst lo mid mid hi lo) hi width len
 
 
-mergeRuns : (a -> a -> Order) -> (src : Transient a) -> (dst : Transient a where T.length dst == T.length src) -> (i : Int where 0 <= i && i <= mid) -> (mid : Int where mid <= j) -> (j : Int where j <= hi) -> (hi : Int where hi <= T.length src) -> (out : Int where out == i + j - mid) -> (r : Transient a where T.length r == T.length dst)
+mergeRuns : (a -> a -> Order) -> (src : Transient a) -> (moved dst : Transient a where T.length dst == T.length src) -> (i : Int where 0 <= i && i <= mid) -> (mid : Int where mid <= j) -> (j : Int where j <= hi) -> (hi : Int where hi <= T.length src) -> (out : Int where out == i + j - mid) -> (r : Transient a where T.length r == T.length dst)
 mergeRuns fn src dst i mid j hi out =
     if lt i mid then
         if lt j hi then

@@ -43,7 +43,7 @@ new : (n : Nat) -> (r : Transient where Bytes.Transient.length r == n)
 
 
 @prim("bt_set_u8")
-setU8 : (t : Transient) -> (i : Int where 0 <= i && i < Bytes.Transient.length t) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
+setU8 : (moved t : Transient) -> (i : Int where 0 <= i && i < Bytes.Transient.length t) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
 
 
 {-| The length the transient was made with, the checker's measure for it, so

@@ -364,7 +364,7 @@ f64ToF32 : Float -> Float32
 f32Bits : Float32 -> UInt32
 
 
-setWord16 : Bool -> (t : Transient) -> (o : Int where 0 <= o && o <= Bytes.Transient.length t - 2) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
+setWord16 : Bool -> (moved t : Transient) -> (o : Int where 0 <= o && o <= Bytes.Transient.length t - 2) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
 setWord16 isLE t o n =
   if isLE then
     Bytes.Transient.setU8 (Bytes.Transient.setU8 t o (band n 255)) (o + 1) (band (ushr n 8) 255)
@@ -372,7 +372,7 @@ setWord16 isLE t o n =
     Bytes.Transient.setU8 (Bytes.Transient.setU8 t o (band (ushr n 8) 255)) (o + 1) (band n 255)
 
 
-setWord32 : Bool -> (t : Transient) -> (o : Int where 0 <= o && o <= Bytes.Transient.length t - 4) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
+setWord32 : Bool -> (moved t : Transient) -> (o : Int where 0 <= o && o <= Bytes.Transient.length t - 4) -> Int -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
 setWord32 isLE t o n =
   if isLE then
     Bytes.Transient.setU8 (Bytes.Transient.setU8 (Bytes.Transient.setU8 (Bytes.Transient.setU8 t o (band n 255)) (o + 1) (band (ushr n 8) 255)) (o + 2) (band (ushr n 16) 255)) (o + 3) (ushr n 24)
@@ -380,7 +380,7 @@ setWord32 isLE t o n =
     Bytes.Transient.setU8 (Bytes.Transient.setU8 (Bytes.Transient.setU8 (Bytes.Transient.setU8 t o (ushr n 24)) (o + 1) (band (ushr n 16) 255)) (o + 2) (band (ushr n 8) 255)) (o + 3) (band n 255)
 
 
-write : Encoder -> Transient -> Int -> Transient
+write : Encoder -> (moved mb : Transient) -> Int -> Transient
 write builder mb offset =
   if offset < 0 then
     mb
@@ -430,7 +430,7 @@ write builder mb offset =
         if primLength bs <= Bytes.Transient.length mb - offset then primSetBytes mb offset bs else mb
 
 
-writeSequence : Array Encoder -> Transient -> Int -> Transient
+writeSequence : Array Encoder -> (moved mb : Transient) -> Int -> Transient
 writeSequence builders mb offset =
   Array.foldl
     (\builder acc ->
@@ -493,11 +493,11 @@ primNewOrCrash : (n : Int) -> (r : Transient where Bytes.Transient.length r == n
 
 
 @prim("bt_set_bytes")
-primSetBytes : (t : Transient) -> (i : Nat) -> (b : Bytes where Bytes.length b <= Bytes.Transient.length t - i) -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
+primSetBytes : (moved t : Transient) -> (i : Nat) -> (b : Bytes where Bytes.length b <= Bytes.Transient.length t - i) -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
 
 
 @prim("bt_to_bytes")
-primToBytes : (t : Transient) -> (r : Bytes where Bytes.length r == Bytes.Transient.length t)
+primToBytes : (moved t : Transient) -> (r : Bytes where Bytes.length r == Bytes.Transient.length t)
 
 
 @prim("bytes_length")

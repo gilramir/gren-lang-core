@@ -237,7 +237,7 @@ array (Decoder run) =
         )
 
 
-arrayHelp : (Json.Value.Value -> Result Error a) -> Array Value -> Int -> Int -> Builder a -> Result Error (Array a)
+arrayHelp : (Json.Value.Value -> Result Error a) -> Array Value -> Int -> Int -> (moved acc : Builder a) -> Result Error (Array a)
 arrayHelp run items i count acc =
     if i >= count then
         Ok (Builder.toArray acc)
@@ -342,7 +342,7 @@ keyValuePairs (Decoder run) =
         )
 
 
-pairsHelp : (Json.Value.Value -> Result Error a) -> Array { key : String, value : Value } -> Int -> Int -> Builder { key : String, value : a } -> Result Error (Array { key : String, value : a })
+pairsHelp : (Json.Value.Value -> Result Error a) -> Array { key : String, value : Value } -> Int -> Int -> (moved acc : Builder { key : String, value : a }) -> Result Error (Array { key : String, value : a })
 pairsHelp run pairs i count acc =
     if i >= count then
         Ok (Builder.toArray acc)

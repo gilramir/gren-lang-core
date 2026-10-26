@@ -147,7 +147,7 @@ sequence results =
     sequenceHelp results 0 (Array.Transient.new (Array.length results))
 
 
-sequenceHelp : Array (Result err ok) -> Int -> Array.Builder.Builder ok -> Result err (Array ok)
+sequenceHelp : Array (Result err ok) -> Int -> (moved oks : Array.Builder.Builder ok) -> Result err (Array ok)
 sequenceHelp results idx oks =
     when Array.get idx results is
         Nothing ->
@@ -184,7 +184,7 @@ sequenceMap fn array =
     sequenceMapHelp fn array 0 (Array.Transient.new (Array.length array))
 
 
-sequenceMapHelp : (a -> Result err ok) -> Array a -> Int -> Array.Builder.Builder ok -> Result err (Array ok)
+sequenceMapHelp : (a -> Result err ok) -> Array a -> Int -> (moved oks : Array.Builder.Builder ok) -> Result err (Array ok)
 sequenceMapHelp fn array idx oks =
     when Array.get idx array is
         Nothing ->
