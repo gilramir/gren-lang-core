@@ -178,6 +178,7 @@ the screen while it is written.
 It costs a [`get`](#get) and a [`set`](#set), and what the function costs.
 
 -}
+@inline
 update : Int -> (a -> a) -> (moved builder : Builder a) -> Builder a
 update index f builder =
     let
@@ -482,10 +483,16 @@ slice from to builder =
             bound to len
     in
     if lo < hi then
-        toArray (copyRange builder lo hi (T.new (hi - lo)))
+        primSlice builder lo hi
 
     else
         []
+
+
+{-| One copy natively and on JavaScript, where a loop of `get` and `push` was
+a call an element (geng-lang `m4-visiterm.md` §VA16). -}
+@prim("tr_slice")
+primSlice : (t : Builder a) -> (from : Int where 0 <= from) -> (to : Int where from <= to && to <= T.length t) -> Array a
 
 
 {-| A second builder with the same elements and a buffer of its own, so that
