@@ -18,16 +18,14 @@ is the public face of it.
 ## Costs
 
 On JavaScript and natively a builder is a mutable buffer with the count of its
-elements, written in place while it is used linearly, each call given the
-builder the call before answered. A write in place keeps what it overwrote in
-the builder it was given, so every older builder still reads what it held
-(geng-lang `m4-visiterm.md` D903): a `get` on one finds its element within 32
-of the records, and past that the builder copies its elements once, O(n), and
-reads them at O(1) after. A write to an older builder, or to one `toArray`
-handed out, copies it first, O(n). So that the records do not pile up, the
-buffer is copied once in as many writes in place as it has room for elements,
-and natively once after each minor collection the builder has lived through,
-for a buffer of at most 1 MiB; both are O(1) amortized. On the BEAM a builder is the same persistent 32-way
+elements, written in place (geng-lang `m4-own.md` D976). A builder is used at
+most once: a call that writes it gives it up, and the compiler refuses a
+program that uses it again (D963), so each call is given the builder the call
+before answered and nothing can see what a write replaced. Where two are
+wanted, [`copy`](#copy) makes a second with a buffer of its own. Natively a
+buffer of pointers of at most 1 MiB is copied once after each minor collection
+the builder has lived through, so that the collector does not remember every
+element written into it; that is O(1) amortized. On the BEAM a builder is the same persistent 32-way
 tree an `Array` becomes, where a push, `set` or `get` costs O(log₃₂ n), at most
 about five steps, however the builder is used, and `toArray` builds a tuple.
 Each cost is per call, n being the builder's length.
@@ -35,18 +33,15 @@ Each cost is per call, n being the builder's length.
 [`append`](#append), [`setMany`](#setMany), [`fill`](#fill) and
 [`copyWithin`](#copyWithin) write a run of m elements in one call (geng-lang
 `m4-visiterm.md` D904): on JavaScript and natively one builder and O(m), where
-a loop of `pushLast` or `set` makes a builder an element. A run written in place
-keeps the elements it replaced, as a `set` keeps one, so an older builder still
-reads what it held; those m count toward the copy once in as many elements as
-the buffer has room for.
+a loop of `pushLast` or `set` is m calls.
 
 [`update`](#update) and [`swap`](#swap) take an element out of a builder
 while it is written, and [`moveWithin`](#moveWithin) moves elements and says
 what is left where they were (geng-lang `m4-unique.md` D913). They are for a
 builder of builders, or of other values written in place: written with them,
 an element has one owner while it is out, where one taken out with `get` and
-put back with `set` has two, the builder still holding it. Today each costs
-what the `get` and `set` it is made of cost.
+put back with `set` has two, the builder still holding it, which the compiler
+refuses. Each costs what the `get` and `set` it is made of cost.
 
 [`slice`](#slice) and [`copy`](#copy) only look at the builder they are
 given, and copy what they answer out of it, O(n) (geng-lang `m4-own.md`
@@ -109,9 +104,7 @@ fromArray : Array a -> Builder a
 
 {-| Add a single element to a [Builder](#Builder).
 
-It costs O(1) amortized on JavaScript and natively when the builder is the one
-the call before answered, and O(n) otherwise, where it copies; on the BEAM it
-costs O(log n), onto any version.
+It costs O(1) amortized on JavaScript and natively, and O(log n) on the BEAM.
 
 -}
 pushLast : a -> (moved builder : Builder a) -> Builder a
@@ -145,9 +138,8 @@ the index is out of bounds. A negative index counts back from the end, as in
         |> toArray
         == [ 9, 2 ]
 
-It costs O(1) amortized on JavaScript and natively when the builder is the one
-the call before answered, and O(n) otherwise, where it copies, and O(log n) on
-the BEAM, so a loop of builder sets is linear on every target where a loop of
+It costs O(1) amortized on JavaScript and natively, and O(log n) on the BEAM,
+so a loop of builder sets is linear on every target where a loop of
 [`Array.set`](Array#set) copies the array at each step on JavaScript and
 natively (geng-lang `m3-cost.md` D753).
 
@@ -244,9 +236,8 @@ end, and elements that go past the end make the builder longer.
         |> toArray
         == [ 1, 2, 3, 8, 9 ]
 
-It costs O(m) for an array of m elements on JavaScript and natively when the
-builder is the one the call before answered, and O(n + m) otherwise, where it
-copies; O(m log n) on the BEAM.
+It costs O(m) for an array of m elements on JavaScript and natively, and
+O(m log n) on the BEAM.
 
 -}
 setMany : Int -> Array a -> (moved builder : Builder a) -> Builder a
@@ -411,9 +402,7 @@ bound index len =
 bounds. A negative index counts back from the end, as in
 [`Array.get`](Array#get).
 
-It costs O(1) on JavaScript and natively on the builder the call before
-answered, and on an older one at most 32 steps, or a copy once, O(n) (see
-Costs); O(log n) on the BEAM.
+It costs O(1) on JavaScript and natively, and O(log n) on the BEAM.
 
 -}
 get : Int -> Builder a -> Maybe a
@@ -534,9 +523,7 @@ copyRange b i to acc =
 
 {-| Converts a [Builder](#Builder) to an `Array`.
 
-It costs O(1) on JavaScript and natively on the builder the call before
-answered, handing over the builder's buffer, after which a write to that
-builder, or a second `toArray` of it, copies, O(n); O(n) on an older builder;
+It costs O(1) on JavaScript and natively, handing over the builder's buffer,
 and O(n) on the BEAM, where it builds a tuple; so a loop that calls `toArray` at every step is
 quadratic on every target, and should read the builder with [`get`](#get) and
 [`length`](#length) instead.
