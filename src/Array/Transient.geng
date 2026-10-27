@@ -7,6 +7,7 @@ module Array.Transient exposing
     , length
     , fill
     , copyWithin
+    , rotate
     , generate
     )
 
@@ -22,7 +23,7 @@ buffer with no record of what it replaced (D976).
 
 `fill`, `copyWithin` and `generate` are D904's and D905's (geng-lang
 `m4-visiterm.md` §VA11): one call and one transient where a loop of `push` or
-`set` was a call an element.
+`set` was a call an element. `rotate` is D991's (§VA20).
 
 `tr_from_array`, `tr_to_array` and `tr_set_array` are not here, because they mention `Array`,
 which imports this module. `Array` and `Array.Builder` each declare them where
@@ -73,6 +74,14 @@ where the two runs overlap, as JavaScript's `copyWithin` does.
 -}
 @prim("tr_copy_within")
 copyWithin : (moved t : Transient a) -> (to : Int where 0 <= to) -> (from : Int where 0 <= from) -> (n : Int where 0 <= n && to <= Array.Transient.length t - n && from <= Array.Transient.length t - n) -> (r : Transient a where Array.Transient.length r == Array.Transient.length t)
+
+
+{-| The `n` elements from `from` turned `by` places toward the start, those
+that pass it coming back in at the end, so that each element is in one place
+afterwards.
+-}
+@prim("tr_rotate")
+rotate : (moved t : Transient a) -> (from : Int where 0 <= from) -> (n : Int where 0 <= n && from <= Array.Transient.length t - n) -> (by : Int where 0 < by && by < n) -> (r : Transient a where Array.Transient.length r == Array.Transient.length t)
 
 
 {-| `f first` to `f (first + n - 1)` pushed, in that order, the sum wrapping as

@@ -4,7 +4,7 @@ module Array.Builder exposing
     , pushLast, append
     , set, get, length
     , update, swap
-    , setMany, fill, copyWithin, moveWithin
+    , setMany, fill, copyWithin, moveWithin, rotate
     , slice, copy, toArray
     )
 
@@ -42,6 +42,9 @@ builder of builders, or of other values written in place: written with them,
 an element has one owner while it is out, where one taken out with `get` and
 put back with `set` has two, the builder still holding it, which the compiler
 refuses. Each costs what the `get` and `set` it is made of cost.
+[`rotate`](#rotate) turns a run of elements in one call, so that each is in
+one place afterwards with nothing left behind (geng-lang `m4-visiterm.md`
+D991): a region of a builder of rows scrolled.
 
 [`slice`](#slice) and [`copy`](#copy) only look at the builder they are
 given, and copy what they answer out of it, O(n) (geng-lang `m4-own.md`
@@ -50,7 +53,7 @@ builders, where [`toArray`](#toArray) would take it.
 
 @docs Builder, empty, fromArray, pushLast, append, set, get, length
 @docs update, swap
-@docs setMany, fill, copyWithin, moveWithin
+@docs setMany, fill, copyWithin, moveWithin, rotate
 @docs slice, copy, toArray
 
 -}
@@ -371,6 +374,56 @@ moveWithin at from to vacated builder =
 
         else
             moved
+
+    else
+        builder
+
+
+{-| Turn the elements from the first index up to, but not including, the
+second, by the given number of places toward the start: those that pass the
+start come back in at the end, so each element is in one place afterwards
+and nothing is copied over. A negative number turns them toward the end. The
+indexes count back from the end when negative and stop at the ends, as
+[`slice`](#slice)'s do, and the builder's length does not change.
+
+    fromArray [ 1, 2, 3, 4, 5 ]
+        |> rotate 1 4 1
+        |> toArray
+        == [ 1, 3, 4, 2, 5 ]
+
+    fromArray [ 1, 2, 3, 4, 5 ]
+        |> rotate 0 5 -2
+        |> toArray
+        == [ 4, 5, 1, 2, 3 ]
+
+It is how a region of a builder of rows scrolls, the row that leaves at one
+end being the one that comes in at the other, where
+[`moveWithin`](#moveWithin) would need a value to leave behind. It costs O(m)
+for m elements turned on JavaScript and natively, with no allocation
+natively, and O(m log n) on the BEAM.
+
+-}
+rotate : Int -> Int -> Int -> (moved builder : Builder a) -> Builder a
+rotate from to by builder =
+    let
+        len =
+            T.length builder
+
+        lo =
+            bound from len
+
+        count =
+            bound to len - lo
+
+        places =
+            if count > 0 then
+                modBy count by
+
+            else
+                0
+    in
+    if 0 < places && places < count then
+        T.rotate builder lo count places
 
     else
         builder

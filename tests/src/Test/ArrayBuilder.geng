@@ -188,6 +188,25 @@ tests =
             , test "moveWithin up, overlapping" <| \{} -> Builder.fromArray [ 1, 2, 3, 4, 5 ] |> Builder.moveWithin 0 1 5 0 |> Builder.toArray |> Expect.equalArrays [ 2, 3, 4, 5, 0 ]
             , test "moveWithin onto itself" <| \{} -> Builder.fromArray [ 1, 2, 3 ] |> Builder.moveWithin 1 1 3 0 |> Builder.toArray |> Expect.equalArrays [ 1, 2, 3 ]
             , test "moveWithin cut at the end" <| \{} -> Builder.fromArray [ 1, 2, 3, 4, 5 ] |> Builder.moveWithin 3 0 5 0 |> Builder.toArray |> Expect.equalArrays [ 0, 0, 3, 1, 2 ]
+            , test "rotate one toward the start" <| \{} -> Builder.fromArray [ 1, 2, 3, 4, 5 ] |> Builder.rotate 1 4 1 |> Builder.toArray |> Expect.equalArrays [ 1, 3, 4, 2, 5 ]
+            , test "rotate toward the end" <| \{} -> Builder.fromArray [ 1, 2, 3, 4, 5 ] |> Builder.rotate 0 5 -2 |> Builder.toArray |> Expect.equalArrays [ 4, 5, 1, 2, 3 ]
+            , test "rotate by more than the run" <| \{} -> Builder.fromArray [ 1, 2, 3, 4, 5 ] |> Builder.rotate 0 3 4 |> Builder.toArray |> Expect.equalArrays [ 2, 3, 1, 4, 5 ]
+            , test "rotate by the whole run" <| \{} -> Builder.fromArray [ 1, 2, 3 ] |> Builder.rotate 0 3 3 |> Builder.toArray |> Expect.equalArrays [ 1, 2, 3 ]
+            , test "rotate by none" <| \{} -> Builder.fromArray [ 1, 2, 3 ] |> Builder.rotate 0 3 0 |> Builder.toArray |> Expect.equalArrays [ 1, 2, 3 ]
+            , test "rotate -1, an index from the end" <| \{} -> Builder.fromArray [ 1, 2, 3, 4, 5 ] |> Builder.rotate 2 -1 1 |> Builder.toArray |> Expect.equalArrays [ 1, 2, 4, 3, 5 ]
+            , test "rotate past both ends" <| \{} -> Builder.fromArray [ 1, 2, 3 ] |> Builder.rotate -9 9 1 |> Builder.toArray |> Expect.equalArrays [ 2, 3, 1 ]
+            , test "rotate, the ends crossed" <| \{} -> Builder.fromArray [ 1, 2, 3 ] |> Builder.rotate 2 1 1 |> Builder.toArray |> Expect.equalArrays [ 1, 2, 3 ]
+            , test "rotate a builder it pushed" <| \{} -> Builder.empty 4 |> Builder.pushLast 1 |> Builder.pushLast 2 |> Builder.pushLast 3 |> Builder.rotate 0 3 1 |> Builder.toArray |> Expect.equalArrays [ 2, 3, 1 ]
+            , test "rotate a long run every way" <| \{} ->
+                -- 38 elements from 2: the C holds the front (1, 16), the back
+                -- (37) or neither (17, 19, 20) on its stack (D991)
+                [ 1, 16, 17, 19, 20, 37 ]
+                    |> Array.map (\by -> Builder.fromArray (Array.range 1 40) |> Builder.rotate 2 40 by |> Builder.toArray)
+                    |> Expect.equal
+                        (Array.map
+                            (\by -> [ 1, 2 ] ++ Array.range (3 + by) 40 ++ Array.range 3 (2 + by))
+                            [ 1, 16, 17, 19, 20, 37 ]
+                        )
             , test "slice" <| \{} -> Builder.fromArray [ 1, 2, 3, 4, 5 ] |> Builder.slice 1 3 |> Expect.equalArrays [ 2, 3 ]
             , test "slice -1" <| \{} -> Builder.fromArray [ 1, 2, 3, 4, 5 ] |> Builder.slice 1 -1 |> Expect.equalArrays [ 2, 3, 4 ]
             , test "slice past both ends" <| \{} -> Builder.fromArray [ 1, 2, 3 ] |> Builder.slice -9 9 |> Expect.equalArrays [ 1, 2, 3 ]
@@ -375,8 +394,9 @@ tests =
 
 {-| One write chosen by `w`, made on the builder and, by definitions of its
 own, on the array: a set, a `setMany`, a `fill`, a `copyWithin`, a push, an
-`append`, an `update`, a `swap`, a `moveWithin`, a `copy`, or a `slice` made a
-builder again, at indexes from 3 before the start to 3 past the end. -}
+`append`, an `update`, a `swap`, a `moveWithin`, a `copy`, a `slice` made a
+builder again, or a `rotate` by -10 to 10 places, at indexes from 3 before the
+start to 3 past the end. -}
 runWrite : Int -> (moved state : { builder : Builder.Builder Int, array : Array Int }) -> { builder : Builder.Builder Int, array : Array Int }
 runWrite w { builder, array } =
     let
@@ -389,7 +409,7 @@ runWrite w { builder, array } =
         value =
             1000 + modBy 1000 w
     in
-    when modBy 11 w is
+    when modBy 12 w is
         0 ->
             { builder = Builder.set (at 6) value builder, array = Array.set (at 6) value array }
 
@@ -423,6 +443,13 @@ runWrite w { builder, array } =
 
         9 ->
             { builder = Builder.fromArray (Builder.slice (at 6) (at 60) builder), array = Array.slice (at 6) (at 60) array }
+
+        10 ->
+            let
+                by =
+                    modBy 21 (w // 13) - 10
+            in
+            { builder = Builder.rotate (at 6) (at 60) by builder, array = rotateOf (at 6) (at 60) by array }
 
         _ ->
             { builder = Builder.append [ value, value + 1 ] builder, array = array ++ [ value, value + 1 ] }
@@ -483,6 +510,34 @@ copyWithinOf at from to array =
                 x
         )
         array
+
+
+{-| The run from `from` up to `to`, as `slice` reads them, turned `by` places
+toward the start. -}
+rotateOf : Int -> Int -> Int -> Array a -> Array a
+rotateOf from to by array =
+    let
+        len =
+            Array.length array
+
+        lo =
+            boundOf from len
+
+        count =
+            boundOf to len - lo
+    in
+    if count <= 0 then
+        array
+
+    else
+        let
+            k =
+                modBy count by
+
+            run =
+                Array.slice lo (lo + count) array
+        in
+        Array.slice 0 lo array ++ Array.slice k count run ++ Array.slice 0 k run ++ Array.slice (lo + count) len array
 
 
 updateOf : Int -> (a -> a) -> Array a -> Array a
