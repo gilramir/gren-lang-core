@@ -462,7 +462,10 @@ rotate from to by builder =
             bound to len - lo
 
         places =
-            if count > 0 then
+            if 0 <= by && by < count then
+                by
+
+            else if count > 0 then
                 modBy count by
 
             else
