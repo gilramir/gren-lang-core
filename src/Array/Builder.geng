@@ -502,9 +502,12 @@ bound index len =
 bounds. A negative index counts back from the end, as in
 [`Array.get`](Array#get).
 
-It costs O(1) on JavaScript and natively, and O(log n) on the BEAM.
+It costs O(1) on JavaScript and natively, and O(log n) on the BEAM. It is
+inlined, so a caller that matches the answer takes its branch with no `Just`
+built (geng-lang `m4-visiterm.md` §VA26, D998).
 
 -}
+@inline
 get : Int -> Builder a -> Maybe a
 get index builder =
     let
