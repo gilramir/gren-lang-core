@@ -1,5 +1,6 @@
 module Test.Bytes exposing (tests)
 
+import Array.Builder as Builder
 import Bytes exposing (Bytes)
 import Bytes.Decode as BD
 import Bytes.Encode
@@ -7,6 +8,7 @@ import Expect
 import Fuzz
 import Int8
 import Test exposing (..)
+import UInt8
 
 
 encodeInt : Int -> Bytes
@@ -72,6 +74,26 @@ tests =
                 Expect.equal
                     [ Err 0, Err 1, Ok (Bytes.fromString "\u{10FFFF}") ]
                     [ Bytes.fromCodePoints [ 0x110000 ], Bytes.fromCodePoints [ 0x41, -1 ], Bytes.fromCodePoints [ 0x10FFFF ] ]
+            , fuzz (Fuzz.array (Fuzz.intRange 0 255)) "fromUInt8s is the bytes encoded one at a time (m4-visiterm.md D1018)" <| \values ->
+                Expect.equal
+                    (Bytes.Encode.encode (Bytes.Encode.sequence (Array.map (\v -> Bytes.Encode.unsignedInt8 (UInt8.fromInt v)) values)))
+                    (Bytes.fromUInt8s (Array.map UInt8.fromInt values))
+            , fuzz2 (Fuzz.array (Fuzz.intRange 0 255)) (Fuzz.intRange 0 40) "fromUInt8s of a builder's array, and of a slice of one" <| \values cut ->
+                let
+                    pushed =
+                        Array.foldl (\v b -> Builder.pushLast (UInt8.fromInt v) b) (Builder.empty 4) values
+                            |> Builder.toArray
+
+                    expected =
+                        Array.map UInt8.fromInt values
+                in
+                Expect.equal
+                    [ Bytes.fromUInt8s expected, Bytes.fromUInt8s (Array.slice cut (Array.length expected) expected) ]
+                    [ Bytes.fromUInt8s pushed, Bytes.fromUInt8s (Array.slice cut (Array.length pushed) pushed) ]
+            , test "fromUInt8s of nothing is empty, and keeps 0 and 255" <| \{} ->
+                Expect.equal
+                    [ Bytes.empty, Bytes.fromString "\u{0000}", Bytes.Encode.encode (Bytes.Encode.unsignedInt8 (UInt8.fromInt 255)) ]
+                    [ Bytes.fromUInt8s [], Bytes.fromUInt8s [ UInt8.fromInt 0 ], Bytes.fromUInt8s [ UInt8.fromInt 255 ] ]
             , test "toHexString empty" <| \{} ->
                 Expect.equal
                     ""

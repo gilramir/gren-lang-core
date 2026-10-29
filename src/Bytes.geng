@@ -9,6 +9,7 @@ module Bytes exposing
   --
   , fromString
   , fromCodePoints
+  , fromUInt8s
   , toString
   , toStringLossy
   , toHexString
@@ -392,6 +393,22 @@ fromCodePoints codePoints =
 
   else
     Err (-2 - size)
+
+
+{-| Bytes holding the given bytes, in order.
+
+    fromUInt8s [ UInt8.fromInt 0x68, UInt8.fromInt 0x69 ] == fromString "hi"
+
+With [`Array.Builder`](Array-Builder) it makes `Bytes` a piece at a time: push
+each byte onto a `Builder UInt8`, which grows in place, then make the `Bytes`
+once from its array.
+
+It costs O(n), one copy (geng-lang `m4-visiterm.md` D1018).
+
+-}
+fromUInt8s : Array UInt8 -> Bytes
+fromUInt8s bytes =
+  primFromArray bytes
 
 
 {-| The UTF-8 length of the code points from `index` on added to `sum`; -1
@@ -1021,6 +1038,10 @@ primArrGet : (arr : Array Bytes) -> (i : Int where 0 <= i && i < Array.length ar
 
 @prim("arr_get")
 primCodePointAt : (arr : Array Int) -> (i : Int where 0 <= i && i < Array.length arr) -> Int
+
+
+@prim("bytes_from_array")
+primFromArray : Array UInt8 -> Bytes
 
 
 @prim("bytes_slice")
