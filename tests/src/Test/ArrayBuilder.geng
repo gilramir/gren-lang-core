@@ -207,6 +207,24 @@ tests =
                             (\by -> [ 1, 2 ] ++ Array.range (3 + by) 40 ++ Array.range 3 (2 + by))
                             [ 1, 16, 17, 19, 20, 37 ]
                         )
+            , test "rotate 8-byte items by one either way" <| \{} ->
+                -- a String and a Float are 8 bytes natively, and a turn by
+                -- one of them either way holds it in a word (D1015)
+                let
+                    turned by =
+                        [ 1, 2 ] ++ Array.range (3 + by) 40 ++ Array.range 3 (2 + by)
+                in
+                { strings =
+                    [ 1, 37, -1 ]
+                        |> Array.map (\by -> Builder.fromArray (Array.map String.fromInt (Array.range 1 40)) |> Builder.rotate 2 40 by |> Builder.toArray)
+                , floats =
+                    [ 1, 37, -1 ]
+                        |> Array.map (\by -> Builder.fromArray (Array.map toFloat (Array.range 1 40)) |> Builder.rotate 2 40 by |> Builder.toArray)
+                }
+                    |> Expect.equal
+                        { strings = Array.map (\by -> Array.map String.fromInt (turned by)) [ 1, 37, 37 ]
+                        , floats = Array.map (\by -> Array.map toFloat (turned by)) [ 1, 37, 37 ]
+                        }
             , test "slice" <| \{} -> Builder.fromArray [ 1, 2, 3, 4, 5 ] |> Builder.slice 1 3 |> Expect.equalArrays [ 2, 3 ]
             , test "slice -1" <| \{} -> Builder.fromArray [ 1, 2, 3, 4, 5 ] |> Builder.slice 1 -1 |> Expect.equalArrays [ 2, 3, 4 ]
             , test "slice past both ends" <| \{} -> Builder.fromArray [ 1, 2, 3 ] |> Builder.slice -9 9 |> Expect.equalArrays [ 1, 2, 3 ]
