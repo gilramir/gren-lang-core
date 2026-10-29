@@ -543,19 +543,24 @@ actualIndex index builder =
     let
         len =
             T.length builder
-
-        actual =
-            if index < 0 then
-                len + index
-
-            else
-                index
     in
-    if actual < 0 || actual >= len then
-        -1
+    if index >= 0 then
+        if index < len then
+            index
+
+        else
+            -1
 
     else
-        actual
+        let
+            actual =
+                len + index
+        in
+        if actual >= 0 then
+            actual
+
+        else
+            -1
 
 
 {-| A fresh array of the elements from the first index up to, but not
