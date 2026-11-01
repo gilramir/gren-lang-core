@@ -1,6 +1,6 @@
 module Array.Builder exposing
     ( Builder
-    , empty, fromArray
+    , empty, repeat, fromArray
     , pushLast, append, appendSlice
     , set, get, length
     , update, swap
@@ -54,7 +54,7 @@ builders, where [`toArray`](#toArray) would take it.
 one call, with no array between them (geng-lang `m4-visiterm.md` D996): a
 row of a builder of rows read out onto a page.
 
-@docs Builder, empty, fromArray, pushLast, append, appendSlice, set, get, length
+@docs Builder, empty, repeat, fromArray, pushLast, append, appendSlice, set, get, length
 @docs update, swap
 @docs setMany, fill, copyWithin, moveWithin, rotate
 @docs slice, copy, toArray
@@ -95,6 +95,30 @@ empty capacity =
 maxHint : Int
 maxHint =
     65536
+
+
+{-| Creates a [Builder](#Builder) of `n` copies of a value, as
+[`Array.repeat`](Array#repeat) makes an array of them.
+
+    repeat 3 0
+        |> set 1 7
+        |> toArray
+        == [ 0, 7, 0 ]
+
+It costs O(n), written in one call, and its first write costs O(1): where
+`fromArray (Array.repeat n x)` makes the array and then copies it at the
+first write, this makes the builder alone. A ring of cells made again at
+each resize of a terminal was those two copies (visiterm `vt-core.md`
+§VC35). A negative `n` is an empty builder.
+
+-}
+repeat : Int -> a -> Builder a
+repeat n value =
+    if n <= 0 then
+        T.new 0
+
+    else
+        T.fill (T.new 0) 0 n value
 
 
 {-| Creates a [Builder](#Builder) based on an existing `Array`.
