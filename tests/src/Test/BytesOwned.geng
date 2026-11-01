@@ -1,0 +1,84 @@
+module Test.BytesOwned exposing (tests)
+
+{-| `Bytes.Owned` (geng-lang `m4-owned-pages.md` D1031), held to `Bytes` and
+`Array`: each owned value is made from a builder and read back as `Bytes`.
+-}
+
+import Array
+import Array.Builder as Builder exposing (Builder)
+import Basics exposing (..)
+import Bytes exposing (Bytes)
+import Bytes.Owned as Owned exposing (Owned)
+import Expect
+import Fuzz
+import Maybe exposing (Maybe(..))
+import Test exposing (..)
+import UInt8
+
+
+bytesOf : Array Int -> Array UInt8
+bytesOf values =
+    Array.map UInt8.fromInt values
+
+
+ownedOf : Array Int -> Owned
+ownedOf values =
+    Owned.fromBuilder (Array.foldl (\v b -> Builder.pushLast (UInt8.fromInt v) b) (Builder.empty 4) values)
+
+
+everyByte : Int -> Owned -> Array UInt8 -> Array UInt8
+everyByte i o acc =
+    if i < 0 || i >= Owned.length o then
+        acc
+
+    else
+        everyByte (i + 1) o (Array.pushLast (Owned.getAt i o) acc)
+
+
+byteValues : Fuzz.Fuzzer (Array Int)
+byteValues =
+    Fuzz.array (Fuzz.intRange 0 255)
+
+
+tests : Test
+tests =
+    describe "Bytes.Owned (m4-owned-pages.md D1031)"
+        [ fuzz byteValues "fromBuilder holds a builder's bytes, in order, as fromUInt8s does" <| \values ->
+            Expect.equal (Bytes.fromUInt8s (bytesOf values)) (Owned.toBytes (ownedOf values))
+        , fuzz byteValues "fromBuilder of a builder made from an array" <| \values ->
+            Expect.equal (Bytes.fromUInt8s (bytesOf values)) (Owned.toBytes (Owned.fromBuilder (Builder.fromArray (bytesOf values))))
+        , fuzz byteValues "length" <| \values ->
+            Expect.equal (Array.length values) (Owned.length (ownedOf values))
+        , fuzz2 byteValues (Fuzz.intRange -3 300) "get is Bytes.get" <| \values index ->
+            Expect.equal (Bytes.get index (Bytes.fromUInt8s (bytesOf values))) (Owned.get index (ownedOf values))
+        , fuzz byteValues "getAt reads every byte get does" <| \values ->
+            Expect.equal (bytesOf values) (everyByte 0 (ownedOf values) [])
+        , fuzz3 byteValues (Fuzz.intRange -40 40) (Fuzz.intRange -40 40) "appendTo is Array.slice's range pushed onto the builder" <| \values from to ->
+            let
+                prefix =
+                    [ UInt8.fromInt 9, UInt8.fromInt 8 ]
+            in
+            Expect.equal
+                (Bytes.fromUInt8s (prefix ++ Array.slice from to (bytesOf values)))
+                (Owned.toBytes (Owned.fromBuilder (Owned.appendTo from to (ownedOf values) (Builder.fromArray prefix))))
+        , fuzz2 byteValues (Fuzz.intRange -5 300) "takeFirst is Array.takeFirst of a count, none for one below 0" <| \values n ->
+            Expect.equal (Bytes.fromUInt8s (Array.takeFirst (max 0 n) (bytesOf values))) (Owned.toBytes (Owned.takeFirst n (ownedOf values)))
+        , test "an empty builder makes empty bytes, which read nothing" <| \{} ->
+            let
+                o =
+                    Owned.fromBuilder (Builder.empty 0)
+            in
+            Expect.equal { length = 0, get = Nothing, bytes = Bytes.empty } { length = Owned.length o, get = Owned.get 0 o, bytes = Owned.toBytes o }
+        , test "toBytes is a copy: the owned value read after it, then shortened" <| \{} ->
+            let
+                o =
+                    ownedOf [ 1, 2, 3, 4 ]
+
+                copied =
+                    Owned.toBytes o
+
+                short =
+                    Owned.takeFirst 1 o
+            in
+            Expect.equal [ Bytes.fromUInt8s (bytesOf [ 1, 2, 3, 4 ]), Bytes.fromUInt8s (bytesOf [ 1 ]) ] [ copied, Owned.toBytes short ]
+        ]

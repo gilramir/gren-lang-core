@@ -8,6 +8,7 @@ import Test.ArrayBuilder as ArrayBuilder
 import Test.Basics as Basics
 import Test.Bitwise as Bitwise
 import Test.Bytes as Bytes
+import Test.BytesOwned as BytesOwned
 import Test.Char as Char
 import Test.CodeGen as CodeGen
 import Test.Dict as Dict
@@ -36,6 +37,7 @@ main =
             , Basics.tests
             , Bitwise.tests
             , Bytes.tests
+            , BytesOwned.tests
             , Char.tests
             , CodeGen.tests
             , Dict.tests

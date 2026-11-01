@@ -1,0 +1,220 @@
+module Bytes.Owned exposing
+    ( Owned
+    , fromBuilder
+    , length, get, getAt
+    , appendTo, takeFirst
+    , toBytes
+    )
+
+{-| Bytes with one owner: made once from a builder, then only read, and given
+back to the allocator where they are dropped (geng-lang `m4-owned-pages.md`
+D1031).
+
+A [`Bytes`](Bytes#Bytes) is shared: a slice is a view of what it was cut
+from, and anything may keep one, so nothing can show that some bytes are no
+longer needed until the collector looks. An `Owned` is affine, as a
+[`Builder`](Array-Builder#Builder) is: it is held in one place, a function
+that only reads it borrows it, and the compiler refuses a program that uses
+it after handing it on. So where one is used for the last time, natively the
+compiler gives its bytes back there, as it gives back a dropped builder's
+buffer (`docs/user/memory.md`).
+
+    import Array.Builder as Builder
+    import Bytes.Owned as Owned exposing (Owned)
+    import UInt8
+
+    page : Owned
+    page =
+        Builder.empty 3
+            |> Builder.pushLast (UInt8.fromInt 0x68)
+            |> Builder.pushLast (UInt8.fromInt 0x69)
+            |> Owned.fromBuilder
+
+    Owned.length page == 2
+
+Nothing takes a `Bytes` view out of one: [`toBytes`](#toBytes) copies,
+natively, and the other reads answer a byte or a length, or copy a range onto
+a builder ([`appendTo`](#appendTo)).
+
+## Costs
+
+An `Owned` is laid out as `Bytes` is: a `DataView` on JavaScript, a binary on
+the BEAM, and natively a length and a pointer to a block of its own. Reading a
+byte or the length is O(1) everywhere. On JavaScript and the BEAM a drop does
+nothing and the collector frees it, as it frees `Bytes`.
+
+@docs Owned, fromBuilder, length, get, getAt, appendTo, takeFirst, toBytes
+
+-}
+
+import Array.Builder exposing (Builder)
+import Array.Transient as T
+import Basics exposing (..)
+import Bytes exposing (Bytes)
+import Maybe exposing (Maybe(..))
+
+
+{-| Bytes with one owner. Used at most once, as a builder is: a function that
+only reads it borrows it (geng-lang `m4-own.md` D921, D928).
+-}
+@affine
+type Owned
+    = Owned
+
+
+{-| The bytes a builder holds, in order, at their exact length.
+
+The builder is taken, and natively its buffer goes back to the allocator at
+once, so a page written a byte at a time and then made `Owned` holds its
+bytes once.
+
+It costs O(n), one copy.
+
+-}
+fromBuilder : (moved builder : Builder UInt8) -> Owned
+fromBuilder builder =
+    primFromBuilder builder
+
+
+{-| The number of bytes.
+
+It costs O(1).
+
+-}
+length : Owned -> Int
+length owned =
+    primLength owned
+
+
+{-| The byte at an index, or `Nothing` if it is outside the bytes. A negative
+index is outside them.
+
+It costs O(1).
+
+-}
+get : Int -> Owned -> Maybe UInt8
+get index owned =
+    if index >= 0 && index < primLength owned then
+        Just (primGetU8 owned index)
+
+    else
+        Nothing
+
+
+{-| The byte at an index that is inside the bytes, which the compiler proves
+of every call.
+
+It costs O(1), with no test of the index.
+
+-}
+getAt : (index : Int where 0 <= index && index < Bytes.Owned.length owned) -> (owned : Owned) -> UInt8
+getAt index owned =
+    primGetU8 owned index
+
+
+{-| The bytes from `from` up to, but not including, `to`, pushed onto the
+builder, by [`Array.slice`](Array#slice)'s rule for the two indexes: a
+negative one counts from the end, each is clamped to the bytes, and crossed
+ones push nothing. The owned bytes are only read.
+
+    appendTo 1 3 page builder
+
+It is how a range of one owned value is copied into the next one written:
+push onto a builder, then [`fromBuilder`](#fromBuilder).
+
+It costs O(m) for m bytes, copied in at once on JavaScript and natively, and
+pushed one by one on the BEAM, O(m log n).
+
+-}
+appendTo : Int -> Int -> Owned -> (moved builder : Builder UInt8) -> Builder UInt8
+appendTo from to owned builder =
+    let
+        len =
+            primLength owned
+
+        lo =
+            bound from len
+
+        hi =
+            bound to len
+    in
+    if lo < hi then
+        primAppendTo builder owned lo hi
+
+    else
+        builder
+
+
+{-| The first `n` bytes, which it takes: none when `n` is 0 or less, and all
+of them when `n` is the length or more.
+
+It costs O(1): natively the bytes stay where they are, and the block keeps
+its length until it is given back.
+
+-}
+takeFirst : Int -> (moved owned : Owned) -> Owned
+takeFirst n owned =
+    primTakeFirst owned (bound (max 0 n) (primLength owned))
+
+
+{-| A `Bytes` of the same bytes, which may be kept anywhere.
+
+It costs O(n) natively, a copy, since the owned bytes may be given back while
+the `Bytes` lives. On JavaScript and the BEAM, where nothing gives them back,
+it is the same value and costs O(1).
+
+-}
+toBytes : Owned -> Bytes
+toBytes owned =
+    primToBytes owned
+
+
+{-| An index as [`Array.slice`](Array#slice) takes one: a negative one counts
+back from the end, and one past either end stops there.
+-}
+bound : Int -> (len : Nat) -> (r : Int where 0 <= r && r <= len)
+bound index len =
+    if index < 0 then
+        let
+            fromEnd =
+                len + index
+        in
+        if fromEnd < 0 then
+            0
+
+        else
+            fromEnd
+
+    else if len < index then
+        len
+
+    else
+        index
+
+
+
+-- PRIMITIVES (D1031)
+
+
+@prim("bo_from_builder")
+primFromBuilder : (moved t : Builder UInt8) -> Owned
+
+
+@prim("bo_length")
+primLength : Owned -> Int
+
+
+@prim("bo_get_u8")
+primGetU8 : (o : Owned) -> (i : Int where 0 <= i && i < Bytes.Owned.length o) -> UInt8
+
+
+@prim("bo_append_to")
+primAppendTo : (moved t : Builder UInt8) -> (o : Owned) -> (from : Int where 0 <= from && from <= to) -> (to : Int where to <= Bytes.Owned.length o) -> Builder UInt8
+
+
+@prim("bo_take_first")
+primTakeFirst : (moved o : Owned) -> (n : Int where 0 <= n && n <= Bytes.Owned.length o) -> (r : Owned where Bytes.Owned.length r == n)
+
+
+@prim("bo_to_bytes")
+primToBytes : (o : Owned) -> (r : Bytes where Bytes.length r == Bytes.Owned.length o)
