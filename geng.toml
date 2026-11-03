@@ -11,6 +11,7 @@ runtime = "any"
 [modules.exposed]
 "Bytes" = [
     "Bytes",
+    "Bytes.Builder",
     "Bytes.Encode",
     "Bytes.Decode",
     "Bytes.Owned",
