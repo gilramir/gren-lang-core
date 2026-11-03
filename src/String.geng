@@ -379,21 +379,17 @@ splitHelp sep sepEnd string (Offset start) acc =
 
     join "/" [ "home", "evan", "Desktop" ] == "home/evan/Desktop"
 
-It costs O(n) in the length of the result. Natively and on the BEAM it appends
-each piece onto the one before in place; on JavaScript it writes runs of short
-pieces flat and puts a piece of 64 characters or more onto a rope as it is, so
-`join "" [ acc, piece ]` in a loop is linear there too.
+It costs O(n) in the length of the result. Natively and on the BEAM it sums
+the pieces' lengths and copies each piece once into a string of that size; on
+JavaScript it writes runs of short pieces flat and puts a piece of 64
+characters or more onto a rope as it is, so `join "" [ acc, piece ]` in a loop
+is linear there too.
 
 -}
 @externPure(js, "String", "join")
 join : String -> Array String -> String
 join sep strings =
-    when Array.popFirst strings is
-        Nothing ->
-            ""
-
-        Just { first, rest } ->
-            Array.foldl (\string acc -> primAppend (primAppend acc sep) string) first rest
+    primJoin sep strings
 
 
 {-| Break a string into words, splitting on chunks of whitespace.
@@ -2065,6 +2061,11 @@ primFoldr : String -> b -> (Char -> b -> b) -> b
 
 @prim("str_from_codepoints")
 primFromCodepoints : Array Char -> String
+
+
+-- D1052 (geng-lang m4-memory-proofs.md §MP11): sized before it is made.
+@prim("str_join")
+primJoin : String -> Array String -> String
 
 
 @prim("f64_from_decimal")
