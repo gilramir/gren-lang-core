@@ -1,14 +1,16 @@
 module Source exposing
     ( Source
     , new, next, close
+    , emit, deliver, Closed(..)
     )
 
 {-| A mailbox that events arrive in and a `Task` reads.
 
-This is how a long-lived event stream reaches a Geng program: **the host pushes
-and Geng pulls** (`ffi.md` F4, D71). A package that owns a subscription takes a
-`Source` from its caller and its implementation emits into it; the program reads
-with [`next`](#next) in an ordinary loop.
+This is how a long-lived event stream reaches a Geng program: **the host and
+Geng push, and Geng pulls** (`ffi.md` F4, D71, D1081). A package that owns a
+subscription takes a `Source` from its caller and its implementation emits into
+it; Geng code emits with [`emit`](#emit) or [`deliver`](#deliver); the program
+reads with [`next`](#next) in an ordinary loop.
 
     printTicks : Int -> Task x {}
     printTicks count =
@@ -66,11 +68,12 @@ array on JavaScript, a ring of slots that doubles when full natively, and on
 the BEAM an Erlang process of its own holding an Erlang `queue`, so reading one
 there is a message to that process and an answer back. Costs are per call.
 
-@docs Source, new, next, close
+@docs Source, new, next, close, emit, deliver, Closed
 
 -}
 
 import Array exposing (Array)
+import Basics exposing ((|>), Bool)
 import Maybe exposing (Maybe)
 import Task exposing (Task)
 import Task.Internal
@@ -124,6 +127,65 @@ It costs O(1), and it answers a parked reader `Nothing`.
 @prim("source_close")
 close : Source msg -> Task x {}
 
+
+{-| Put an event into a source, for its reader. Emitting into a closed source
+does nothing, as it does for an extern: a source is closed by its reader as
+often as by whatever feeds it, so an event that comes after is usually a race
+the emitter cannot see, not its mistake (D1080). Use [`deliver`](#deliver)
+where a closed source would be a mistake.
+
+The emitter does not wait for the reader, and one process's events arrive in
+the order it emitted them.
+
+It costs O(1): on JavaScript a push onto the queue, natively a ring buffer's
+write, and on the BEAM a message to the source's process.
+
+-}
+@prim("source_emit")
+emit : Source msg -> msg -> Task x {}
+
+
+{-| Why [`deliver`](#deliver) failed: the source had been closed, so its
+reader will not see the event.
+-}
+type Closed
+    = Closed
+
+
+{-| Put an event into a source, or fail with `Closed` if the source has been
+closed (D1080).
+
+Success means the event is queued, and a closed source still answers what is
+queued before `next` answers `Nothing`, so a reader that reads to the end sees
+it.
+
+It costs what [`emit`](#emit) does, and on the BEAM a message back from the
+source's process as well, since that process is what knows it is closed.
+
+-}
+deliver : Source msg -> msg -> Task Closed {}
+deliver source event =
+    deliverPrim source event
+        |> Task.andThen
+            (\taken ->
+                if taken then
+                    Task.succeed {}
+
+                else
+                    Task.fail Closed
+            )
+
+
+-- THE PRIMITIVE BEHIND `deliver`
+
+
+{-| `source_deliver` answers whether the source took the event, and `deliver`
+makes `False` its `Closed` failure here, for the reason `source_next` answers an
+array: the primitive's JavaScript is emitted by the backend, and a constructor
+built there would be one the linker had no reason to keep (D254).
+-}
+@prim("source_deliver")
+deliverPrim : Source msg -> msg -> Task x Bool
 
 
 -- THE PRIMITIVE BEHIND `next`
