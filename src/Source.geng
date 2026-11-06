@@ -7,7 +7,7 @@ module Source exposing
 {-| A mailbox that events arrive in and a `Task` reads.
 
 This is how a long-lived event stream reaches a Geng program: **the host and
-Geng push, and Geng pulls** (`ffi.md` F4, D71, D1081). A package that owns a
+Geng push, and Geng pulls** (`ffi.md` F4, D71, D1101). A package that owns a
 subscription takes a `Source` from its caller and its implementation emits into
 it; Geng code emits with [`emit`](#emit) or [`deliver`](#deliver); the program
 reads with [`next`](#next) in an ordinary loop.
@@ -131,7 +131,7 @@ close : Source msg -> Task x {}
 {-| Put an event into a source, for its reader. Emitting into a closed source
 does nothing, as it does for an extern: a source is closed by its reader as
 often as by whatever feeds it, so an event that comes after is usually a race
-the emitter cannot see, not its mistake (D1080). Use [`deliver`](#deliver)
+the emitter cannot see, not its mistake (D1100). Use [`deliver`](#deliver)
 where a closed source would be a mistake.
 
 The emitter does not wait for the reader, and one process's events arrive in
@@ -153,7 +153,7 @@ type Closed
 
 
 {-| Put an event into a source, or fail with `Closed` if the source has been
-closed (D1080).
+closed (D1100).
 
 Success means the event is queued, and a closed source still answers what is
 queued before `next` answers `Nothing`, so a reader that reads to the end sees
