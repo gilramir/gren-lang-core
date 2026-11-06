@@ -1,7 +1,7 @@
 module Bytes.Owned exposing
     ( Owned
     , fromBuilder
-    , length, get, getAt
+    , length, get, getProven
     , appendTo, takeFirst
     , toBytes
     )
@@ -43,7 +43,7 @@ the BEAM, and natively a length and a pointer to a block of its own. Reading a
 byte or the length is O(1) everywhere. On JavaScript and the BEAM a drop does
 nothing and the collector frees it, as it frees `Bytes`.
 
-@docs Owned, fromBuilder, length, get, getAt, appendTo, takeFirst, toBytes
+@docs Owned, fromBuilder, length, get, getProven, appendTo, takeFirst, toBytes
 
 -}
 
@@ -107,8 +107,8 @@ of every call.
 It costs O(1), with no test of the index.
 
 -}
-getAt : (index : Int where 0 <= index && index < Bytes.Owned.length owned) -> (owned : Owned) -> UInt8
-getAt index owned =
+getProven : (index : Int where 0 <= index && index < Bytes.Owned.length owned) -> (owned : Owned) -> UInt8
+getProven index owned =
     primGetU8 owned index
 
 

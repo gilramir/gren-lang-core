@@ -2,7 +2,7 @@ module Array exposing
     ( Array
     , singleton, initialize, repeat, range
     , map, indexedMap, foldl, foldr, indexedFoldl, indexedFoldr, keepIf, indexedKeepIf, mapAndKeepJust, reverse
-    , isEmpty, length, get, getAt, findFirst, findLast, member, any, all, minimum, maximum
+    , isEmpty, length, get, getProven, findFirst, findLast, member, any, all, minimum, maximum
     , set, setMany, update, insert, insertMany, remove, removeMany, pushFirst, pushLast, splice
     , prepend, append, flatten, mapAndFlatten, intersperse, map2, map3
     , first, last, slice, dropFirst, dropLast, takeFirst, takeLast, popFirst, popLast, partition
@@ -41,7 +41,7 @@ call, n being the array's length.
 
 ## Query
 
-@docs isEmpty, length, get, getAt, first, last, findFirst, findLast, member, any, all, minimum, maximum
+@docs isEmpty, length, get, getProven, first, last, findFirst, findLast, member, any, all, minimum, maximum
 
 
 ## Modify
@@ -383,7 +383,7 @@ get index array =
 
 {-| Retrieve the element at an index that is inside the array.
 
-    getAt 1 [ 1, 2, 3 ] == 2
+    getProven 1 [ 1, 2, 3 ] == 2
 
 The index is refined: a program is built only when every call is shown to give
 an index from 0 up to the array's length, and one where that cannot be shown is
@@ -397,8 +397,8 @@ of the index.
 
 -}
 @inline
-getAt : (i : Int where 0 <= i && i < Array.length array) -> (array : Array a) -> a
-getAt i array =
+getProven : (i : Int where 0 <= i && i < Array.length array) -> (array : Array a) -> a
+getProven i array =
     unsafeGet array i
 
 

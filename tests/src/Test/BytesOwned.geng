@@ -32,7 +32,7 @@ everyByte i o acc =
         acc
 
     else
-        everyByte (i + 1) o (Array.pushLast (Owned.getAt i o) acc)
+        everyByte (i + 1) o (Array.pushLast (Owned.getProven i o) acc)
 
 
 byteValues : Fuzz.Fuzzer (Array Int)
@@ -51,7 +51,7 @@ tests =
             Expect.equal (Array.length values) (Owned.length (ownedOf values))
         , fuzz2 byteValues (Fuzz.intRange -3 300) "get is Bytes.get" <| \values index ->
             Expect.equal (Bytes.get index (Bytes.fromUInt8s (bytesOf values))) (Owned.get index (ownedOf values))
-        , fuzz byteValues "getAt reads every byte get does" <| \values ->
+        , fuzz byteValues "getProven reads every byte get does" <| \values ->
             Expect.equal (bytesOf values) (everyByte 0 (ownedOf values) [])
         , fuzz3 byteValues (Fuzz.intRange -40 40) (Fuzz.intRange -40 40) "appendTo is Array.slice's range pushed onto the builder" <| \values from to ->
             let

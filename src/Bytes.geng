@@ -14,14 +14,14 @@ module Bytes exposing
   , toStringLossy
   , toHexString
   , toHexStringChecked
-  , toHexStringAt
+  , toHexStringProven
   , toStringLossyChecked
   --
   , flatten
   , flattenChecked
   --
   , get
-  , getAt
+  , getProven
   , slice
   )
 
@@ -43,13 +43,13 @@ byte. Each cost is per call, n being the length in bytes.
 @docs Endianness, getHostEndianness
 
 ## Strings
-@docs fromString, fromCodePoints, toString, toStringLossy, toStringLossyChecked, toHexString, toHexStringChecked, toHexStringAt
+@docs fromString, fromCodePoints, toString, toStringLossy, toStringLossyChecked, toHexString, toHexStringChecked, toHexStringProven
 
 ## Combine
 @docs flatten, flattenChecked
 
 ## Reading
-@docs get, getAt, slice
+@docs get, getProven, slice
 
 -}
 
@@ -163,7 +163,7 @@ get index bytes =
 
 {-| The byte at an index that is inside the bytes.
 
-    getAt 0 (fromString "abc") == 97
+    getProven 0 (fromString "abc") == 97
 
 The index is refined: a program is built only when every call is shown to give
 an index from 0 up to the length of the bytes, and one where that cannot be
@@ -174,8 +174,8 @@ that counts up from 0; elsewhere [`get`](#get) answers `Nothing`.
 It costs O(1), with no test of the index.
 
 -}
-getAt : (index : Int where 0 <= index && index < Bytes.length bytes) -> (bytes : Bytes) -> UInt8
-getAt index bytes =
+getProven : (index : Int where 0 <= index && index < Bytes.length bytes) -> (bytes : Bytes) -> UInt8
+getProven index bytes =
   primGetU8 bytes index
 
 
@@ -624,7 +624,7 @@ A `String` longer than 2^31 − 1 bytes, which no `String` can be, is past
 715,827,882 bytes with `padding` and 1,073,741,823 without. It ends the program
 with a message naming the limit, as running out of memory would;
 [`toHexStringChecked`](#toHexStringChecked) answers `Nothing` instead, and
-[`toHexStringAt`](#toHexStringAt) is for `Bytes` the checker knows are short
+[`toHexStringProven`](#toHexStringProven) is for `Bytes` the checker knows are short
 enough (geng-lang `m4-refine.md` §RF32, D863).
 
 It costs O(n).
@@ -668,11 +668,11 @@ toHexStringChecked { padding } bytes =
 at most 715,827,882 long, which it proves at each call, so that it cannot reach
 the limit: a call where it cannot is refused when the program is built.
 
-    toHexStringAt { padding = True } (fromString "Hi") == "48 69"
+    toHexStringProven { padding = True } (fromString "Hi") == "48 69"
 
 -}
-toHexStringAt : { padding : Bool } -> (bytes : Bytes where Bytes.length bytes <= 715827882) -> String
-toHexStringAt { padding } bytes =
+toHexStringProven : { padding : Bool } -> (bytes : Bytes where Bytes.length bytes <= 715827882) -> String
+toHexStringProven { padding } bytes =
   let
     count =
       primLength bytes
