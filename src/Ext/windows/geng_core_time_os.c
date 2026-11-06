@@ -4,7 +4,7 @@
  *
  * The zone's name is `TZ`'s where it is set, as on Linux. Otherwise it is
  * Windows' zone ("Pacific Standard Time") named as IANA names it, from
- * CLDR's table (`geng_core_time_zones.c`, D1094): the row for the user's
+ * CLDR's table (`geng_core_time_zones.c`, Dnene3): the row for the user's
  * country if there is one, else the zone's default. A zone the table does
  * not hold, or one whose daylight saving the user has turned off, which no
  * IANA name describes, is answered by its offset, which is `getZoneName`'s
