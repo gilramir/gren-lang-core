@@ -816,7 +816,10 @@ like `Europe/Moscow` or `America/Havana`. From there you can look it up in any
 IANA data you loaded yourself.
 
 It costs one query of the host: `Intl.DateTimeFormat` on JavaScript, and
-natively `TZ`, the `/etc/localtime` link or `/etc/timezone`.
+natively `TZ`, the `/etc/localtime` link or `/etc/timezone`. On Windows,
+without `TZ`, it is Windows' zone named as IANA names it, from CLDR's table,
+and an offset where the table has no name or the user has turned daylight
+saving off (geng-lang `m4-windows.md` D1094).
 
 -}
 getZoneName : Task x ZoneName

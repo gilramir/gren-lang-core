@@ -1,12 +1,14 @@
-/* `Time`'s rows that ask Windows (D499; geng-lang docs/m4-windows.md §WN14):
- * the monotonic clock in milliseconds, the local offset in minutes, and a
- * zone's name from `TZ`.
+/* `Time`'s rows that ask Windows (D499; geng-lang docs/m4-windows.md §WN14,
+ * §WN24): the monotonic clock in milliseconds, the local offset in minutes,
+ * and the zone's name.
  *
- * Windows names its zones itself ("Pacific Standard Time"), not as the IANA
- * database does, and the IANA name a Windows zone is needs a table, which
- * Windows has only in its ICU (Windows 10 1903 and later). Until that is
- * measured on Windows (§WN9), a zone with no `TZ` is answered by its offset,
- * which is `getZoneName`'s answer on Linux too when it finds no name. */
+ * The zone's name is `TZ`'s where it is set, as on Linux. Otherwise it is
+ * Windows' zone ("Pacific Standard Time") named as IANA names it, from
+ * CLDR's table (`geng_core_time_zones.c`, D1094): the row for the user's
+ * country if there is one, else the zone's default. A zone the table does
+ * not hold, or one whose daylight saving the user has turned off, which no
+ * IANA name describes, is answered by its offset, which is `getZoneName`'s
+ * answer on Linux too when it finds no name. */
 
 #define WIN32_LEAN_AND_MEAN
 
@@ -53,13 +55,64 @@ static geng_bytes *text(const char *s, size_t n) {
     return b;
 }
 
+typedef struct {
+    const char *windows;
+    const char *territory;
+    const char *iana;
+} geng_core_zone;
+
+extern const geng_core_zone geng_core_zones[];
+extern const int geng_core_zone_count;
+
+/* The table's name for Windows' zone `key` in `territory`, else its default,
+ * else NULL. */
+static const char *iana_name(const char *key, const char *territory) {
+    const char *fallback = NULL;
+    for (int i = 0; i < geng_core_zone_count; i++) {
+        const geng_core_zone *z = &geng_core_zones[i];
+        if (strcmp(z->windows, key) != 0) continue;
+        if (strcmp(z->territory, territory) == 0) return z->iana;
+        if (strcmp(z->territory, "001") == 0) fallback = z->iana;
+    }
+    return fallback;
+}
+
+/* The user's country as two letters, or "001", which no row but a default
+ * has. */
+static void user_territory(char out[3]) {
+    wchar_t iso[3];
+    GEOID geo = GetUserGeoID(GEOCLASS_NATION);
+    if (geo != GEOID_NOT_AVAILABLE && GetGeoInfoW(geo, GEO_ISO2, iso, 3, 0) == 3
+        && iso[0] >= L'A' && iso[0] <= L'Z' && iso[1] >= L'A' && iso[1] <= L'Z') {
+        out[0] = (char) iso[0];
+        out[1] = (char) iso[1];
+        out[2] = 0;
+        return;
+    }
+    memcpy(out, "001", 3);
+}
+
 static geng_bytes *zone_name(void) {
     const char *tz = getenv("TZ");
     if (tz != NULL && tz[0] != 0) {
         if (tz[0] == ':') tz++;
         return text(tz, strlen(tz));
     }
-    return NULL;
+    DYNAMIC_TIME_ZONE_INFORMATION info;
+    if (GetDynamicTimeZoneInformation(&info) == TIME_ZONE_ID_INVALID) return NULL;
+    if (info.DynamicDaylightTimeDisabled && info.DaylightDate.wMonth != 0) return NULL;
+    /* The keys are ASCII, and no longer than the field. */
+    char key[sizeof info.TimeZoneKeyName / sizeof info.TimeZoneKeyName[0]];
+    size_t n = 0;
+    for (; n + 1 < sizeof key && info.TimeZoneKeyName[n] != 0; n++) {
+        if (info.TimeZoneKeyName[n] > 0x7E) return NULL;
+        key[n] = (char) info.TimeZoneKeyName[n];
+    }
+    key[n] = 0;
+    char territory[4];
+    user_territory(territory);
+    const char *name = iana_name(key, territory);
+    return name != NULL ? text(name, strlen(name)) : NULL;
 }
 
 geng_cancel geng_core_time_getZoneName(void *name, void *name_adapter, void *offset, void *offset_adapter,
