@@ -2,7 +2,7 @@ module Array.Builder exposing
     ( Builder
     , empty, repeat, fromArray
     , pushLast, append, appendSlice
-    , set, get, length
+    , set, get, getProven, length
     , update, swap
     , setMany, fill, copyWithin, moveWithin, rotate
     , slice, copy, toArray
@@ -54,7 +54,7 @@ builders, where [`toArray`](#toArray) would take it.
 one call, with no array between them (geng-lang `m4-visiterm.md` D996): a
 row of a builder of rows read out onto a page.
 
-@docs Builder, empty, repeat, fromArray, pushLast, append, appendSlice, set, get, length
+@docs Builder, empty, repeat, fromArray, pushLast, append, appendSlice, set, get, getProven, length
 @docs update, swap
 @docs setMany, fill, copyWithin, moveWithin, rotate
 @docs slice, copy, toArray
@@ -82,7 +82,7 @@ it needs to, and a hint above 65,536 is taken as 65,536.
 It costs O(1): the hint is taken as at most 65,536.
 
 -}
-empty : Int -> Builder a
+empty : Int -> (r : Builder a where Array.Builder.length r == 0)
 empty capacity =
     -- A hint is a guess, and may come from input: honoured whole, 2^31 - 1
     -- asked a native program for 16 GB at the first push, and made node's
@@ -112,7 +112,7 @@ each resize of a terminal was those two copies (visiterm `vt-core.md`
 §VC35). A negative `n` is an empty builder.
 
 -}
-repeat : Int -> a -> Builder a
+repeat : (n : Int) -> a -> (r : Builder a where (n <= 0 && Array.Builder.length r == 0) || (0 < n && Array.Builder.length r == n))
 repeat n value =
     if n <= 0 then
         T.new 0
@@ -129,7 +129,7 @@ is a tree already costs O(1).
 
 -}
 @prim("tr_from_array")
-fromArray : Array a -> Builder a
+fromArray : (array : Array a) -> (r : Builder a where Array.Builder.length r == Array.length array)
 
 
 {-| Add a single element to a [Builder](#Builder).
@@ -137,7 +137,7 @@ fromArray : Array a -> Builder a
 It costs O(1) amortized on JavaScript and natively, and O(log n) on the BEAM.
 
 -}
-pushLast : a -> (moved builder : Builder a) -> Builder a
+pushLast : a -> (moved builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder + 1)
 pushLast value builder =
     T.push builder value
 
@@ -148,7 +148,7 @@ It costs O(m) for an array of m elements, copied in at once on JavaScript and
 natively, and pushed one by one on the BEAM, O(m log n).
 
 -}
-append : Array a -> (moved builder : Builder a) -> Builder a
+append : (array : Array a) -> (moved builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder + Array.length array)
 append array builder =
     primSetArray builder (T.length builder) array
 
@@ -217,7 +217,7 @@ so a loop of builder sets is linear on every target where a loop of
 natively (geng-lang `m3-cost.md` D753).
 
 -}
-set : Int -> a -> (moved builder : Builder a) -> Builder a
+set : Int -> a -> (moved builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
 set index value builder =
     let
         at =
@@ -252,7 +252,7 @@ It costs a [`get`](#get) and a [`set`](#set), and what the function costs.
 
 -}
 @inline
-update : Int -> (a -> a) -> (moved builder : Builder a) -> Builder a
+update : Int -> (a -> a) -> (moved builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
 update index f builder =
     let
         at =
@@ -279,7 +279,7 @@ take the element out, leaving a placeholder, write it, and `set` it back.
 It costs a [`get`](#get) and a [`set`](#set).
 
 -}
-swap : Int -> a -> (moved builder : Builder a) -> { old : Maybe a, builder : Builder a }
+swap : Int -> a -> (moved builder : Builder a) -> (r : { old : Maybe a, builder : Builder a } where Array.Builder.length r.builder == Array.Builder.length builder)
 swap index value builder =
     let
         at =
@@ -332,7 +332,7 @@ not change.
 It costs O(m) for m elements written, on the terms [`setMany`](#setMany) has.
 
 -}
-fill : Int -> Int -> a -> (moved builder : Builder a) -> Builder a
+fill : Int -> Int -> a -> (moved builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
 fill from to value builder =
     let
         len =
@@ -372,7 +372,7 @@ does not change.
 It costs O(m) for m elements copied, on the terms [`setMany`](#setMany) has.
 
 -}
-copyWithin : Int -> Int -> Int -> (moved builder : Builder a) -> Builder a
+copyWithin : Int -> Int -> Int -> (moved builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
 copyWithin at from to builder =
     let
         len =
@@ -412,7 +412,7 @@ It costs a [`copyWithin`](#copyWithin) and a [`fill`](#fill) of what was
 left.
 
 -}
-moveWithin : Int -> Int -> Int -> a -> (moved builder : Builder a) -> Builder a
+moveWithin : Int -> Int -> Int -> a -> (moved builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
 moveWithin at from to vacated builder =
     let
         len =
@@ -473,7 +473,7 @@ for m elements turned on JavaScript and natively, with no allocation
 natively, and O(m log n) on the BEAM.
 
 -}
-rotate : Int -> Int -> Int -> (moved builder : Builder a) -> Builder a
+rotate : Int -> Int -> Int -> (moved builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
 rotate from to by builder =
     let
         len =
@@ -556,6 +556,22 @@ It costs O(1).
 length : Builder a -> Int
 length builder =
     T.length builder
+
+
+{-| Get the element at the given index, an index the compiler has proved is
+inside the builder (geng-lang `m4-refine-t1.md` TO10), as
+[`Array.getProven`](Array#getProven) does for an array. Use it where a test
+the program makes anyway keeps the index in range; elsewhere [`get`](#get)
+answers `Nothing` outside the builder. A negative index is not counted from
+the end, as it is by `get`.
+
+It costs O(1), and O(log n) on the BEAM, with no test of the index.
+
+-}
+@inline
+getProven : (i : Int where 0 <= i && i < Array.Builder.length builder) -> (builder : Builder a) -> a
+getProven i builder =
+    T.get builder i
 
 
 {-| The index a negative one counts back to, or -1 when it is outside the
@@ -671,4 +687,4 @@ quadratic on every target, and should read the builder with [`get`](#get) and
 
 -}
 @prim("tr_to_array")
-toArray : (moved builder : Builder a) -> Array a
+toArray : (moved builder : Builder a) -> (r : Array a where Array.length r == Array.Builder.length builder)
