@@ -1,6 +1,6 @@
 module Array exposing
     ( Array
-    , singleton, initialize, repeat, range
+    , singleton, initialize, repeat, range, rangeChecked
     , map, indexedMap, foldl, foldr, indexedFoldl, indexedFoldr, keepIf, indexedKeepIf, mapAndKeepJust, reverse
     , isEmpty, length, get, getProven, findFirst, findLast, member, any, all, minimum, maximum
     , set, setMany, update, insert, insertMany, remove, removeMany, pushFirst, pushLast, splice
@@ -31,7 +31,7 @@ call, n being the array's length.
 
 @docs Array
 
-@docs singleton, initialize, repeat, range
+@docs singleton, initialize, repeat, range, rangeChecked
 
 
 ## Transform
@@ -139,6 +139,11 @@ repeat n val =
     range 3 3 == [3]
     range 6 3 == []
 
+An array holds at most 2^31 − 1 elements. A range of more, such as
+`range 0 2147483647`, ends the program with a message naming the limit, as
+running out of memory would; [`rangeChecked`](#rangeChecked) answers `Nothing`
+instead (geng-lang `m4-refine.md` §RF41).
+
 It costs O(n) in the number of elements it makes.
 
 -}
@@ -150,8 +155,38 @@ range from to =
     else if from == to then
         [from]
 
-    else 
-        initialize (to - from + 1) from identity
+    else
+        let
+            -- The span wraps below 0 exactly when it is 2^31 or more, and at
+            -- 2^31 - 1 the count, one more, is past the limit too.
+            span =
+                to - from
+        in
+        if span < 0 || span == 2147483647 then
+            transientToArray (primNewOrCrash -1)
+
+        else
+            initialize (span + 1) from identity
+
+
+{-| [`range`](#range), or `Nothing` where the range is longer than an array can
+be, 2^31 − 1 elements.
+
+    rangeChecked 3 6 == Just [3, 4, 5, 6]
+    rangeChecked 0 2147483647 == Nothing
+
+-}
+rangeChecked : Int -> Int -> Maybe (Array Int)
+rangeChecked from to =
+    let
+        span =
+            to - from
+    in
+    if from < to && (span < 0 || span == 2147483647) then
+        Nothing
+
+    else
+        Just (range from to)
 
 
 -- TRANSFORM
@@ -1265,6 +1300,14 @@ compareFrom index a b =
 
 @prim("arr_get")
 unsafeGet : (arr : Array a) -> (i : Int where 0 <= i && i < Array.length arr) -> a
+
+
+{-| `Array.Transient.new` without its leniency: a count below 0 stands for one
+past 2^31 − 1, and the primitive ends the program with a message naming the
+limit, as `Bytes`' `bt_new` does (geng-lang `m4-refine.md` §RF41, Dnene5).
+-}
+@prim("tr_new_or_crash")
+primNewOrCrash : Int -> (r : Transient a where T.length r == 0)
 
 
 @prim("tr_from_array")
