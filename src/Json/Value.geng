@@ -326,6 +326,7 @@ The body is what every backend without a `js` row compiles, and what
 `GENG_EXTERN_BODIES=1` compiles on JavaScript: the fast path is never taken.
 -}
 @externPure(js, "Json", "parseWith")
+@externPure(erlang, "geng_core_json", "parse_with")
 parseWith : v -> (b -> v) -> (f -> v) -> (s -> v) -> (a -> v) -> (ks -> vs -> v) -> (v -> r) -> r -> String -> r
 parseWith _ _ _ _ _ _ _ notFound _ =
     notFound
@@ -1213,7 +1214,11 @@ type Work
 {-| JSON text for a value. `indent` is how many spaces each level is indented
 by, at most 10; below 1, the text is on one line. This is `JSON.stringify`'s
 layout, and a float is written as its `Number::toString` would be (D214).
+
+On the BEAM an `erlang` row writes the same text, a walk over the tree in
+Erlang (`m2-beam-toptier.md` §TT50, Dgmk4, which amends D227 there).
 -}
+@externPure(erlang, "geng_core_json", "encode")
 encode : Int -> Value -> String
 encode indent v =
     let
@@ -1378,7 +1383,12 @@ hexChar n =
 {-| ECMAScript's `Number::toString` layout over the shortest digits, which is
 what `JSON.stringify` writes: `100`, `1.5`, `1e+21`, `1e-7`. `NaN` and the
 infinities are `null`, and `-0` is `0`.
+
+On the BEAM an `erlang` row lays out OTP's shortest digits the same way, in
+one step where the body makes the digits, reads them back apart and lays
+them out (`m2-beam-toptier.md` §TT50, Dgmk3).
 -}
+@externPure(erlang, "geng_core_json", "number")
 number : Float -> String
 number f =
     if isNaN f || isInfinite f then
@@ -1463,6 +1473,7 @@ same Geng body, Ryu, for every backend without a `js` row.
 each other.
 -}
 @externPure(js, "String", "shortestDigits")
+@externPure(erlang, "geng_core_string", "shortest_digits")
 shortestDigits : Float -> String
 shortestDigits f =
     let
