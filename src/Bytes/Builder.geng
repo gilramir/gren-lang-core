@@ -8,7 +8,7 @@ module Bytes.Builder exposing
     , toBytes
     )
 
-{-| `Bytes` built a byte at a time, in place (geng-lang `m4-visiterm.md`
+{-| `Bytes` built a byte at a time, in place (geng-lang `m4-puritty.md`
 D1050).
 
 A `Builder` is a buffer of bytes and the count of them written, over the

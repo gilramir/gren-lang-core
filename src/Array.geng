@@ -99,7 +99,7 @@ In the above example, we create an array containing 3 integers
 starting at 5.
 
 It costs O(n), calling the function n times, and on JavaScript and natively
-allocates the array once (geng-lang `m4-visiterm.md` D905).
+allocates the array once (geng-lang `m4-puritty.md` D905).
 
 -}
 initialize : Int -> Int -> (Int -> a) -> Array a
@@ -120,7 +120,7 @@ initialize len offset fn =
     repeat 5 3 == [ 3, 3, 3, 3, 3 ]
 
 It costs O(n), one write of the value into each element on JavaScript and
-natively (geng-lang `m4-visiterm.md` D905).
+natively (geng-lang `m4-puritty.md` D905).
 
 -}
 repeat : Int -> a -> Array a
@@ -871,7 +871,7 @@ append fst second =
 
 It costs O(n) in the total length of the arrays, plus one step for each array,
 which on JavaScript and natively copies the array into the result at once
-(geng-lang `m4-visiterm.md` D905).
+(geng-lang `m4-puritty.md` D905).
 
 -}
 flatten : Array (Array a) -> Array a

@@ -1,7 +1,7 @@
 module Test.Grapheme exposing (tests)
 
 {-| `Unicode.Grapheme`, the walk a program carries from one piece of text to
-the next (geng-lang `m4-visiterm.md` D906). `corpus/accept/graphemes` holds the
+the next (geng-lang `m4-puritty.md` D906). `corpus/accept/graphemes` holds the
 rules to `GraphemeBreakTest.txt` through `String.graphemes`; these hold the
 walk itself, and the context the rules carry across a printable ASCII
 character, which `step` answers without a table.

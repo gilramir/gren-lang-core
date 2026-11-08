@@ -58,7 +58,7 @@ tests =
                 Expect.equal
                     "54 68 65 73 65 20 61 72 65 20 6d 79 20 f0 9f 98 8e 20 42 79 74 65 73"
                     (Bytes.toHexString { padding = True } (Bytes.fromString "These are my \u{1F60E} Bytes"))
-            , fuzz (Fuzz.array (Fuzz.intRange 0 0x10FFFF)) "fromCodePoints is fromString of the same characters (m4-visiterm.md D905)" <| \codePoints ->
+            , fuzz (Fuzz.array (Fuzz.intRange 0 0x10FFFF)) "fromCodePoints is fromString of the same characters (m4-puritty.md D905)" <| \codePoints ->
                 let
                     scalars =
                         Array.keepIf (\c -> c < 0xD800 || c > 0xDFFF) codePoints
@@ -74,7 +74,7 @@ tests =
                 Expect.equal
                     [ Err 0, Err 1, Ok (Bytes.fromString "\u{10FFFF}") ]
                     [ Bytes.fromCodePoints [ 0x110000 ], Bytes.fromCodePoints [ 0x41, -1 ], Bytes.fromCodePoints [ 0x10FFFF ] ]
-            , fuzz (Fuzz.array (Fuzz.intRange 0 255)) "fromUInt8s is the bytes encoded one at a time (m4-visiterm.md D1018)" <| \values ->
+            , fuzz (Fuzz.array (Fuzz.intRange 0 255)) "fromUInt8s is the bytes encoded one at a time (m4-puritty.md D1018)" <| \values ->
                 Expect.equal
                     (Bytes.Encode.encode (Bytes.Encode.sequence (Array.map (\v -> Bytes.Encode.unsignedInt8 (UInt8.fromInt v)) values)))
                     (Bytes.fromUInt8s (Array.map UInt8.fromInt values))

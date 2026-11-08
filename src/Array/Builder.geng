@@ -32,7 +32,7 @@ Each cost is per call, n being the builder's length.
 
 [`append`](#append), [`setMany`](#setMany), [`fill`](#fill) and
 [`copyWithin`](#copyWithin) write a run of m elements in one call (geng-lang
-`m4-visiterm.md` D904): on JavaScript and natively one builder and O(m), where
+`m4-puritty.md` D904): on JavaScript and natively one builder and O(m), where
 a loop of `pushLast` or `set` is m calls.
 
 [`update`](#update) and [`swap`](#swap) take an element out of a builder
@@ -43,7 +43,7 @@ an element has one owner while it is out, where one taken out with `get` and
 put back with `set` has two, the builder still holding it, which the compiler
 refuses. Each costs what the `get` and `set` it is made of cost.
 [`rotate`](#rotate) turns a run of elements in one call, so that each is in
-one place afterwards with nothing left behind (geng-lang `m4-visiterm.md`
+one place afterwards with nothing left behind (geng-lang `m4-puritty.md`
 D991): a region of a builder of rows scrolled.
 
 [`slice`](#slice) and [`copy`](#copy) only look at the builder they are
@@ -51,7 +51,7 @@ given, and copy what they answer out of it, O(n) (geng-lang `m4-own.md`
 D931): a copy that leaves the builder where it is, for a builder of
 builders, where [`toArray`](#toArray) would take it.
 [`appendSlice`](#appendSlice) copies a run of one builder onto another in
-one call, with no array between them (geng-lang `m4-visiterm.md` D996): a
+one call, with no array between them (geng-lang `m4-puritty.md` D996): a
 row of a builder of rows read out onto a page.
 
 @docs Builder, empty, repeat, fromArray, pushLast, append, appendSlice, set, get, getProven, length
@@ -108,7 +108,7 @@ maxHint =
 It costs O(n), written in one call, and its first write costs O(1): where
 `fromArray (Array.repeat n x)` makes the array and then copies it at the
 first write, this makes the builder alone. A ring of cells made again at
-each resize of a terminal was those two copies (visiterm `vt-core.md`
+each resize of a terminal was those two copies (puritty `vt-core.md`
 §VC35). A negative `n` is an empty builder.
 
 -}
@@ -531,7 +531,7 @@ bounds. A negative index counts back from the end, as in
 
 It costs O(1) on JavaScript and natively, and O(log n) on the BEAM. It is
 inlined, so a caller that matches the answer takes its branch with no `Just`
-built (geng-lang `m4-visiterm.md` §VA26, D998).
+built (geng-lang `m4-puritty.md` §VA26, D998).
 
 -}
 @inline
@@ -640,7 +640,7 @@ slice from to builder =
 
 
 {-| One copy natively and on JavaScript, where a loop of `get` and `push` was
-a call an element (geng-lang `m4-visiterm.md` §VA16). -}
+a call an element (geng-lang `m4-puritty.md` §VA16). -}
 @prim("tr_slice")
 primSlice : (t : Builder a) -> (from : Int where 0 <= from) -> (to : Int where from <= to && to <= T.length t) -> Array a
 

@@ -68,7 +68,7 @@ tests =
                     |> Expect.equalArrays [ 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47 ]
             ]
         -- These were tests of D903's older builders, which read what they held
-        -- (geng-lang m4-visiterm.md D903). A builder is used once now, and a
+        -- (geng-lang m4-puritty.md D903). A builder is used once now, and a
         -- program that reads one after writing it is refused (m4-own.md
         -- §OW27), so each older builder is a copy made first.
         , describe "a copy reads what it held (geng-lang m4-own.md D931)"
@@ -142,7 +142,7 @@ tests =
                     (Array.map (\v -> v.array) versions)
                     (Array.map (\v -> Builder.slice 0 (Builder.length v.builder) v.builder) versions)
             ]
-        , describe "setMany, fill and copyWithin (m4-visiterm.md D904)"
+        , describe "setMany, fill and copyWithin (m4-puritty.md D904)"
             [ test "setMany within" <| \{} -> Builder.fromArray [ 1, 2, 3, 4 ] |> Builder.setMany 1 [ 0, 0 ] |> Builder.toArray |> Expect.equalArrays [ 1, 0, 0, 4 ]
             , test "setMany past the end" <| \{} -> Builder.fromArray [ 1, 2, 3, 4 ] |> Builder.setMany 3 [ 8, 9 ] |> Builder.toArray |> Expect.equalArrays [ 1, 2, 3, 8, 9 ]
             , test "fill" <| \{} -> Builder.fromArray [ 1, 2, 3, 4 ] |> Builder.fill 1 3 0 |> Builder.toArray |> Expect.equalArrays [ 1, 0, 0, 4 ]

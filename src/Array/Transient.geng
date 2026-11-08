@@ -23,7 +23,7 @@ every program to that (geng-lang `m4-own.md` D963), and a write stores into the
 buffer with no record of what it replaced (D976).
 
 `fill`, `copyWithin` and `generate` are D904's and D905's (geng-lang
-`m4-visiterm.md` §VA11): one call and one transient where a loop of `push` or
+`m4-puritty.md` §VA11): one call and one transient where a loop of `push` or
 `set` was a call an element. `rotate` is D991's (§VA20), and `appendSlice`
 D996's (§VA24).
 

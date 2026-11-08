@@ -372,7 +372,7 @@ refuses too: one below 0 or past `0x10FFFF`, or a surrogate, `0xD800 ..
     fromCodePoints [ 0x48, 0xD800, -1 ] == Err 1
 
 It costs O(n), two passes over the array, and makes no `Char` or `String` on
-the way (geng-lang `m4-visiterm.md` D905). `Bytes` longer than 2^31 − 1 end
+the way (geng-lang `m4-puritty.md` D905). `Bytes` longer than 2^31 − 1 end
 the program with a message naming the limit, as [`flatten`](#flatten)'s do.
 
 -}
@@ -403,7 +403,7 @@ With [`Array.Builder`](Array-Builder) it makes `Bytes` a piece at a time: push
 each byte onto a `Builder UInt8`, which grows in place, then make the `Bytes`
 once from its array.
 
-It costs O(n), one copy (geng-lang `m4-visiterm.md` D1018).
+It costs O(n), one copy (geng-lang `m4-puritty.md` D1018).
 
 -}
 fromUInt8s : Array UInt8 -> Bytes
