@@ -146,7 +146,7 @@ withDefaultLazy default maybe =
 It costs one call of the function, or O(1) for `Nothing`.
 
 -}
-map : (a -> b) -> Maybe a -> Maybe b
+map : (a -> b) -> (maybe : Maybe a) -> (r : Maybe b where Maybe.isJust r == Maybe.isJust maybe)
 map f maybe =
     when maybe is
         Just value ->
