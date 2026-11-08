@@ -385,10 +385,10 @@ run :
     String
     -> Int
     -> Int
-    -> (moved stack : Stack)
+    -> (taken stack : Stack)
     -> Int
-    -> (moved elements : Builder Value)
-    -> (moved pairs : Builder { key : String, value : Value })
+    -> (taken elements : Builder Value)
+    -> (taken pairs : Builder { key : String, value : Value })
     -> String
     -> Int
     -> Bool
@@ -1606,7 +1606,7 @@ take count built acc =
                 { values = acc, left = built }
 
 
-toArray : Built h -> (moved acc : Builder h) -> Array h
+toArray : Built h -> (taken acc : Builder h) -> Array h
 toArray built acc =
     when built is
         Built { top, below } ->

@@ -61,7 +61,7 @@ empty n =
 
 
 {-| The low eight bits of `byte` written after the rest. -}
-pushLast : Int -> (moved b : Builder) -> Builder
+pushLast : Int -> (taken b : Builder) -> Builder
 pushLast byte (Builder b) =
     let
         buffer0 =
@@ -95,7 +95,7 @@ pushLast byte (Builder b) =
 {-| A code point written after the rest as UTF-8: one byte below 0x80, two
 below 0x800, three below 0x10000, else four. One above 0x10FFFF, or a
 surrogate, is written as U+FFFD, as `Bytes.fromString` would have it. -}
-pushCodePoint : Int -> (moved b : Builder) -> Builder
+pushCodePoint : Int -> (taken b : Builder) -> Builder
 pushCodePoint cp0 (Builder b) =
     let
         cp =
@@ -164,7 +164,7 @@ pushCodePoint cp0 (Builder b) =
 
 
 {-| The bytes of `bytes` written after the rest. -}
-append : Bytes -> (moved b : Builder) -> Builder
+append : Bytes -> (taken b : Builder) -> Builder
 append bytes (Builder b) =
     let
         n =
@@ -193,7 +193,7 @@ length (Builder b) =
 
 
 {-| The bytes written. -}
-toBytes : (moved b : Builder) -> Bytes
+toBytes : (taken b : Builder) -> Bytes
 toBytes (Builder b) =
     let
         count =
@@ -207,7 +207,7 @@ its bytes copied into a buffer twice the size it needs, at most 2^31 − 1;
 a builder that would pass that ends the program with a message naming the
 limit, as `Bytes.flatten` does (D863). Its tests are on locals and written
 not to wrap, so that the checker proves each of them. -}
-roomFor : Int -> (moved b : State) -> State
+roomFor : Int -> (taken b : State) -> State
 roomFor n b =
     let
         buffer =
@@ -252,8 +252,8 @@ primNewOrCrash : (n : Int) -> (r : Transient where Bytes.Transient.length r == n
 
 
 @prim("bt_set_bytes")
-primSetBytes : (moved t : Transient) -> (i : Nat) -> (b : Bytes where Bytes.length b <= Bytes.Transient.length t - i) -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
+primSetBytes : (taken t : Transient) -> (i : Nat) -> (b : Bytes where Bytes.length b <= Bytes.Transient.length t - i) -> (r : Transient where Bytes.Transient.length r == Bytes.Transient.length t)
 
 
 @prim("bt_to_bytes")
-primToBytes : (moved t : Transient) -> (r : Bytes where Bytes.length r == Bytes.Transient.length t)
+primToBytes : (taken t : Transient) -> (r : Bytes where Bytes.length r == Bytes.Transient.length t)

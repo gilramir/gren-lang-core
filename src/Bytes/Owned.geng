@@ -71,7 +71,7 @@ bytes once.
 It costs O(n), one copy.
 
 -}
-fromBuilder : (moved builder : Builder UInt8) -> Owned
+fromBuilder : (taken builder : Builder UInt8) -> Owned
 fromBuilder builder =
     primFromBuilder builder
 
@@ -126,7 +126,7 @@ It costs O(m) for m bytes, copied in at once on JavaScript and natively, and
 pushed one by one on the BEAM, O(m log n).
 
 -}
-appendTo : Int -> Int -> Owned -> (moved builder : Builder UInt8) -> Builder UInt8
+appendTo : Int -> Int -> Owned -> (taken builder : Builder UInt8) -> Builder UInt8
 appendTo from to owned builder =
     let
         len =
@@ -152,7 +152,7 @@ It costs O(1): natively the bytes stay where they are, and the block keeps
 its length until it is given back.
 
 -}
-takeFirst : Int -> (moved owned : Owned) -> Owned
+takeFirst : Int -> (taken owned : Owned) -> Owned
 takeFirst n owned =
     primTakeFirst owned (bound (max 0 n) (primLength owned))
 
@@ -197,7 +197,7 @@ bound index len =
 
 
 @prim("bo_from_builder")
-primFromBuilder : (moved t : Builder UInt8) -> Owned
+primFromBuilder : (taken t : Builder UInt8) -> Owned
 
 
 @prim("bo_length")
@@ -209,11 +209,11 @@ primGetU8 : (o : Owned) -> (i : Int where 0 <= i && i < Bytes.Owned.length o) ->
 
 
 @prim("bo_append_to")
-primAppendTo : (moved t : Builder UInt8) -> (o : Owned) -> (from : Int where 0 <= from && from <= to) -> (to : Int where to <= Bytes.Owned.length o) -> Builder UInt8
+primAppendTo : (taken t : Builder UInt8) -> (o : Owned) -> (from : Int where 0 <= from && from <= to) -> (to : Int where to <= Bytes.Owned.length o) -> Builder UInt8
 
 
 @prim("bo_take_first")
-primTakeFirst : (moved o : Owned) -> (n : Int where 0 <= n && n <= Bytes.Owned.length o) -> (r : Owned where Bytes.Owned.length r == n)
+primTakeFirst : (taken o : Owned) -> (n : Int where 0 <= n && n <= Bytes.Owned.length o) -> (r : Owned where Bytes.Owned.length r == n)
 
 
 @prim("bo_to_bytes")

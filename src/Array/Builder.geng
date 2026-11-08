@@ -137,7 +137,7 @@ fromArray : (array : Array a) -> (r : Builder a where Array.Builder.length r == 
 It costs O(1) amortized on JavaScript and natively, and O(log n) on the BEAM.
 
 -}
-pushLast : a -> (moved builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder + 1)
+pushLast : a -> (taken builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder + 1)
 pushLast value builder =
     T.push builder value
 
@@ -148,7 +148,7 @@ It costs O(m) for an array of m elements, copied in at once on JavaScript and
 natively, and pushed one by one on the BEAM, O(m log n).
 
 -}
-append : (array : Array a) -> (moved builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder + Array.length array)
+append : (array : Array a) -> (taken builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder + Array.length array)
 append array builder =
     primSetArray builder (T.length builder) array
 
@@ -177,7 +177,7 @@ It costs O(m) for m elements, copied in at once on JavaScript and natively,
 and pushed one by one on the BEAM, O(m log n).
 
 -}
-appendSlice : Int -> Int -> Builder a -> (moved builder : Builder a) -> Builder a
+appendSlice : Int -> Int -> Builder a -> (taken builder : Builder a) -> Builder a
 appendSlice from to source builder =
     let
         len =
@@ -197,7 +197,7 @@ appendSlice from to source builder =
 
 
 @prim("tr_set_array")
-primSetArray : (moved t : Builder a) -> (i : Int where 0 <= i && i <= T.length t) -> (arr : Array a) -> (r : Builder a where (i + Array.length arr <= T.length t && T.length r == T.length t) || (T.length t < i + Array.length arr && T.length r == i + Array.length arr))
+primSetArray : (taken t : Builder a) -> (i : Int where 0 <= i && i <= T.length t) -> (arr : Array a) -> (r : Builder a where (i + Array.length arr <= T.length t && T.length r == T.length t) || (T.length t < i + Array.length arr && T.length r == i + Array.length arr))
 
 
 {-| Replace the element at the given index, or leave the builder as it is if
@@ -217,7 +217,7 @@ so a loop of builder sets is linear on every target where a loop of
 natively (geng-lang `m3-cost.md` D753).
 
 -}
-set : Int -> a -> (moved builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
+set : Int -> a -> (taken builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
 set index value builder =
     let
         at =
@@ -252,7 +252,7 @@ It costs a [`get`](#get) and a [`set`](#set), and what the function costs.
 
 -}
 @inline
-update : Int -> (a -> a) -> (moved builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
+update : Int -> (a -> a) -> (taken builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
 update index f builder =
     let
         at =
@@ -279,7 +279,7 @@ take the element out, leaving a placeholder, write it, and `set` it back.
 It costs a [`get`](#get) and a [`set`](#set).
 
 -}
-swap : Int -> a -> (moved builder : Builder a) -> (r : { old : Maybe a, builder : Builder a } where Array.Builder.length r.builder == Array.Builder.length builder)
+swap : Int -> a -> (taken builder : Builder a) -> (r : { old : Maybe a, builder : Builder a } where Array.Builder.length r.builder == Array.Builder.length builder)
 swap index value builder =
     let
         at =
@@ -314,7 +314,7 @@ It costs O(m) for an array of m elements on JavaScript and natively, and
 O(m log n) on the BEAM.
 
 -}
-setMany : Int -> Array a -> (moved builder : Builder a) -> Builder a
+setMany : Int -> Array a -> (taken builder : Builder a) -> Builder a
 setMany index values builder =
     primSetArray builder (bound index (T.length builder)) values
 
@@ -332,7 +332,7 @@ not change.
 It costs O(m) for m elements written, on the terms [`setMany`](#setMany) has.
 
 -}
-fill : Int -> Int -> a -> (moved builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
+fill : Int -> Int -> a -> (taken builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
 fill from to value builder =
     let
         len =
@@ -372,7 +372,7 @@ does not change.
 It costs O(m) for m elements copied, on the terms [`setMany`](#setMany) has.
 
 -}
-copyWithin : Int -> Int -> Int -> (moved builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
+copyWithin : Int -> Int -> Int -> (taken builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
 copyWithin at from to builder =
     let
         len =
@@ -412,7 +412,7 @@ It costs a [`copyWithin`](#copyWithin) and a [`fill`](#fill) of what was
 left.
 
 -}
-moveWithin : Int -> Int -> Int -> a -> (moved builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
+moveWithin : Int -> Int -> Int -> a -> (taken builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
 moveWithin at from to vacated builder =
     let
         len =
@@ -473,7 +473,7 @@ for m elements turned on JavaScript and natively, with no allocation
 natively, and O(m log n) on the BEAM.
 
 -}
-rotate : Int -> Int -> Int -> (moved builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
+rotate : Int -> Int -> Int -> (taken builder : Builder a) -> (r : Builder a where Array.Builder.length r == Array.Builder.length builder)
 rotate from to by builder =
     let
         len =
@@ -669,7 +669,7 @@ copy builder =
 
 {-| The elements of a builder from `i` up to, but not including, `to`, pushed
 onto another. -}
-copyRange : (b : Builder a) -> (i : Int where 0 <= i) -> (to : Int where to <= T.length b) -> (moved acc : Builder a) -> Builder a
+copyRange : (b : Builder a) -> (i : Int where 0 <= i) -> (to : Int where to <= T.length b) -> (taken acc : Builder a) -> Builder a
 copyRange b i to acc =
     if i < to then
         copyRange b (i + 1) to (T.push acc (T.get b i))
@@ -687,4 +687,4 @@ quadratic on every target, and should read the builder with [`get`](#get) and
 
 -}
 @prim("tr_to_array")
-toArray : (moved builder : Builder a) -> (r : Array a where Array.length r == Array.Builder.length builder)
+toArray : (taken builder : Builder a) -> (r : Array a where Array.length r == Array.Builder.length builder)

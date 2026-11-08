@@ -49,11 +49,11 @@ new : Int -> (r : Transient a where Array.Transient.length r == 0)
 
 
 @prim("tr_push")
-push : (moved t : Transient a) -> a -> (r : Transient a where Array.Transient.length r == Array.Transient.length t + 1)
+push : (taken t : Transient a) -> a -> (r : Transient a where Array.Transient.length r == Array.Transient.length t + 1)
 
 
 @prim("tr_set")
-set : (moved t : Transient a) -> (i : Int where 0 <= i && i < Array.Transient.length t) -> a -> (r : Transient a where Array.Transient.length r == Array.Transient.length t)
+set : (taken t : Transient a) -> (i : Int where 0 <= i && i < Array.Transient.length t) -> a -> (r : Transient a where Array.Transient.length r == Array.Transient.length t)
 
 
 @prim("tr_get")
@@ -68,14 +68,14 @@ length : Transient a -> Int
 `push` does, so `fill (new n) 0 n v` is `n` copies of `v`.
 -}
 @prim("tr_fill")
-fill : (moved t : Transient a) -> (i : Int where 0 <= i && i <= Array.Transient.length t) -> (n : Int where 0 <= n) -> a -> (r : Transient a where (i + n <= Array.Transient.length t && Array.Transient.length r == Array.Transient.length t) || (Array.Transient.length t < i + n && Array.Transient.length r == i + n))
+fill : (taken t : Transient a) -> (i : Int where 0 <= i && i <= Array.Transient.length t) -> (n : Int where 0 <= n) -> a -> (r : Transient a where (i + n <= Array.Transient.length t && Array.Transient.length r == Array.Transient.length t) || (Array.Transient.length t < i + n && Array.Transient.length r == i + n))
 
 
 {-| The `n` elements from `from` copied to `to`, read before they are written
 where the two runs overlap, as JavaScript's `copyWithin` does.
 -}
 @prim("tr_copy_within")
-copyWithin : (moved t : Transient a) -> (to : Int where 0 <= to) -> (from : Int where 0 <= from) -> (n : Int where 0 <= n && to <= Array.Transient.length t - n && from <= Array.Transient.length t - n) -> (r : Transient a where Array.Transient.length r == Array.Transient.length t)
+copyWithin : (taken t : Transient a) -> (to : Int where 0 <= to) -> (from : Int where 0 <= from) -> (n : Int where 0 <= n && to <= Array.Transient.length t - n && from <= Array.Transient.length t - n) -> (r : Transient a where Array.Transient.length r == Array.Transient.length t)
 
 
 {-| The `n` elements from `from` turned `by` places toward the start, those
@@ -83,18 +83,18 @@ that pass it coming back in at the end, so that each element is in one place
 afterwards.
 -}
 @prim("tr_rotate")
-rotate : (moved t : Transient a) -> (from : Int where 0 <= from) -> (n : Int where 0 <= n && from <= Array.Transient.length t - n) -> (by : Int where 0 < by && by < n) -> (r : Transient a where Array.Transient.length r == Array.Transient.length t)
+rotate : (taken t : Transient a) -> (from : Int where 0 <= from) -> (n : Int where 0 <= n && from <= Array.Transient.length t - n) -> (by : Int where 0 < by && by < n) -> (r : Transient a where Array.Transient.length r == Array.Transient.length t)
 
 
 {-| The elements of `s` from `from` up to, but not including, `to`, pushed
 onto `t`, and `s` left as it was.
 -}
 @prim("tr_append_slice")
-appendSlice : (moved t : Transient a) -> (s : Transient a) -> (from : Int where 0 <= from) -> (to : Int where from <= to && to <= Array.Transient.length s) -> (r : Transient a where Array.Transient.length r == Array.Transient.length t + (to - from))
+appendSlice : (taken t : Transient a) -> (s : Transient a) -> (from : Int where 0 <= from) -> (to : Int where from <= to && to <= Array.Transient.length s) -> (r : Transient a where Array.Transient.length r == Array.Transient.length t + (to - from))
 
 
 {-| `f first` to `f (first + n - 1)` pushed, in that order, the sum wrapping as
 `Int` does.
 -}
 @prim("tr_generate")
-generate : (moved t : Transient a) -> Int -> (n : Int where 0 <= n) -> (Int -> a) -> (r : Transient a where Array.Transient.length r == Array.Transient.length t + n)
+generate : (taken t : Transient a) -> Int -> (n : Int where 0 <= n) -> (Int -> a) -> (r : Transient a where Array.Transient.length r == Array.Transient.length t + n)
