@@ -1,6 +1,6 @@
 module Maybe exposing
     ( Maybe(..)
-    , hasValue, checkValue, keepIf
+    , hasValue, checkValue, keepIf, isJust
     , withDefault, withDefaultLazy, map, map2, map3, andMap
     , andThen
     )
@@ -13,7 +13,7 @@ you with optional arguments, error handling, and records with optional fields.
 
 ## Queries
 
-@docs hasValue, checkValue, keepIf
+@docs hasValue, checkValue, keepIf, isJust
 
 
 ## Transform
@@ -310,11 +310,17 @@ andThen callback maybeValue =
 
 
 
--- FOR INTERNAL USE ONLY
---
--- Use `when` expressions for this in Gren code!
+{-| Whether a `Maybe` is a `Just`.
 
+    isJust (Just 3) == True
+    isJust Nothing == False
 
+A program reads a `Maybe` with `when`. This is for refinements, where it is
+one of core's measures: `Array.first`'s result is refined
+`Maybe.isJust r == (Array.length array > 0)`, so a `Nothing` from it says the
+array is empty, and an array known not to be empty gives a `Just`.
+
+-}
 isJust : Maybe a -> Bool
 isJust maybe =
     when maybe is

@@ -1,6 +1,6 @@
 module Result exposing
     ( Result(..)
-    , hasValue, checkValue, firstOk, allOk, sequence, sequenceMap
+    , hasValue, checkValue, isOk, firstOk, allOk, sequence, sequenceMap
     , map, map2, map3, andMap
     , andThen, onError
     , withDefault, withDefaultLazy, toMaybe, fromMaybe, mapError
@@ -14,7 +14,7 @@ way to manage errors in Gren.
 
 ## Query
 
-@docs hasValue, checkValue, firstOk, allOk, sequence, sequenceMap
+@docs hasValue, checkValue, isOk, firstOk, allOk, sequence, sequenceMap
 
 
 ## Mapping
@@ -496,11 +496,15 @@ fromMaybe err maybe =
 
 
 
--- FOR INTERNAL USE ONLY
---
--- Use `when` expressions for this in Gren code!
+{-| Whether a `Result` is an `Ok`.
 
+    isOk (Ok 3) == True
+    isOk (Err "no") == False
 
+A program reads a `Result` with `when`. This is for refinements, where it is
+one of core's measures, as [`Maybe.isJust`](Maybe#isJust) is.
+
+-}
 isOk : Result x a -> Bool
 isOk result =
     when result is

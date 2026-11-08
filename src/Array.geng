@@ -396,7 +396,7 @@ It costs O(1), and O(log n) on the BEAM when the array is a tree.
 
 -}
 @inline
-get : Int -> Array a -> Maybe a
+get : (index : Int) -> (array : Array a) -> (r : Maybe a where Maybe.isJust r == (index < Array.length array && 0 <= index + Array.length array))
 get index array =
     let
         len =
@@ -525,7 +525,7 @@ all fn array =
 It costs O(n) comparisons.
 
 -}
-minimum : Ord a => Array a -> Maybe a
+minimum : Ord a => (array : Array a) -> (r : Maybe a where Maybe.isJust r == (Array.length array > 0))
 minimum array =
     when first array is
         Nothing ->
@@ -553,7 +553,7 @@ minimum array =
 It costs O(n) comparisons.
 
 -}
-maximum : Ord a => Array a -> Maybe a
+maximum : Ord a => (array : Array a) -> (r : Maybe a where Maybe.isJust r == (Array.length array > 0))
 maximum array =
     when first array is
         Nothing ->
@@ -952,7 +952,7 @@ map3 fn xs ys zs =
 It costs O(1), and O(log n) on the BEAM when the array is a tree.
 
 -}
-first : Array a -> Maybe a
+first : (array : Array a) -> (r : Maybe a where Maybe.isJust r == (Array.length array > 0))
 first array =
     get 0 array
 
@@ -964,7 +964,7 @@ first array =
 It costs O(1), and O(log n) on the BEAM when the array is a tree.
 
 -}
-last : Array a -> Maybe a
+last : (array : Array a) -> (r : Maybe a where Maybe.isJust r == (Array.length array > 0))
 last array =
     get -1 array
 
@@ -1073,7 +1073,7 @@ once the array is a tree, which the first pop of a long array makes it, at
 O(n), so a loop of `popFirst` is linear on every target.
 
 -}
-popFirst : Array a -> Maybe { first : a, rest : Array a }
+popFirst : (array : Array a) -> (r : Maybe { first : a, rest : Array a } where Maybe.isJust r == (Array.length array > 0))
 popFirst array =
     when first array is
         Just value ->
@@ -1095,7 +1095,7 @@ once the array is a tree, which the first pop of a long array makes it, at
 O(n), so a loop of `popLast` is linear on every target.
 
 -}
-popLast : Array a -> Maybe { last : a, initial : Array a }
+popLast : (array : Array a) -> (r : Maybe { last : a, initial : Array a } where Maybe.isJust r == (Array.length array > 0))
 popLast array =
     when last array is
         Just value ->
