@@ -23,6 +23,7 @@ module Bytes exposing
   , get
   , getProven
   , slice
+  , spanWithin
   )
 
 
@@ -49,7 +50,7 @@ byte. Each cost is per call, n being the length in bytes.
 @docs flatten, flattenChecked
 
 ## Reading
-@docs get, getProven, slice
+@docs get, getProven, slice, spanWithin
 
 -}
 
@@ -177,6 +178,25 @@ It costs O(1), with no test of the index.
 getProven : (index : Int where 0 <= index && index < Bytes.length bytes) -> (bytes : Bytes) -> UInt8
 getProven index bytes =
   primGetU8 bytes index
+
+
+{-| The first index from `from`, below `stop`, whose byte is outside `lo` to
+`hi`, both included: how far a run of bytes in a range goes, as a scanner asks
+of a run of digits, of letters, or of a string's plain bytes. It is `from`
+when there is nothing to look at, `from` at `stop` or past it or past the
+end. A `from` below 0 starts at 0, and a `stop` past the end stops there, as
+[`slice`](#slice)'s ends are clamped.
+
+    spanWithin 0x30 0x39 0 10 (fromString "2026-11-09") == 4
+    spanWithin 0x30 0x39 4 10 (fromString "2026-11-09") == 4
+
+It costs O(n) for the n bytes it reads. Natively it compares 16 bytes at a
+time where the machine can (geng-lang `m3-bytes-access.md` §BA19).
+
+-}
+spanWithin : Int -> Int -> (from : Int) -> (stop : Int) -> (bytes : Bytes) -> (r : Int where from <= r && (r == from || (r <= stop && r <= Bytes.length bytes)))
+spanWithin lo hi from stop bytes =
+  primSpanWithin bytes lo hi from stop
 
 
 {-| The bytes from `start` up to, but not including, `end`, by
@@ -1021,6 +1041,11 @@ primEq : Bytes -> Bytes -> Bool
 
 @prim("bytes_length")
 primLength : Bytes -> Int
+
+
+-- Dnene27: a run of bytes in a range (geng-lang m3-bytes-access.md §BA19).
+@prim("bytes_span_within")
+primSpanWithin : (bytes : Bytes) -> Int -> Int -> (from : Int) -> (stop : Int) -> (r : Int where from <= r && (r == from || (r <= stop && r <= Bytes.length bytes)))
 
 
 @prim("bytes_get_u8")
