@@ -298,7 +298,9 @@ swap index value builder =
 
 {-| Replace the elements from the given index on with an array's, as
 [`Array.setMany`](Array#setMany) does: a negative index counts back from the
-end, and elements that go past the end make the builder longer.
+end, and elements that go past the end make the builder longer. Its result
+refinement says the rest: values written from an index that is not
+negative, all inside the builder, leave its length as it was.
 
     fromArray [ 1, 2, 3, 4 ]
         |> setMany 1 [ 0, 0 ]
@@ -314,7 +316,7 @@ It costs O(m) for an array of m elements on JavaScript and natively, and
 O(m log n) on the BEAM.
 
 -}
-setMany : Int -> Array a -> (taken builder : Builder a) -> Builder a
+setMany : (index : Int) -> (values : Array a) -> (taken builder : Builder a) -> (r : Builder a where index < 0 || Array.Builder.length builder < index + Array.length values || Array.Builder.length r == Array.Builder.length builder)
 setMany index values builder =
     primSetArray builder (bound index (T.length builder)) values
 
@@ -505,7 +507,7 @@ rotate from to by builder =
 {-| An index as [`Array.slice`](Array#slice) takes one: a negative one counts
 back from the end, and one past either end stops there.
 -}
-bound : Int -> (len : Nat) -> (r : Int where 0 <= r && r <= len)
+bound : (index : Int) -> (len : Nat) -> (r : Int where 0 <= r && r <= len && (index < 0 || r <= index))
 bound index len =
     if index < 0 then
         let

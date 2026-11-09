@@ -990,7 +990,7 @@ O(log n) when it drops at most 32 elements from the end of a tree, or at most
 it copies its m elements, O(m).
 
 -}
-slice : Int -> Int -> Array a -> Array a
+slice : Int -> (to : Int) -> (array : Array a) -> (r : Array a where Array.length r <= Array.length array && (to < 0 || Array.length r <= to))
 slice from to array =
     let
         len =
@@ -1036,14 +1036,15 @@ dropLast n array =
     slice 0 (length array - n) array
 
 
-{-| Take the first `n` elements from the array.
+{-| Take the first `n` elements from the array: at most `n` of them, as its
+result refinement says.
 
     takeFirst 2 [ 1, 2, 3 ] == [ 1, 2 ]
 
 It costs what [`slice`](#slice) costs.
 
 -}
-takeFirst : Int -> Array a -> Array a
+takeFirst : (n : Int) -> (array : Array a) -> (r : Array a where Array.length r <= Array.length array && (n < 0 || Array.length r <= n))
 takeFirst n array =
     slice 0 n array
 
@@ -1362,7 +1363,7 @@ for term, the rules `spliceStart` writes out for `toSpliced`'s index. The two
 are kept apart because they are two rules that happen to agree, not one rule
 used twice: a change to either is a change to one method's behaviour.
 -}
-sliceBound : Int -> (len : Nat) -> (r : Int where 0 <= r && r <= len)
+sliceBound : (index : Int) -> (len : Nat) -> (r : Int where 0 <= r && r <= len && (index < 0 || r <= index))
 sliceBound index len =
     if lt index 0 then
         let
