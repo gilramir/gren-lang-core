@@ -2,6 +2,7 @@ module Array.Builder exposing
     ( Builder
     , empty, repeat, fromArray
     , pushLast, append, appendSlice
+    , pushUtf8, spanMasked, appendNarrowed
     , set, get, getProven, length
     , update, swap
     , setMany, fill, copyWithin, moveWithin, rotate
@@ -58,6 +59,17 @@ row of a builder of rows read out onto a page.
 @docs update, swap
 @docs setMany, fill, copyWithin, moveWithin, rotate
 @docs slice, copy, toArray
+
+## Builders of bytes and words
+
+[`pushUtf8`](#pushUtf8) writes a code point as UTF-8 onto a builder of
+bytes, and [`spanMasked`](#spanMasked) and [`appendNarrowed`](#appendNarrowed)
+read a run of a builder of `Int64` words: how far its words agree in some
+bits, and their low bytes copied onto a builder of bytes (geng-lang
+`m3-bytes-access.md` §BA21). Each is one call where a loop was a call a byte
+or a word.
+
+@docs pushUtf8, spanMasked, appendNarrowed
 
 -}
 
@@ -194,6 +206,71 @@ appendSlice from to source builder =
 
     else
         builder
+
+
+{-| The UTF-8 encoding of a code point pushed onto a builder of bytes: one
+byte below 0x80, two below 0x800, three below 0x10000 and four up to
+0x10FFFF. A value that is not a Unicode scalar value, below 0, a surrogate
+(0xD800 to 0xDFFF) or past 0x10FFFF, is pushed as U+FFFD's three bytes, as a
+decoder would have read it.
+
+    pushUtf8 0xE9 (empty 2) |> toArray == [ 0xC3, 0xA9 ]
+
+It costs one write of one to four bytes, where four `pushLast`s are four
+(geng-lang `m3-bytes-access.md` §BA21).
+
+-}
+pushUtf8 : Int -> (taken builder : Builder UInt8) -> (r : Builder UInt8 where Array.Builder.length builder + 1 <= Array.Builder.length r && Array.Builder.length r <= Array.Builder.length builder + 4)
+pushUtf8 cp builder =
+    primPushUtf8 builder cp
+
+
+@prim("tr_push_utf8")
+primPushUtf8 : (taken t : Builder UInt8) -> Int -> (r : Builder UInt8 where T.length t + 1 <= T.length r && T.length r <= T.length t + 4)
+
+
+{-| The first index from `from`, below `stop`, whose word `x` has
+`Bitwise.and mask x /= want`: how far a run of words that agree in the bits
+of `mask` goes, as a scanner asks of words carrying one tag, of flags all
+clear, or of code points all below 0x80. It is `from` when there is nothing
+to look at, `from` at `stop` or past it or past the end. A `from` below 0
+starts at 0, and a `stop` past the end stops there, as `Bytes.spanWithin`'s
+are.
+
+    spanMasked 0xFF00 0x0100 0 4 (fromArray [ 0x0141, 0x0142, 0x0241, 0x0143 ]) == 2
+
+It costs O(n) for the n words it reads, and reads the builder without
+writing it.
+
+-}
+spanMasked : Int64 -> Int64 -> (from : Int) -> (stop : Int) -> (builder : Builder Int64) -> (r : Int where from <= r && (r == from || (r <= stop && r <= Array.Builder.length builder)))
+spanMasked mask want from stop builder =
+    primSpanMasked builder mask want from stop
+
+
+@prim("tr_span_masked")
+primSpanMasked : (t : Builder Int64) -> Int64 -> Int64 -> (from : Int) -> (stop : Int) -> (r : Int where from <= r && (r == from || (r <= stop && r <= T.length t)))
+
+
+{-| The low 8 bits of each word of `source` from `from` up to, but not
+including, `stop`, pushed onto a builder of bytes, `source` left as it was:
+[`appendSlice`](#appendSlice) from words to bytes, each word wrapped to its
+low byte. A `from` below 0 starts at 0 and a `stop` past the end stops
+there; an empty run pushes nothing.
+
+    appendNarrowed 0 2 (fromArray [ 0x0141, 0x0142, 0x0143 ]) (empty 2) |> toArray == [ 0x41, 0x42 ]
+
+With [`spanMasked`](#spanMasked) it packs a run of words whose high bits
+are known into one byte each. It costs O(m) for the m words, in one write.
+
+-}
+appendNarrowed : (from : Int) -> (stop : Int) -> (source : Builder Int64) -> (taken builder : Builder UInt8) -> (r : Builder UInt8 where Array.Builder.length builder <= Array.Builder.length r && (from < 0 || stop < from || Array.Builder.length source < stop || Array.Builder.length r == Array.Builder.length builder + (stop - from)))
+appendNarrowed from stop source builder =
+    primAppendNarrowed builder source from stop
+
+
+@prim("tr_append_narrowed")
+primAppendNarrowed : (taken t : Builder UInt8) -> (s : Builder Int64) -> (from : Int) -> (stop : Int) -> (r : Builder UInt8 where T.length t <= T.length r && (from < 0 || stop < from || T.length s < stop || T.length r == T.length t + (stop - from)))
 
 
 @prim("tr_set_array")
