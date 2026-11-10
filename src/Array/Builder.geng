@@ -612,9 +612,14 @@ It costs O(1) on JavaScript and natively, and O(log n) on the BEAM. It is
 inlined, so a caller that matches the answer takes its branch with no `Just`
 built (geng-lang `m4-puritty.md` §VA26, D998).
 
+For an index of 0 or more it promises that the answer is a `Just` exactly
+when the index is inside the builder, so that a read the program keeps in
+range has a `Nothing` the compiler shows never runs (geng-lang
+`m4-proof-report.md` PR16).
+
 -}
 @inline
-get : Int -> Builder a -> Maybe a
+get : (index : Int) -> (builder : Builder a) -> (r : Maybe a where index < 0 || Maybe.isJust r == (index < Array.Builder.length builder))
 get index builder =
     let
         at =
@@ -657,7 +662,7 @@ getProven i builder =
 builder: an `Int` and not a `Maybe`, so that its refinement can say where it
 is (geng-lang `m4-refine.md` §RF27).
 -}
-actualIndex : Int -> (builder : Builder a) -> (r : Int where r == -1 || (0 <= r && r < T.length builder))
+actualIndex : (index : Int) -> (builder : Builder a) -> (r : Int where (r == -1 || (0 <= r && r < T.length builder)) && (index < 0 || (index < T.length builder && r == index) || (T.length builder <= index && r == -1)))
 actualIndex index builder =
     let
         len =
