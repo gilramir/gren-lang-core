@@ -281,14 +281,15 @@ indexedFoldr fn acc array =
     indexedFoldrHelp fn acc array (add (unsafeLength array) -1)
 
 
-{-| Keep values that pass the test.
+{-| Keep values that pass the test: no more than the array has, as its
+result refinement says.
 
     keepIf (\n -> n < 3) [ 1, 2, 3, 4 ] == [ 1, 2 ]
 
 It costs O(n).
 
 -}
-keepIf : (a -> Bool) -> Array a -> Array a
+keepIf : (a -> Bool) -> (array : Array a) -> (r : Array a where Array.length r <= Array.length array)
 keepIf fn array =
     let
         len =
@@ -303,7 +304,7 @@ keepIf fn array =
 It costs O(n).
 
 -}
-indexedKeepIf : (Int -> a -> Bool) -> Array a -> Array a
+indexedKeepIf : (Int -> a -> Bool) -> (array : Array a) -> (r : Array a where Array.length r <= Array.length array)
 indexedKeepIf fn array =
     let
         len =
@@ -1150,7 +1151,7 @@ partitionHelp fn array index len trues falses =
 It costs O(n log n) comparisons, and O(n) on an array already in order.
 
 -}
-sort : Ord a => Array a -> Array a
+sort : Ord a => (array : Array a) -> (r : Array a where Array.length r == Array.length array)
 sort array =
     sortWith compare array
 
@@ -1163,7 +1164,7 @@ It costs O(n log n) comparisons, calling the function once for each element,
 and O(n) on an array already in order by it.
 
 -}
-sortBy : Ord b => (a -> b) -> Array a -> Array a
+sortBy : Ord b => (a -> b) -> (array : Array a) -> (r : Array a where Array.length r == Array.length array)
 sortBy toKey array =
     -- Decorate, sort, undecorate: the key is computed once per element rather
     -- than twice per comparison, which is `n` calls instead of `2 n log n`
@@ -1190,7 +1191,7 @@ This is also the most general sort function, allowing you to define any other: `
 It costs O(n log n) comparisons, and O(n) on an array already in order.
 
 -}
-sortWith : (a -> a -> Order) -> Array a -> Array a
+sortWith : (a -> a -> Order) -> (array : Array a) -> (r : Array a where Array.length r == Array.length array)
 sortWith fn array =
     let
         len =
@@ -1437,7 +1438,7 @@ indexedFoldrHelp fn acc array index =
         indexedFoldrHelp fn (fn index (unsafeGet array index) acc) array (add index -1)
 
 
-keepIfHelp : (a -> Bool) -> Array a -> Int -> Int -> (taken acc : Transient a) -> Transient a
+keepIfHelp : (a -> Bool) -> Array a -> (index : Int where 0 <= index) -> (len : Int where index <= len) -> (taken acc : Transient a where T.length acc <= index) -> (r : Transient a where T.length r <= len)
 keepIfHelp fn array index len acc =
     if lt index len then
         let
@@ -1456,7 +1457,7 @@ keepIfHelp fn array index len acc =
         acc
 
 
-indexedKeepIfHelp : (Int -> a -> Bool) -> Array a -> Int -> Int -> (taken acc : Transient a) -> Transient a
+indexedKeepIfHelp : (Int -> a -> Bool) -> Array a -> (index : Int where 0 <= index) -> (len : Int where index <= len) -> (taken acc : Transient a where T.length acc <= index) -> (r : Transient a where T.length r <= len)
 indexedKeepIfHelp fn array index len acc =
     if lt index len then
         let
@@ -1590,7 +1591,7 @@ the merge would read and write outside the transients (geng-lang
 `m4-refine.md` §RF27, D851). The refinements are what the checker proves
 every read and write by.
 -}
-sortPasses : (a -> a -> Order) -> (taken src : Transient a) -> (taken dst : Transient a where T.length dst == T.length src) -> (width : Int where 0 < width) -> (len : Int where len == T.length src) -> Transient a
+sortPasses : (a -> a -> Order) -> (taken src : Transient a) -> (taken dst : Transient a where T.length dst == T.length src) -> (width : Int where 0 < width) -> (len : Int where len == T.length src) -> (r : Transient a where T.length r == len)
 sortPasses fn src dst width len =
     if not (lt width len) then
         src
