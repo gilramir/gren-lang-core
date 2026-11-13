@@ -168,6 +168,11 @@ testArrayOfN n =
 
                 else
                     Expect.equal (Just n) (last xs)
+        , describe "findIndex"
+            [ test "none" <| \{} -> Expect.equal -1 (Array.findIndex (\x -> x > n) xs)
+            , test "the last" <| \{} -> Expect.equal (n - 1) (Array.findIndex (\x -> x == n) xs)
+            , test "the first of many" <| \{} -> Expect.equal (if n == 0 then -1 else 0) (Array.findIndex (\x -> x > 0) xs)
+            ]
         , describe "keepIf"
             [ test "none" <| \{} -> Expect.equal [] (Array.keepIf (\x -> x > n) xs)
             , test "one" <| \{} -> Expect.equal [ n ] (Array.keepIf (\z -> z == n) zs)

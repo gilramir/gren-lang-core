@@ -2,7 +2,7 @@ module Array exposing
     ( Array
     , singleton, initialize, repeat, range, rangeChecked
     , map, indexedMap, foldl, foldr, indexedFoldl, indexedFoldr, keepIf, indexedKeepIf, mapAndKeepJust, reverse
-    , isEmpty, length, get, getProven, findFirst, findLast, member, any, all, minimum, maximum
+    , isEmpty, length, get, getProven, findFirst, findIndex, findLast, member, any, all, minimum, maximum
     , set, setMany, update, insert, insertMany, remove, removeMany, pushFirst, pushLast, splice
     , prepend, append, flatten, mapAndFlatten, intersperse, map2, map3
     , first, last, slice, dropFirst, dropLast, takeFirst, takeLast, popFirst, popLast, partition
@@ -41,7 +41,7 @@ call, n being the array's length.
 
 ## Query
 
-@docs isEmpty, length, get, getProven, first, last, findFirst, findLast, member, any, all, minimum, maximum
+@docs isEmpty, length, get, getProven, first, last, findFirst, findIndex, findLast, member, any, all, minimum, maximum
 
 
 ## Modify
@@ -450,6 +450,23 @@ findFirst fn array =
     findFirstHelp fn array 0 (unsafeLength array)
 
 
+{-| The index of the first value that passes the test, or -1 when none
+does: an index into the array when it is 0 or more, as its result
+refinement says, so a read there needs no test of its own.
+
+    findIndex (\n -> n > 0) [ -1, 0, 1, 2 ] == 2
+
+    findIndex (\n -> n > 5) [ -1, 0, 1, 2 ] == -1
+
+`max 0 (findIndex p array)` is an index of a nonempty array. It costs O(n),
+stopping at the first element that passes the test.
+
+-}
+findIndex : (a -> Bool) -> (array : Array a) -> (r : Int where -1 <= r && r < Array.length array)
+findIndex fn array =
+    findIndexHelp fn array 0 (unsafeLength array)
+
+
 {-| Find the last value that passes the test.
 
     findLast (\n -> n > 0) [ -1, 0, 1, 2 ] == Just { index = 3, value = 2 }
@@ -702,7 +719,9 @@ insertMany index values array =
 
 Passing a negative index means you want to replace an element counting backwards from the end of the array.
 
-If the index is out of bounds, no element will be removed.
+If the index is out of bounds, no element will be removed. An index of 0
+or more inside the array leaves it one shorter, as its result refinement
+says.
 
     remove 1 [ 1, 2, 3 ] == [ 1, 3 ]
 
@@ -712,7 +731,7 @@ on JavaScript and natively and O(log n) on the BEAM, so draining an array from
 one end is linear on every target.
 
 -}
-remove : Int -> Array a -> Array a
+remove : (index : Int) -> (array : Array a) -> (r : Array a where index < 0 || Array.length array <= index || Array.length r == Array.length array - 1)
 remove index array =
     removeMany index 1 array
 
@@ -728,7 +747,7 @@ It costs O(n), copying the array, except when the elements removed reach either
 end, where it is a [`slice`](#slice) and costs what that does.
 
 -}
-removeMany : Int -> Int -> Array a -> Array a
+removeMany : (index : Int) -> (toRemove : Int) -> (array : Array a) -> (r : Array a where index < 0 || toRemove < 0 || Array.length array - toRemove < index || Array.length r == Array.length array - toRemove)
 removeMany index toRemove array =
     let
         len =
@@ -737,21 +756,30 @@ removeMany index toRemove array =
         start =
             spliceStart index len
 
-        count =
-            clamp 0 (subtract len start) toRemove
     in
-    if count == 0 then
+    -- nothing to remove: no count, or no element from `start` on
+    if lt toRemove 1 || not (lt start len) then
         array
 
-    else if count == 1 && start > 0 && start < subtract len 1 then
-        -- One element at either end is a slice, which is a view where the
-        -- primitive's remove copies the whole array (D752).
-        primRemove array start
-
     else
-        primAppend
-            (primSlice array 0 start)
-            (primSlice array (add start count) len)
+        let
+            -- `clamp 0 (len - start) toRemove`, here at least 1
+            count =
+                if lt (subtract len start) toRemove then
+                    subtract len start
+
+                else
+                    toRemove
+        in
+        if count == 1 && start > 0 && start < subtract len 1 then
+            -- One element at either end is a slice, which is a view where the
+            -- primitive's remove copies the whole array (D752).
+            primRemove array start
+
+        else
+            primAppend
+                (primSlice array 0 start)
+                (primSlice array (add start count) len)
 
 
 {-| Add a value to the start of the array.
@@ -1339,7 +1367,7 @@ subtract : Int -> Int -> Int
 {-| Where a splice starts: a negative index counts from the end, and an index
 past either end clamps, as `toSpliced` does.
 -}
-spliceStart : Int -> (len : Nat) -> (r : Int where 0 <= r && r <= len)
+spliceStart : (index : Int) -> (len : Nat) -> (r : Int where 0 <= r && r <= len && (index < 0 || len < index || r == index))
 spliceStart index len =
     if lt index 0 then
         let
@@ -1500,6 +1528,19 @@ findFirstHelp fn array index len =
 
     else
         Nothing
+
+
+findIndexHelp : (a -> Bool) -> (array : Array a) -> (index : Int where 0 <= index) -> (len : Int where len == Array.length array) -> (r : Int where -1 <= r && r < Array.length array)
+findIndexHelp fn array index len =
+    if lt index len then
+        if fn (unsafeGet array index) then
+            index
+
+        else
+            findIndexHelp fn array (add index 1) len
+
+    else
+        -1
 
 
 findLastHelp : (a -> Bool) -> Array a -> Int -> Maybe { index : Int, value : a }
