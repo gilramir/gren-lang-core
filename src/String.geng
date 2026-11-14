@@ -342,10 +342,14 @@ It costs O(n) in the length of the string: the host's `split` on JavaScript,
 `binary:split` on the BEAM, and natively a search, O(n·m) at worst, m
 being the length of the separator.
 
+With a separator, the result is never empty, so its first and last pieces
+are always there (geng-lang `m4-refine-t1.md` TO28, Dnene58). An empty
+separator gives a piece per character, none for an empty string.
+
 -}
 @externPure(js, "String", "split")
 @externPure(erlang, "geng_core_string", "split")
-split : String -> String -> Array String
+split : (sep : String) -> String -> (r : Array String where 1 <= Array.length r || String.count sep == 0)
 split sep string =
     if primEq sep "" then
         -- A codepoint each. JavaScript's `split("")` cut an astral character
@@ -357,7 +361,7 @@ split sep string =
         splitHelp sep (primEnd sep) string (Offset 0) (Array.Builder.empty 0)
 
 
-splitHelp : String -> Int -> String -> Offset -> (taken acc : Array.Builder.Builder String) -> Array String
+splitHelp : String -> Int -> String -> Offset -> (taken acc : Array.Builder.Builder String) -> (r : Array String where 1 <= Array.length r)
 splitHelp sep sepEnd string (Offset start) acc =
     let
         found =
