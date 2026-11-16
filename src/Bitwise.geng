@@ -21,6 +21,9 @@ a 64-bit value beyond 2^59 in magnitude is a bignum on the heap.
 - `shiftLeftBy`: It costs O(1): one shift, and a clamp of the count.
 - `shiftRightBy`: It costs O(1): one shift, and a clamp of the count.
 - `shiftRightZfBy`: It costs O(1): one shift, and a clamp of the count.
+- `popCount`: It costs O(1): one instruction natively where the machine has
+  one, a dozen operations on JavaScript (on each 32-bit half at `Int64` and
+  `UInt64`), and on the BEAM a step for each one bit, at most the width.
 
 @docs Bits, countLeadingZeros
 
@@ -70,6 +73,15 @@ undefined, and the BEAM grows a bignum.
 
     shiftRightZfBy 1 -32 == 2147483632
 
+    popCount 255 == 8
+
+    popCount -1 == 32
+
+**`popCount` counts the one bits of the value's pattern at its width**, so a
+negative value counts its two's complement ones: `-1` is 32 at `Int`, 8 at
+`Int8` and 64 at `Int64`. The answer is an `Int` at every type, from 0 to the
+width.
+
 -}
 class Bits a where
     and : a -> a -> a
@@ -79,6 +91,7 @@ class Bits a where
     shiftLeftBy : Int -> a -> a
     shiftRightBy : Int -> a -> a
     shiftRightZfBy : Int -> a -> a
+    popCount : a -> Int
 
 
 -- The logical operations are the primitives unchanged: a 32-bit two's-complement
@@ -120,7 +133,42 @@ shrInt : Int -> Int -> Int
 ushrInt : Int -> Int -> Int
 
 
+-- `popcnt` at each width answers a value of that width (geng-lang Dgmk14),
+-- converted to an `Int` here: at most 64, so no conversion can change it.
+
+
+@prim("i32_popcnt")
+popcntInt : Int -> Int
+
+
+@prim("i64_popcnt")
+popcntInt64 : Int64 -> Int64
+
+
+@prim("u32_popcnt")
+popcntUInt32 : UInt32 -> UInt32
+
+
+@prim("u64_popcnt")
+popcntUInt64 : UInt64 -> UInt64
+
+
+@prim("i64_to_i32")
+int64ToInt : Int64 -> Int
+
+
+@prim("u32_as_i32")
+uint32ToInt : UInt32 -> Int
+
+
+@prim("u64_to_u32")
+uint64ToUInt32 : UInt64 -> UInt32
+
+
 instance Bits Int where
+    popCount a =
+        popcntInt a
+
     and a b =
         andInt a b
 
@@ -215,6 +263,9 @@ ushrInt64 : Int64 -> Int -> Int64
 
 
 instance Bits Int64 where
+    popCount a =
+        int64ToInt (popcntInt64 a)
+
     and a b =
         andInt64 a b
 
@@ -287,6 +338,9 @@ ushrUInt32 : UInt32 -> Int -> UInt32
 
 
 instance Bits UInt32 where
+    popCount a =
+        uint32ToInt (popcntUInt32 a)
+
     and a b =
         andUInt32 a b
 
@@ -355,6 +409,9 @@ ushrUInt64 : UInt64 -> Int -> UInt64
 
 
 instance Bits UInt64 where
+    popCount a =
+        uint32ToInt (uint64ToUInt32 (popcntUInt64 a))
+
     and a b =
         andUInt64 a b
 
@@ -432,6 +489,9 @@ intToInt8 : Int -> Int8
 
 
 instance Bits Int8 where
+    popCount a =
+        popcntInt (andInt (int8ToInt a) 255)
+
     and a b =
         intToInt8 (andInt (int8ToInt a) (int8ToInt b))
 
@@ -488,6 +548,9 @@ intToUInt8 : Int -> UInt8
 
 
 instance Bits UInt8 where
+    popCount a =
+        popcntInt (uint8ToInt a)
+
     and a b =
         intToUInt8 (andInt (uint8ToInt a) (uint8ToInt b))
 
@@ -540,6 +603,9 @@ intToInt16 : Int -> Int16
 
 
 instance Bits Int16 where
+    popCount a =
+        popcntInt (andInt (int16ToInt a) 65535)
+
     and a b =
         intToInt16 (andInt (int16ToInt a) (int16ToInt b))
 
@@ -596,6 +662,9 @@ intToUInt16 : Int -> UInt16
 
 
 instance Bits UInt16 where
+    popCount a =
+        popcntInt (uint16ToInt a)
+
     and a b =
         intToUInt16 (andInt (uint16ToInt a) (uint16ToInt b))
 
