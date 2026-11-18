@@ -2,7 +2,7 @@ module Basics exposing
     ( Int, Nat, Num, (+), (-), (*), (^)
     , Integral, (//)
     , Float, Fractional, (/), toFloat
-    , Int64, UInt32, UInt64, Float32
+    , Int64, UInt32, UInt64, BigInt, Float32
     , Int8, UInt8, Int16, UInt16
     , Eq, (==), (/=)
     , Ord, (<), (>), (<=), (>=), max, min, clamp, Order(..)
@@ -111,7 +111,7 @@ protobuf field -- rather than a width the machine picked. Each is a member of
 the same classes `Int` or `Float` is, so the operators do not change; the
 module named after each type holds its bounds and its conversions.
 
-@docs Int64, UInt32, UInt64, Float32
+@docs Int64, UInt32, UInt64, BigInt, Float32
 
 
 ## The narrow integer types
@@ -309,6 +309,27 @@ Gren generates JavaScript.
 -}
 type UInt64
     = UInt64 -- NOTE: The compiler provides the real implementation.
+
+
+{-| An integer of any size: nothing about it wraps, because it has no width to
+wrap at.
+
+It is the type for a number past 64 bits -- an IPv6 address, a UUID, a hash, a
+key -- and for arithmetic that must not overflow whatever the values are. A
+fixed width is a question you put to one, or a refinement you write on it,
+not a property it carries: `0 <= a && a < 2 ^ 128` says an address is 128
+bits, and [BigInt.maskTo](BigInt#maskTo) wraps to a width where you want the
+wrap.
+
+It is a member of `Num` and `Integral`, so `+`, `*`, `//` and `modBy` work on
+one, and not of `Bitwise.Bits`, whose shifts and counts need a width; its bit
+operations and the rest are in [BigInt](BigInt). Each platform's own integer is
+the representation: JavaScript's `BigInt`, an Erlang integer, and natively an
+array of limbs the runtime owns.
+
+-}
+type BigInt
+    = BigInt -- NOTE: The compiler provides the real implementation.
 
 
 {-| A 32-bit IEEE 754 binary floating-point number.
@@ -1878,6 +1899,121 @@ instance Integral UInt64 where
 -- `(-128 : Int8) // -1`.
 
 
+-- BIGINT
+--
+-- Dgmk30 (geng-lang `m4-refine-wrap.md`): each platform's own integer. Nothing
+-- wraps, so the only rule left to write here is A3's: a zero divisor gives a
+-- zero quotient, and a remainder of the dividend.
+
+
+@prim("big_add")
+addBigInt : BigInt -> BigInt -> BigInt
+
+
+@prim("big_sub")
+subBigInt : BigInt -> BigInt -> BigInt
+
+
+@prim("big_mul")
+mulBigInt : BigInt -> BigInt -> BigInt
+
+
+@prim("big_neg")
+negateBigInt : BigInt -> BigInt
+
+
+@prim("big_quot")
+quotBigInt : BigInt -> BigInt -> BigInt
+
+
+@prim("big_rem")
+remBigInt : BigInt -> BigInt -> BigInt
+
+
+@prim("big_eq")
+eqBigInt : BigInt -> BigInt -> Bool
+
+
+@prim("big_lt")
+ltBigInt : BigInt -> BigInt -> Bool
+
+
+@prim("i32_to_big")
+intToBigInt : Int -> BigInt
+
+
+instance Num BigInt where
+    add a b =
+        addBigInt a b
+
+    sub a b =
+        subBigInt a b
+
+    mul a b =
+        mulBigInt a b
+
+    negate a =
+        negateBigInt a
+
+    pow a b =
+        powIntegral quotBigInt remBigInt a b
+
+    fromInt a =
+        intToBigInt a
+
+
+instance Integral BigInt where
+    idiv n d =
+        if eqBigInt d 0 then
+            0
+
+        else
+            quotBigInt n d
+
+    divFloor d n =
+        if eqBigInt d 0 then
+            0
+
+        else
+            let
+                q =
+                    quotBigInt n d
+            in
+            if signsDisagreeBigInt (remBigInt n d) d then
+                subBigInt q 1
+
+            else
+                q
+
+    remainderBy d n =
+        if eqBigInt d 0 then
+            n
+
+        else
+            remBigInt n d
+
+    modBy d n =
+        if eqBigInt d 0 then
+            n
+
+        else
+            let
+                r =
+                    remBigInt n d
+            in
+            if signsDisagreeBigInt r d then
+                addBigInt r d
+
+            else
+                r
+
+
+signsDisagreeBigInt : BigInt -> BigInt -> Bool
+signsDisagreeBigInt r d =
+    and (not (eqBigInt r 0)) (not (eq (ltBigInt r 0) (ltBigInt d 0)))
+
+
+
 -- INT8
 
 
@@ -2393,6 +2529,11 @@ instance Eq UInt64 where
         eqUInt64 a b
 
 
+instance Eq BigInt where
+    eq a b =
+        eqBigInt a b
+
+
 -- A2 at the other float width: all NaNs are one equivalence class, so that `==`
 -- is a relation and agrees with `compare a b == EQ`.
 
@@ -2555,6 +2696,18 @@ instance Ord UInt64 where
             LT
 
         else if ltUInt64 b a then
+            GT
+
+        else
+            EQ
+
+
+instance Ord BigInt where
+    compare a b =
+        if ltBigInt a b then
+            LT
+
+        else if ltBigInt b a then
             GT
 
         else

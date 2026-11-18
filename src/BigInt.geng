@@ -1,0 +1,1131 @@
+module BigInt exposing
+    ( zero, one, fromInt, toInt, fromInt64, toInt64, fromFloat, toFloat
+    , fromString, toString, fromStringWithBase, toStringWithBase
+    , fromStringWithin, fromStringWithBaseWithin, Error(..)
+    , add, subBy, mul, negate, abs, powBy
+    , quotRemBy, quotBy, remainderBy
+    , divModBy, divBy, modBy
+    , compare, isZero, isNegative, isEven, isOdd, max, min
+    , and, or, xor, complement, shiftLeftBy, shiftRightBy, bitLength, popCount
+    , maskTo, toSigned, fitsSigned, fitsUnsigned
+    )
+
+{-| What an integer of any size can do beyond `+`, `-`, `*`, `//` and the
+comparisons, and the fixed-width views of one if you need them.
+
+The **type** is [Basics.BigInt](Basics#BigInt), as an `Int64`'s is
+`Basics.Int64`. An `Int` is 32 bits and an `Int64` is 64, and past either one
+the arithmetic wraps. That is fine until you are working out what a `uint64`
+did plus one, or reading a number nobody promised would fit, and then it is the
+whole problem. A `BigInt` has no width. Instead, it has a way to ask for one:
+
+    -- what does this look like as a uint64?
+    BigInt.maskTo 64 x
+
+    -- ...and as an int64?
+    BigInt.toSigned 64 x
+
+    -- would it have overflowed?
+    BigInt.fitsSigned 64 x
+
+The width is a question you put to a value, not a property the value carries
+around and can silently violate.
+
+This module was `gren-bignum`'s, and keeps its names, its argument order and
+its answers; geng-lang Dgmk30 moved it into `core` onto each platform's own
+integer.
+
+
+## Making them
+
+@docs zero, one, fromInt, toInt, fromInt64, toInt64, fromFloat, toFloat
+
+
+## Reading and writing
+
+@docs fromString, toString, fromStringWithBase, toStringWithBase
+
+
+## Reading text you did not write
+
+@docs fromStringWithin, fromStringWithBaseWithin, Error
+
+
+## Arithmetic
+
+@docs add, subBy, mul, negate, abs, powBy
+
+
+## Dividing
+
+There are two, because C and Python define division differently and you are
+usually checking one of them. Each comes in three forms: the pair, and either
+half on its own.
+
+@docs quotRemBy, quotBy, remainderBy
+@docs divModBy, divBy, modBy
+
+
+## Comparing
+
+@docs compare, isZero, isNegative, isEven, isOdd, max, min
+
+
+## Bits
+
+These read a value as two's complement of unbounded width: a negative number
+is an infinite run of one bits with its magnitude at the bottom. It is the only
+reading under which `complement 5 == -6` without anybody having said how wide
+the number is.
+
+@docs and, or, xor, complement, shiftLeftBy, shiftRightBy, bitLength, popCount
+
+
+## Widths
+
+@docs maskTo, toSigned, fitsSigned, fitsUnsigned
+
+
+## A note on argument order
+
+Wherever the order of the operands matters, the subject comes **last**. This
+matches `modBy`, `remainderBy` and `Bitwise.shiftLeftBy`:
+
+    a |> BigInt.subBy one -- a - 1
+
+    a |> BigInt.quotRemBy (BigInt.fromInt 2) -- a / 2
+
+    a |> BigInt.shiftLeftBy 8 -- a << 8
+
+`compare` is the exception. It stands in for `Basics.compare`, so it takes its
+arguments in the same order that one does.
+
+
+## Costs
+
+`add`, `subBy`, `negate`, the comparisons and the bit operations cost time in
+proportion to the numbers' sizes; `mul` and the divisions in proportion to the
+product of the two. Writing and reading text is quadratic in the number of
+digits, and [`fromStringWithin`](#fromStringWithin) is how to bound that for
+text you did not write.
+
+-}
+
+import Array exposing (Array)
+import Basics exposing (..)
+import Bitwise
+import Char exposing (Char)
+import Int64
+import Math
+import Maybe exposing (Maybe(..))
+import Result exposing (Result(..))
+import String exposing (String)
+import UInt64
+
+
+
+-- THE PRIMITIVES
+
+
+@prim("big_and")
+andPrim : BigInt -> BigInt -> BigInt
+
+
+@prim("big_or")
+orPrim : BigInt -> BigInt -> BigInt
+
+
+@prim("big_xor")
+xorPrim : BigInt -> BigInt -> BigInt
+
+
+{-| Precondition: a count of 0 or more. -}
+@prim("big_shl")
+shlPrim : BigInt -> Int -> BigInt
+
+
+{-| Precondition: a count of 0 or more. Floors. -}
+@prim("big_shr")
+shrPrim : BigInt -> Int -> BigInt
+
+
+{-| Precondition: a divisor that is not zero. Truncates. -}
+@prim("big_quot")
+quotPrim : BigInt -> BigInt -> BigInt
+
+
+{-| Precondition: a divisor that is not zero. The dividend's sign. -}
+@prim("big_rem")
+remPrim : BigInt -> BigInt -> BigInt
+
+
+@prim("i32_to_big")
+fromIntPrim : Int -> BigInt
+
+
+@prim("i64_to_big")
+fromInt64Prim : Int64 -> BigInt
+
+
+{-| The low 64 bits, as two's complement. -}
+@prim("big_to_i64")
+lowInt64 : BigInt -> Int64
+
+
+
+-- MAKING THEM
+
+
+{-| Zero. It is also the divisor that makes every division in this module
+return `Nothing`.
+-}
+zero : BigInt
+zero =
+    0
+
+
+{-| One. Mostly the step: `x |> add one` and `x |> subBy one`. It is also the
+empty product, so `powBy 0` returns it for any base.
+-}
+one : BigInt
+one =
+    1
+
+
+{-| An ordinary `Int`.
+-}
+fromInt : Int -> BigInt
+fromInt n =
+    fromIntPrim n
+
+
+{-| An `Int64`, every one of them exactly, `Int64.minValue` included.
+-}
+fromInt64 : Int64 -> BigInt
+fromInt64 n =
+    fromInt64Prim n
+
+
+{-| Back to an `Int`, when it fits in one, which means from `-2^31` to
+`2^31 - 1`. Anything outside that is `Nothing`, not a number that is almost
+right.
+-}
+toInt : BigInt -> Maybe Int
+toInt value =
+    if fitsSigned 32 value then
+        Just (Int64.toIntWrap (lowInt64 value))
+
+    else
+        Nothing
+
+
+{-| Truncate a `Float` toward zero. `NaN` and the infinities are `Nothing`.
+Everything else has an exact integer part, however large, because past a
+certain exponent a double *is* an integer.
+
+Toward zero rather than floored, the same split as [`quotRemBy`](#quotRemBy)
+against [`divModBy`](#divModBy):
+
+    BigInt.fromFloat -3.7 --> Just (BigInt.fromInt -3)
+
+The result is exact, not approximate. Example:
+
+    BigInt.fromFloat 1.0e30 |> Maybe.map BigInt.toString
+    --> Just "1000000000000000019884624838656"
+
+Those trailing digits are not noise. That is the integer the double has held
+all along, and this is the function that shows you which one you actually
+have. [`toFloat`](#toFloat) is the direction that loses it again.
+
+-}
+fromFloat : Float -> Maybe BigInt
+fromFloat f =
+    if Basics.isNaN f || Basics.isInfinite f then
+        Nothing
+
+    else if Math.abs f < 4611686018427387904 then
+        Just (fromInt64 (Int64.truncate f))
+
+    else
+        let
+            -- At 2^62 and above a double is an integer: its 53-bit
+            -- significand shifted left by what its exponent says.
+            bits =
+                Math.toBits f
+
+            exponent =
+                UInt64.toIntWrap (Bitwise.and (Bitwise.shiftRightZfBy 52 bits) (2047 : UInt64)) - 1075
+
+            significand =
+                Bitwise.or (Bitwise.and bits (4503599627370495 : UInt64)) (4503599627370496 : UInt64)
+
+            magnitude =
+                shlPrim (fromInt64 (Int64.fromUInt64Wrap significand)) exponent
+        in
+        if f < 0 then
+            Just (Basics.negate magnitude)
+
+        else
+            Just magnitude
+
+
+{-| Back to an `Int64`, when it fits in one, which means from `-2^63` to
+`2^63 - 1`.
+-}
+toInt64 : BigInt -> Maybe Int64
+toInt64 value =
+    if fitsSigned 64 value then
+        Just (lowInt64 value)
+
+    else
+        Nothing
+
+
+{-| To a `Float`, rounded to the nearest one, which is exact up to 2^53 and
+`Infinity` past the largest.
+
+This is the lossy half of the round trip, and above 2^53 it is lossy quietly:
+
+    BigInt.toFloat (BigInt.add big BigInt.one) == BigInt.toFloat big
+    -- True for big = 2^64, and nothing says the one went missing
+
+[`fromFloat`](#fromFloat) loses nothing going the other way, so a value
+survives a round trip through a `String` but not through a `Float`. If you
+need to store one, store the string.
+
+-}
+toFloat : BigInt -> Float
+toFloat value =
+    if fitsSigned 53 value then
+        Int64.toFloat (lowInt64 value)
+
+    else
+        -- Correctly rounded, through `String.toFloat`'s decimal reading.
+        String.toFloat (toString value)
+            |> Maybe.withDefault 0
+
+
+
+-- ARITHMETIC
+
+
+{-| Add. Commutative, so no `By`.
+-}
+add : BigInt -> BigInt -> BigInt
+add a b =
+    a + b
+
+
+{-| Subtract the first from the second: `subBy b a` is `a - b`.
+
+    a |> BigInt.subBy one
+
+-}
+subBy : BigInt -> BigInt -> BigInt
+subBy b a =
+    a - b
+
+
+{-| Multiply, exactly, however big the answer gets. Commutative, so no `By`.
+-}
+mul : BigInt -> BigInt -> BigInt
+mul a b =
+    a * b
+
+
+{-| Flip the sign. `negate zero` is `zero`: there is only ever one.
+-}
+negate : BigInt -> BigInt
+negate value =
+    Basics.negate value
+
+
+{-| Drop the sign.
+
+This one cannot fail. `abs` of the most negative value is the classic
+fixed-width bug: there is no positive `Int.minValue` to return, so it comes
+back negative. A `BigInt` has no most negative value, so the bug has nowhere
+to happen.
+
+-}
+abs : BigInt -> BigInt
+abs value =
+    if value < 0 then
+        Basics.negate value
+
+    else
+        value
+
+
+{-| Raise to an exponent: `powBy exponent base`.
+
+A negative exponent is not an error. It gives the truncated integer answer,
+the same as every other division in this module: two to the minus three is an
+eighth, truncated to zero; one to any negative exponent is one; and zero to a
+negative exponent, the only genuinely undefined case, is zero.
+
+    BigInt.fromInt 2 |> BigInt.powBy 10 --> BigInt.fromInt 1024
+
+-}
+powBy : Int -> BigInt -> BigInt
+powBy exponent base =
+    if exponent < 0 then
+        one
+            |> quotBy (powBy (Basics.negate exponent) base)
+            |> Maybe.withDefault zero
+
+    else
+        powLoop exponent base one
+
+
+powLoop : Int -> BigInt -> BigInt -> BigInt
+powLoop exponent base acc =
+    if exponent == 0 then
+        acc
+
+    else if Basics.modBy 2 exponent == 1 then
+        powLoop (exponent - 1) base (acc * base)
+
+    else
+        powLoop (exponent // 2) (base * base) acc
+
+
+
+-- DIVIDING
+
+
+{-| Divide, truncating toward zero, so the remainder takes the sign of the
+dividend: `quotRemBy divisor dividend`. This is C's `/` and `%`, and Geng's own
+`//` and `remainderBy`.
+
+`-7 / 2` is `-3` remainder `-1` here.
+
+`Nothing` when the divisor is zero, which is the only way it can fail.
+
+-}
+quotRemBy : BigInt -> BigInt -> Maybe { quotient : BigInt, remainder : BigInt }
+quotRemBy divisor dividend =
+    if divisor == 0 then
+        Nothing
+
+    else
+        Just
+            { quotient = quotPrim dividend divisor
+            , remainder = remPrim dividend divisor
+            }
+
+
+{-| The quotient alone, truncating toward zero: `quotBy divisor dividend`.
+
+    BigInt.fromInt -7 |> BigInt.quotBy (BigInt.fromInt 2)
+    --> Just (BigInt.fromInt -3)
+
+`Nothing` when the divisor is zero.
+
+-}
+quotBy : BigInt -> BigInt -> Maybe BigInt
+quotBy divisor dividend =
+    if divisor == 0 then
+        Nothing
+
+    else
+        Just (quotPrim dividend divisor)
+
+
+{-| The remainder alone, taking the sign of the dividend:
+`remainderBy divisor dividend`. This is `remainderBy`.
+
+    BigInt.fromInt -7 |> BigInt.remainderBy (BigInt.fromInt 2)
+    --> Just (BigInt.fromInt -1)
+
+`Nothing` when the divisor is zero.
+
+-}
+remainderBy : BigInt -> BigInt -> Maybe BigInt
+remainderBy divisor dividend =
+    if divisor == 0 then
+        Nothing
+
+    else
+        Just (remPrim dividend divisor)
+
+
+{-| Divide, flooring, so the modulus takes the sign of the divisor:
+`divModBy divisor dividend`. This is Python's `//` and `%`, and Geng's own
+`modBy`.
+
+`-7 / 2` is `-4` modulus `1` here.
+
+The two differ only when exactly one operand is negative. Which one you want
+depends on whether you are checking C or Python, so both are here.
+
+-}
+divModBy : BigInt -> BigInt -> Maybe { quotient : BigInt, modulus : BigInt }
+divModBy divisor dividend =
+    quotRemBy divisor dividend
+        |> Maybe.map
+            (\answer ->
+                if answer.remainder == 0 || (answer.remainder < 0) == (divisor < 0) then
+                    { quotient = answer.quotient, modulus = answer.remainder }
+
+                else
+                    { quotient = answer.quotient - 1
+                    , modulus = answer.remainder + divisor
+                    }
+            )
+
+
+{-| The floored quotient alone: `divBy divisor dividend`. Python's `//`.
+
+    BigInt.fromInt -7 |> BigInt.divBy (BigInt.fromInt 2)
+    --> Just (BigInt.fromInt -4)
+
+`Nothing` when the divisor is zero.
+
+-}
+divBy : BigInt -> BigInt -> Maybe BigInt
+divBy divisor dividend =
+    divModBy divisor dividend
+        |> Maybe.map .quotient
+
+
+{-| The modulus alone, taking the sign of the divisor: `modBy divisor
+dividend`. This is `modBy`, and it is the one to reach for when the question
+is divisibility, because its answer is zero or has the divisor's sign and
+never the dividend's.
+
+    BigInt.fromInt -7 |> BigInt.modBy (BigInt.fromInt 2)
+    --> Just (BigInt.fromInt 1)
+
+`Nothing` when the divisor is zero.
+
+-}
+modBy : BigInt -> BigInt -> Maybe BigInt
+modBy divisor dividend =
+    divModBy divisor dividend
+        |> Maybe.map .modulus
+
+
+
+-- COMPARING
+
+
+{-| How the first compares to the second, the way `Basics.compare` does.
+-}
+compare : BigInt -> BigInt -> Order
+compare a b =
+    Basics.compare a b
+
+
+{-| Whether this is zero. `x == BigInt.zero` gives the same answer.
+-}
+isZero : BigInt -> Bool
+isZero value =
+    value == 0
+
+
+{-| Zero is not negative.
+-}
+isNegative : BigInt -> Bool
+isNegative value =
+    value < 0
+
+
+{-| Whether this is a multiple of two. Zero is, and the sign does not come
+into it: `-7` is odd for the same reason `7` is.
+-}
+isEven : BigInt -> Bool
+isEven value =
+    andPrim value 1 == 0
+
+
+{-| Whether this is not a multiple of two.
+
+    BigInt.isOdd (BigInt.fromInt -7) --> True
+
+-}
+isOdd : BigInt -> Bool
+isOdd value =
+    not (isEven value)
+
+
+{-| The larger of the two, standing in for `Basics.max`.
+-}
+max : BigInt -> BigInt -> BigInt
+max a b =
+    Basics.max a b
+
+
+{-| The smaller of the two, standing in for `Basics.min`.
+-}
+min : BigInt -> BigInt -> BigInt
+min a b =
+    Basics.min a b
+
+
+
+-- BITS
+
+
+{-| Bitwise AND.
+-}
+and : BigInt -> BigInt -> BigInt
+and a b =
+    andPrim a b
+
+
+{-| Bitwise OR.
+-}
+or : BigInt -> BigInt -> BigInt
+or a b =
+    orPrim a b
+
+
+{-| Bitwise XOR.
+-}
+xor : BigInt -> BigInt -> BigInt
+xor a b =
+    xorPrim a b
+
+
+{-| Flip every bit, which for a number with no width is exactly `-x - 1`.
+
+    BigInt.complement (BigInt.fromInt 5) --> BigInt.fromInt -6
+
+-}
+complement : BigInt -> BigInt
+complement value =
+    Basics.negate value - 1
+
+
+{-| Shift left, which is multiplication by 2^count and never loses
+anything. A negative count shifts the other way.
+-}
+shiftLeftBy : Int -> BigInt -> BigInt
+shiftLeftBy count value =
+    if count < 0 then
+        shrPrim value (Basics.negate count)
+
+    else
+        shlPrim value count
+
+
+{-| Shift right *arithmetically*: the sign is kept and the result is floored,
+so `-1` shifted right stays `-1` rather than becoming `0`. That is what a
+machine's arithmetic shift does and what two's complement means. The truncating
+version is [`quotRemBy`](#quotRemBy) with 2^count. A negative count
+shifts the other way.
+-}
+shiftRightBy : Int -> BigInt -> BigInt
+shiftRightBy count value =
+    if count < 0 then
+        shlPrim value (Basics.negate count)
+
+    else
+        shrPrim value count
+
+
+{-| How many bits the magnitude needs; zero for zero. The sign is not counted,
+because a `BigInt` has no width for a sign bit to live in.
+
+    BigInt.fromInt 255 |> BigInt.bitLength --> 8
+
+-}
+bitLength : BigInt -> Int
+bitLength value =
+    bitLengthOf (abs value) 0
+
+
+bitLengthOf : BigInt -> Int -> Int
+bitLengthOf magnitude acc =
+    if magnitude < 4294967296 then
+        acc + wordLength (lowInt64 magnitude)
+
+    else
+        bitLengthOf (shrPrim magnitude 32) (acc + 32)
+
+
+wordLength : Int64 -> Int
+wordLength word =
+    if word == 0 then
+        0
+
+    else
+        1 + wordLength (Bitwise.shiftRightBy 1 word)
+
+
+{-| How many bits of the *magnitude* are set. Counting a negative number's bits
+would mean counting an infinite run of ones, so this counts the magnitude's and
+says so; [`maskTo`](#maskTo) first if that is not what you meant.
+-}
+popCount : BigInt -> Int
+popCount value =
+    popCountOf (abs value) 0
+
+
+popCountOf : BigInt -> Int -> Int
+popCountOf magnitude acc =
+    if magnitude == 0 then
+        acc
+
+    else
+        popCountOf (shrPrim magnitude 64) (acc + Bitwise.popCount (lowInt64 magnitude))
+
+
+
+-- WIDTHS
+
+
+{-| The low `width` bits, as a number that is never negative, which is what
+reading a value as an unsigned integer of that width means.
+
+    BigInt.fromInt -1 |> BigInt.maskTo 64 |> BigInt.toString
+        --> "18446744073709551615"
+
+-}
+maskTo : Int -> BigInt -> BigInt
+maskTo width value =
+    if width <= 0 then
+        zero
+
+    else
+        andPrim value (powerOfTwo width - 1)
+
+
+{-| The low `width` bits read as two's complement, which is what reading a
+value as a signed integer of that width means.
+
+    BigInt.fromString "0xFFFFFFFFFFFFFFFF"
+        |> Maybe.map (BigInt.toSigned 64)
+        --> Just (BigInt.fromInt -1)
+
+-}
+toSigned : Int -> BigInt -> BigInt
+toSigned width value =
+    if width <= 0 then
+        zero
+
+    else
+        let
+            masked =
+                maskTo width value
+        in
+        if masked < powerOfTwo (width - 1) then
+            masked
+
+        else
+            masked - powerOfTwo width
+
+
+{-| Would this survive being stored in a signed integer of this width? That
+is, is it within `-2^(width-1)` to `2^(width-1) - 1`?
+-}
+fitsSigned : Int -> BigInt -> Bool
+fitsSigned width value =
+    if width <= 0 then
+        isZero value
+
+    else
+        let
+            bound =
+                powerOfTwo (width - 1)
+        in
+        Basics.negate bound <= value && value < bound
+
+
+{-| Would this survive being stored in an unsigned integer of this width?
+-}
+fitsUnsigned : Int -> BigInt -> Bool
+fitsUnsigned width value =
+    if width <= 0 then
+        isZero value
+
+    else
+        0 <= value && value < powerOfTwo width
+
+
+powerOfTwo : Int -> BigInt
+powerOfTwo exponent =
+    shlPrim 1 exponent
+
+
+
+-- READING
+
+
+{-| Read a number written the way it would be in source: an optional sign, then
+`0x`, `0b` or `0o` and its digits, or plain decimal.
+
+The sign may be `+` as well as `-`, so a number that arrives written `+5`
+reads as five rather than as nothing. It comes before the prefix, and there
+is at most one of it: `+0xff` is 255, and `++5` and `+ 5` are both `Nothing`.
+
+An underscore between two digits is ignored, so `0xdead_beef` and
+`1_000_000` both parse, and so does `1__000`. An underscore anywhere else is
+not a separator, so `_1`, `1_` and `0x_ff` are `Nothing`.
+
+    BigInt.fromString "0b1010" --> Just (BigInt.fromInt 10)
+
+    BigInt.fromString "-0xff" --> Just (BigInt.fromInt -255)
+
+    BigInt.fromString "+5" --> Just (BigInt.fromInt 5)
+
+    BigInt.fromString "12 apples" --> Nothing
+
+-}
+fromString : String -> Maybe BigInt
+fromString text =
+    withSign (\negative body -> prefixed body |> (\p -> digits p.base negative p.body)) text
+
+
+prefixed : String -> { base : Int, body : String }
+prefixed body =
+    if String.startsWith "0x" body || String.startsWith "0X" body then
+        { base = 16, body = String.dropFirst 2 body }
+
+    else if String.startsWith "0b" body || String.startsWith "0B" body then
+        { base = 2, body = String.dropFirst 2 body }
+
+    else if String.startsWith "0o" body || String.startsWith "0O" body then
+        { base = 8, body = String.dropFirst 2 body }
+
+    else
+        { base = 10, body = body }
+
+
+{-| Why [`fromStringWithin`](#fromStringWithin) refused.
+
+`NotANumber` is everything the plain [`fromString`](#fromString) returns
+`Nothing` for. `TooLong` is a well-formed number that needs more digits than
+the limit allows, and it says how many.
+
+-}
+type Error
+    = NotANumber
+    | TooLong { digits : Int, limit : Int }
+
+
+{-| [`fromString`](#fromString) with a ceiling on how many digits the number
+may have, for text that comes from somewhere you do not control:
+`fromStringWithin limit text`.
+
+The plain `fromString` does what it is told. A string of a million digits is
+a million-digit number, and parsing it costs time that grows with the square
+of its length. When the text is untrusted, say how big a number you are
+prepared to accept, and anything longer is refused before any arithmetic
+starts:
+
+    BigInt.fromStringWithin 20 "18446744073709551615"
+        |> Result.map BigInt.toString
+    --> Ok "18446744073709551615"
+
+    BigInt.fromStringWithin 20 "123456789012345678901"
+    --> Err (BigInt.TooLong { digits = 21, limit = 20 })
+
+    BigInt.fromStringWithin 20 "twelve"
+    --> Err BigInt.NotANumber
+
+The digits are counted in the base the text is written in, after the sign,
+the prefix, any separators and any leading zeroes, so `0x0000ff` is two
+digits. Zero is one digit. A limit below one refuses everything. Malformed
+text is `NotANumber` whatever its length.
+
+-}
+fromStringWithin : Int -> String -> Result Error BigInt
+fromStringWithin limit text =
+    withSign (\negative body -> prefixed body |> (\p -> scanDigits p.base negative p.body)) text
+        |> Result.fromMaybe NotANumber
+        |> Result.andThen (buildWithin limit)
+
+
+{-| [`fromStringWithBase`](#fromStringWithBase) with the same ceiling as
+[`fromStringWithin`](#fromStringWithin): `fromStringWithBaseWithin base limit
+text`. The digits are counted in `base`, so the same limit admits a longer
+number in hexadecimal than in binary.
+
+    BigInt.fromStringWithBaseWithin 16 4 "dead"
+        |> Result.map BigInt.toString
+    --> Ok "57005"
+
+    BigInt.fromStringWithBaseWithin 2 4 "11111"
+    --> Err (BigInt.TooLong { digits = 5, limit = 4 })
+
+A base outside 2 to 36 is `NotANumber`, as it is `Nothing` for the plain
+function.
+
+-}
+fromStringWithBaseWithin : Int -> Int -> String -> Result Error BigInt
+fromStringWithBaseWithin base limit text =
+    withSign (\negative body -> scanDigits base negative body) text
+        |> Result.fromMaybe NotANumber
+        |> Result.andThen (buildWithin limit)
+
+
+{-| The second half of a bounded read: count the digits of a scanned body,
+and either refuse or do the arithmetic.
+-}
+buildWithin : Int -> Scanned -> Result Error BigInt
+buildWithin limit scanned =
+    let
+        count =
+            Basics.max 1 (String.count (trimLeadingZeroes scanned.body))
+    in
+    if count > limit then
+        Err (TooLong { digits = count, limit = limit })
+
+    else
+        Ok (buildDigits scanned)
+
+
+trimLeadingZeroes : String -> String
+trimLeadingZeroes body =
+    if String.startsWith "0" body then
+        trimLeadingZeroes (String.dropFirst 1 body)
+
+    else
+        body
+
+
+{-| Read a number in a base from 2 to 36, with an optional sign and no prefix.
+Underscores between digits are ignored here too.
+-}
+fromStringWithBase : Int -> String -> Maybe BigInt
+fromStringWithBase base text =
+    withSign (\negative body -> digits base negative body) text
+
+
+withSign : (Bool -> String -> a) -> String -> a
+withSign parse text =
+    if String.startsWith "-" text then
+        parse True (String.dropFirst 1 text)
+
+    else if String.startsWith "+" text then
+        parse False (String.dropFirst 1 text)
+
+    else
+        parse False text
+
+
+digits : Int -> Bool -> String -> Maybe BigInt
+digits base negative rawBody =
+    scanDigits base negative rawBody
+        |> Maybe.map buildDigits
+
+
+{-| What a scan of the text leaves: a validated body of digits in the base,
+separators removed, and the sign. No arithmetic has happened yet, so
+producing one of these costs time linear in the text.
+-}
+type alias Scanned =
+    { base : Int, negative : Bool, body : String }
+
+
+scanDigits : Int -> Bool -> String -> Maybe Scanned
+scanDigits base negative rawBody =
+    let
+        body =
+            dropSeparators rawBody
+
+        isDigitOfBase char =
+            when digitValue char is
+                Just digit ->
+                    digit < base
+
+                Nothing ->
+                    False
+    in
+    if base < 2 || base > 36 || String.isEmpty body || not (String.all isDigitOfBase body) then
+        Nothing
+
+    else
+        Just { base = base, negative = negative, body = body }
+
+
+{-| The arithmetic: a chunk of digits at a time read as an `Int`, and one
+multiply-and-add per chunk, which is quadratic in the length of the body
+because the running total grows with every step.
+-}
+buildDigits : Scanned -> BigInt
+buildDigits scanned =
+    let
+        chunk =
+            largestPower scanned.base 1 0
+
+        step char state =
+            let
+                pending =
+                    state.pending * scanned.base + Maybe.withDefault 0 (digitValue char)
+            in
+            if state.count + 1 == chunk.digits then
+                { total = state.total * fromInt chunk.value + fromInt pending, pending = 0, count = 0, scale = 1 }
+
+            else
+                { total = state.total, pending = pending, count = state.count + 1, scale = state.scale * scanned.base }
+
+        final =
+            String.foldl step { total = zero, pending = 0, count = 0, scale = 1 } scanned.body
+
+        magnitude =
+            final.total * fromInt final.scale + fromInt final.pending
+    in
+    if scanned.negative then
+        Basics.negate magnitude
+
+    else
+        magnitude
+
+
+{-| Remove the underscores that sit between two digits, and only those. An
+underscore anywhere else, including a run of them that touches a sign, a
+prefix or an end of the text, is left in place, and the digit parser rejects
+it.
+
+A run of underscores between two digits counts as one separator, so
+`1__000` reads the same as `1_000`.
+
+-}
+dropSeparators : String -> String
+dropSeparators text =
+    if not (String.contains "_" text) then
+        text
+
+    else
+        dropSeparatorsFrom text
+
+
+dropSeparatorsFrom : String -> String
+dropSeparatorsFrom text =
+    let
+        isDigit char =
+            digitValue char /= Nothing
+
+        step char state =
+            if char == '_' then
+                { state | pending = state.pending + 1 }
+
+            else
+                let
+                    kept =
+                        if state.pending > 0 && state.afterDigit && isDigit char then
+                            ""
+
+                        else
+                            String.repeat state.pending "_"
+                in
+                { pending = 0
+                , afterDigit = isDigit char
+                , out = state.out ++ kept ++ String.fromChar char
+                }
+
+        final =
+            String.foldl step { pending = 0, afterDigit = False, out = "" } text
+    in
+    final.out ++ String.repeat final.pending "_"
+
+
+digitValue : Char -> Maybe Int
+digitValue char =
+    let
+        code =
+            Char.toCode char
+    in
+    if code >= 0x30 && code <= 0x39 then
+        Just (code - 0x30)
+
+    else if code >= 0x61 && code <= 0x7A then
+        Just (code - 0x61 + 10)
+
+    else if code >= 0x41 && code <= 0x5A then
+        Just (code - 0x41 + 10)
+
+    else
+        Nothing
+
+
+
+-- WRITING
+
+
+{-| Decimal, with a leading `-` when negative.
+-}
+toString : BigInt -> String
+toString value =
+    toStringWithBase 10 value
+
+
+{-| In a base from 2 to 36, with digits `0`-`9` then `a`-`z`, and a leading `-`
+when negative. No prefix: `toStringWithBase 16` gives `"ff"`, not `"0xff"`.
+
+A negative number is written with a sign rather than as two's complement, so
+`toStringWithBase 16 (fromInt -255)` is `"-ff"`. If you want the bit pattern
+a machine would show for a 64-bit value, apply [`maskTo`](#maskTo) first; that
+is what it is for.
+
+Anything outside 2 to 36 gives `""`.
+
+-}
+toStringWithBase : Int -> BigInt -> String
+toStringWithBase base value =
+    if base < 2 || base > 36 then
+        ""
+
+    else if value == 0 then
+        "0"
+
+    else
+        let
+            -- The largest base^k an `Int` holds, so the number is
+            -- consumed a chunk at a time rather than a digit at a time.
+            chunk =
+                largestPower base 1 0
+
+            body =
+                chunks (fromInt chunk.value) chunk.digits base (abs value) []
+        in
+        if value < 0 then
+            "-" ++ body
+
+        else
+            body
+
+
+{-| The largest base^k below 2^30, and how many digits it is. The
+test comes before the multiplication, which would wrap past 2^31.
+-}
+largestPower : Int -> Int -> Int -> { value : Int, digits : Int }
+largestPower base value count =
+    if value > 1073741823 // base then
+        { value = value, digits = count }
+
+    else
+        largestPower base (value * base) (count + 1)
+
+
+chunks : BigInt -> Int -> Int -> BigInt -> Array String -> String
+chunks divisor width base magnitude acc =
+    let
+        quotient =
+            quotPrim magnitude divisor
+
+        text =
+            wordToString base (Int64.toIntWrap (lowInt64 (remPrim magnitude divisor)))
+    in
+    if quotient == 0 then
+        String.join "" (Array.pushFirst text acc)
+
+    else
+        chunks divisor width base quotient (Array.pushFirst (String.padLeft width '0' text) acc)
+
+
+wordToString : Int -> Int -> String
+wordToString base value =
+    if value < base then
+        digitChar value
+
+    else
+        wordToString base (value // base) ++ digitChar (Basics.modBy base value)
+
+
+digitChar : Int -> String
+digitChar value =
+    String.slice value (value + 1) "0123456789abcdefghijklmnopqrstuvwxyz"

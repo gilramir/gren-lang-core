@@ -55,6 +55,7 @@ are.
 
 import Array exposing (Array)
 import Basics exposing (..)
+import BigInt
 import Bitwise
 import Char exposing (Char)
 import Int16
@@ -321,6 +322,30 @@ instance Inspect UInt64 where
 
     inspectAnnotation _ =
         Just "UInt64"
+
+
+instance Inspect BigInt where
+    inspect n =
+        annotated "BigInt" (BigInt.toString n)
+
+    inspectAnnotation _ =
+        Just "BigInt"
+
+
+{-| Written here rather than derived in `BigInt`, which `Inspect` imports for
+the instance above: what `@derive(Inspect)` would write.
+-}
+instance Inspect BigInt.Error where
+    inspect e =
+        when e is
+            BigInt.NotANumber ->
+                "NotANumber"
+
+            BigInt.TooLong r ->
+                ctor "TooLong" [ record [ { name = "digits", value = inspect r.digits }, { name = "limit", value = inspect r.limit } ] ]
+
+    inspectAnnotation _ =
+        Nothing
 
 
 -- D342's four, through `Int`: every narrow value is one.

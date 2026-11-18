@@ -1,0 +1,43 @@
+module Native exposing (main)
+
+{-| The same suites as `../src/Main.geng`, built as a native program on Geng's
+`os` and run by `gilramir/gren-unit-node/os`'s runner: `BigInt` natively is a
+limb array the C runtime owns (geng-lang `m4-refine-wrap.md` Dgmk30), and
+these are the checks that hold it to JavaScript's and Python's answers.
+-}
+
+import BigNumbers exposing (bigNumbersSuite)
+import Bits exposing (bitsSuite)
+import Cart exposing (cartSuite)
+import Decimals exposing (decimalsSuite)
+import Differential exposing (differentialSuite)
+import Os.Env
+import Os.File
+import Strings exposing (stringsSuite)
+import Task exposing (Task)
+import Test.Runner.UnitNode.Program as Program
+
+
+main : Task Never {}
+main =
+    Os.Env.getEnvironment
+        |> Task.andThen
+            (\env ->
+                Program.runWith env
+                    { name = "core-bigint"
+                    , version = "1.0.0"
+                    , init = Os.File.initialize
+                    , fileSystem = Just
+                    , globalSetUp = \_ -> Task.succeed {}
+                    , globalTearDown = \_ -> Task.succeed {}
+                    , suites =
+                        \_ ->
+                            [ differentialSuite
+                            , bigNumbersSuite
+                            , bitsSuite
+                            , stringsSuite
+                            , decimalsSuite
+                            , cartSuite
+                            ]
+                    }
+            )

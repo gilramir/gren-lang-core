@@ -54,6 +54,8 @@ runtime = "any"
     "Int64",
     "UInt32",
     "UInt64",
+    "BigInt",
+    "BigDecimal",
     "Float32",
     "Int8",
     "UInt8",
