@@ -172,13 +172,12 @@ be, 2^31 − 1 elements.
     rangeChecked 0 2147483647 == Nothing
 
 -}
-rangeChecked : Int -> Int -> Maybe (Array Int)
+rangeChecked : (from : Int) -> (to : Int) -> Maybe (r : Array Int where (to < from && Array.length r == 0) || (from <= to && Array.length r == to - from + 1))
 rangeChecked from to =
-    let
-        span =
-            to - from
-    in
-    if from < to && (span < 0 || span == 2147483647) then
+    if 2147483646 + min from 1 < to then
+        -- The span is 2^31 - 1 or more, asked without computing it, which
+        -- would wrap: from 1 up no span reaches it, and `2147483647 < to`
+        -- never holds (geng-lang `m4-refine-wrap.md` §WR29, §WR33).
         Nothing
 
     else
