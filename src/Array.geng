@@ -598,8 +598,10 @@ Passing a negative index means you want to replace an element counting backwards
 
 It costs O(n) on JavaScript and natively, where it copies the array, and O(log
 n) on the BEAM once the array is a tree, which the first set of a long array
-makes it, at O(n); to set many elements in a loop, use
-[`Array.Builder.set`](Array-Builder#set).
+makes it, at O(n). A loop that sets elements of the array it hands back to
+itself, in its own body, keeping no older version, is written in place on
+JavaScript and natively (geng-lang Dgmk34); to set many elements in a loop
+whatever its shape, use [`Array.Builder.set`](Array-Builder#set).
 
 -}
 set : Int -> a -> (array : Array a) -> (r : Array a where Array.length r == Array.length array)
@@ -646,8 +648,9 @@ setMany index values array =
     update 10 (\n -> n + 1) [ 1, 2, 3 ] == [ 1, 2, 3 ]
 
 It costs what [`set`](#set) costs: O(n) on JavaScript and natively, where it
-copies the array, and O(log n) on the BEAM once the array is a tree; to update
-many elements in a loop, use [`Array.Builder.get`](Array-Builder#get) and
+copies the array, and O(log n) on the BEAM once the array is a tree, and is
+written in place in a loop as `set` is; to update many elements in a loop
+whatever its shape, use [`Array.Builder.get`](Array-Builder#get) and
 [`Array.Builder.set`](Array-Builder#set).
 
 -}
