@@ -690,7 +690,7 @@ before the match, which on JavaScript may run to the end of any text with a
 character above U+00FF.
 
 -}
-firstIndexOf : String -> String -> Maybe Int
+firstIndexOf : String -> (string : String) -> Maybe (i : Int where 0 <= i && i <= String.count string)
 firstIndexOf sub string =
     let
         found =
@@ -722,7 +722,7 @@ the search. To find every match, use [`indices`](#indices), which takes one
 pass.
 
 -}
-firstIndexOfFrom : Int -> String -> String -> Maybe Int
+firstIndexOfFrom : Int -> String -> (string : String) -> Maybe (i : Int where 0 <= i && i <= String.count string)
 firstIndexOfFrom start sub string =
     let
         length =
@@ -767,7 +767,7 @@ forward from the start that keeps the last match on the BEAM, then a count of
 the code points before the match.
 
 -}
-lastIndexOf : String -> String -> Maybe Int
+lastIndexOf : String -> (string : String) -> Maybe (i : Int where 0 <= i && i <= String.count string)
 lastIndexOf sub string =
     let
         found =
@@ -2040,8 +2040,13 @@ primFind : String -> String -> Int -> Int
 primFindLast : String -> String -> Int -> Int
 
 
+{-| The codepoint index of an offset into `s` that `primFind` or
+`primFindLast` answered: at a codepoint's boundary and within the string, so
+the index is from 0 to its count (geng-lang `m4-refine-wrap.md` §WR53). An
+offset past the end is not one this is called with.
+-}
 @prim("str_offset_to_index")
-primOffsetToIndex : String -> Int -> Int
+primOffsetToIndex : (s : String) -> (offset : Int where 0 <= offset) -> (r : Int where 0 <= r && r <= String.count s)
 
 
 @prim("str_next")
