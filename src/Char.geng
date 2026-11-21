@@ -2,7 +2,7 @@ module Char exposing
     ( Char
     , isUpper, isLower, isAlpha, isAlphaNum
     , isDigit, isOctDigit, isHexDigit
-    , toCode, fromCode
+    , toCode, fromCode, fromCodeProven
     , replacementChar
     )
 
@@ -34,7 +34,7 @@ predicates test ASCII ranges only. The Unicode properties are used by
 
 ## Unicode Code Points
 
-@docs toCode, fromCode
+@docs toCode, fromCode, fromCodeProven
 
 
 ## Special Characters
@@ -299,6 +299,23 @@ It costs O(1), being the identity on every target.
 -}
 @prim("char_to_i32")
 toCode : Char -> Int
+
+
+{-| The character of a code known to be a Unicode scalar value: what
+`fromCode` answers `Just` of, with no `Maybe` to take apart.
+
+    fromCodeProven 97 == 'a'
+
+-}
+fromCodeProven : (code : Int where (0 <= code && code <= 0xD7FF) || (0xE000 <= code && code <= 0x10FFFF)) -> Char
+fromCodeProven code =
+    when fromCode code is
+        Just c ->
+            c
+
+        Nothing ->
+            -- never: the refinement is `fromCode`'s `Just`
+            '?'
 
 
 {-| Convert a Unicode [code point][cp] to a character, when the number is one.

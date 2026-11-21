@@ -1,8 +1,17 @@
 module Maybe exposing
     ( Maybe(..)
-    , hasValue, checkValue, keepIf, isJust
-    , withDefault, withDefaultLazy, map, map2, map3, andMap
+    , andMap
     , andThen
+    , checkValue
+    , hasValue
+    , isJust
+    , keepIf
+    , map
+    , map2
+    , map3
+    , orElseLazy
+    , withDefault
+    , withDefaultLazy
     )
 
 {-| This library fills a bunch of important niches in Gren. A `Maybe` can help
@@ -18,7 +27,7 @@ you with optional arguments, error handling, and records with optional fields.
 
 ## Transform
 
-@docs withDefault, withDefaultLazy, map, map2, map3, andMap, andThen
+@docs withDefault, withDefaultLazy, map, map2, map3, andMap, andThen, orElseLazy
 
 -}
 
@@ -308,6 +317,24 @@ andThen callback maybeValue =
         Nothing ->
             Nothing
 
+
+{-| The first that is there: `first` when it holds a value, else what `next`
+answers, which is made only then. A grammar's alternatives, each tried when
+the one before did not match:
+
+    Date.fromString raw
+        |> Maybe.map DateValue
+        |> Maybe.orElseLazy (\{} -> Time.fromString raw |> Maybe.map TimeValue)
+
+-}
+orElseLazy : ({} -> Maybe a) -> Maybe a -> Maybe a
+orElseLazy next first =
+    when first is
+        Just _ ->
+            first
+
+        Nothing ->
+            next {}
 
 
 {-| Whether a `Maybe` is a `Just`.

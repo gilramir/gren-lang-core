@@ -97,4 +97,4 @@ appendSlice : (taken t : Transient a) -> (s : Transient a) -> (from : Int where 
 `Int` does.
 -}
 @prim("tr_generate")
-generate : (taken t : Transient a) -> Int -> (n : Int where 0 <= n) -> (Int -> a) -> (r : Transient a where Array.Transient.length r == Array.Transient.length t + n)
+generate : (taken t : Transient a) -> (offset : Int) -> (n : Int where 0 <= n) -> ((i : Int where offset <= i && i < offset + n) -> a) -> (r : Transient a where Array.Transient.length r == Array.Transient.length t + n)

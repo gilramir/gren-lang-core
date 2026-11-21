@@ -102,7 +102,7 @@ It costs O(n), calling the function n times, and on JavaScript and natively
 allocates the array once (geng-lang `m4-puritty.md` D905).
 
 -}
-initialize : (n : Int) -> Int -> (Int -> a) -> (r : Array a where (n < 1 && Array.length r == 0) || (1 <= n && Array.length r == n))
+initialize : (n : Int) -> (offset : Int) -> ((i : Int where offset <= i && i < offset + n) -> a) -> (r : Array a where (n < 1 && Array.length r == 0) || (1 <= n && Array.length r == n))
 initialize len offset fn =
     -- A count below one is the empty array, not a crash: the kernel's
     -- `new Array(size)` threw `RangeError: Invalid array length` for a
@@ -299,7 +299,7 @@ keepIf fn array =
 It costs O(n).
 
 -}
-indexedKeepIf : (Int -> a -> Bool) -> (array : Array a) -> (r : Array a where Array.length r <= Array.length array)
+indexedKeepIf : ((i : Int where 0 <= i && i < Array.length array) -> a -> Bool) -> (array : Array a) -> (r : Array a where Array.length r <= Array.length array)
 indexedKeepIf fn array =
     let
         len =
@@ -1495,7 +1495,7 @@ keepIfHelp fn array index len acc =
         acc
 
 
-indexedKeepIfHelp : (Int -> a -> Bool) -> Array a -> (index : Int where 0 <= index) -> (len : Int where index <= len) -> (taken acc : Transient a where T.length acc <= index) -> (r : Transient a where T.length r <= len)
+indexedKeepIfHelp : ((i : Int where 0 <= i && i < Array.length array) -> a -> Bool) -> (array : Array a) -> (index : Int where 0 <= index && index <= len) -> (len : Int where len == Array.length array) -> (taken acc : Transient a where T.length acc <= index) -> (r : Transient a where T.length r <= len)
 indexedKeepIfHelp fn array index len acc =
     if lt index len then
         let
