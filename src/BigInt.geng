@@ -1,5 +1,5 @@
 module BigInt exposing
-    ( zero, one, fromInt, toInt, fromInt64, toInt64, fromFloat, toFloat
+    ( zero, one, fromInt, toInt, toIntProven, fromInt64, toInt64, fromFloat, toFloat
     , fromString, toString, fromStringWithBase, toStringWithBase
     , fromStringWithin, fromStringWithBaseWithin, Error(..)
     , add, subBy, mul, negate, abs, powBy
@@ -38,7 +38,7 @@ integer.
 
 ## Making them
 
-@docs zero, one, fromInt, toInt, fromInt64, toInt64, fromFloat, toFloat
+@docs zero, one, fromInt, toInt, toIntProven, fromInt64, toInt64, fromFloat, toFloat
 
 
 ## Reading and writing
@@ -210,13 +210,24 @@ fromInt64 n =
 `2^31 - 1`. Anything outside that is `Nothing`, not a number that is almost
 right.
 -}
-toInt : BigInt -> Maybe Int
+toInt : (value : BigInt) -> (r : Maybe (n : Int where BigInt.fromInt n == value) where Maybe.isJust r == BigInt.fitsSigned 32 value)
 toInt value =
     if fitsSigned 32 value then
-        Just (Int64.toIntWrap (lowInt64 value))
+        Just (toIntProven value)
 
     else
         Nothing
+
+
+{-| Back to an `Int`, for a value known to fit in one: what `toInt` answers
+`Just` of, with no `Maybe`.
+
+    toIntProven (fromInt 42) == 42
+
+-}
+toIntProven : (value : BigInt where BigInt.fitsSigned 32 value) -> (r : Int where BigInt.fromInt r == value)
+toIntProven value =
+    Int64.toIntWrap (lowInt64 value)
 
 
 {-| Truncate a `Float` toward zero. `NaN` and the infinities are `Nothing`.
